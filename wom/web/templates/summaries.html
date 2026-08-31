@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set page = 'summaries' %}
-{% block title %}Summaries - WOM Tracker{% endblock %}
+{% block title %}Round-ups - WOM Tracker{% endblock %}
 
 {% block content %}
   {% if latest %}
@@ -41,10 +41,11 @@
     </details>
   {% else %}
     <div class="card">
-      <h3>No summaries yet</h3>
+      <h3>No round-ups yet</h3>
       <p class="hint">
-        Nothing has been written for the included players. These come from the
-        6am update, or from <code>py wom_tracker.py --summarize --due</code>.
+        Nothing has been written for the included players yet. They are
+        written after the 6am update, or by
+        <code>py wom_tracker.py --summarize --due</code>.
       </p>
     </div>
   {% endfor %}

@@ -25,7 +25,7 @@
       <form method="post" action="/admin/run/update">
         <button type="submit">Update now</button></form>
       <form method="post" action="/admin/run/summarise">
-        <button type="submit">Write missing summaries</button></form>
+        <button type="submit">Write missing round-ups</button></form>
       <form method="post" action="/admin/run/backfill">
         <button type="submit">Re-import all history</button></form>
       <a href="/admin/prompts" class="grow" style="color: var(--accent)">Edit the summary prompts</a>
@@ -74,11 +74,11 @@
         {% endif %}
       </label>
 
-      <h4>Written summaries</h4>
+      <h4>Round-ups</h4>
       <label class="tick">
         <input type="checkbox" name="summaries_enabled"
                {{ 'checked' if config.get('summaries_enabled') }}>
-        Write summaries with the Claude API (each one costs about half a cent)
+        Write round-ups with the Claude API (each one costs about half a cent)
       </label>
       <label class="field">
         <span>Model</span>

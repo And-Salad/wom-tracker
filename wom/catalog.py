@@ -1,4 +1,4 @@
-"""What the Summary charts show, independent of how they are drawn.
+"""What the Overview charts show, independent of how they are drawn.
 
 charts.js draws them; this is the half that has to agree with the server, so
 the metric lists and dropdown choices live here rather than in the drawing.
@@ -35,7 +35,7 @@ LOG_METRICS = {
 
 
 class ChartSpec:
-    """One chart on the Summary page: what it shows, and what builds it."""
+    """One chart on the Overview page: what it shows, and what builds it."""
 
     def __init__(self, key, title, kind, description="", options=None):
         self.key = key

@@ -1,4 +1,4 @@
-/* The Summary charts, drawn in the browser with D3.
+/* The Overview charts, drawn in the browser with D3.
  *
  * Each card owns one chart. Changing a dropdown or a player tick refetches
  * only the JSON behind the affected cards and redraws in place - the page

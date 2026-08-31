@@ -62,7 +62,7 @@ fly ssh console -a wom-tracker -C "python /app/wom_tracker.py --compact"
 
 ## Written summaries
 
-An optional **Summaries** tab: a few paragraphs per window, written by Claude
+An optional **Round-ups** page: a few paragraphs per window, written by Claude
 from the numbers already in the database, in an expanding tree - the branch,
 then Daily/Weekly/Monthly, then each dated window. The web dashboard shows the
 same tree at `/summaries`.
@@ -152,15 +152,15 @@ at all outside the morning slot.
 
 ## The pages
 
-Five public pages - **Summary** (the charts), **Milestones**, **Summaries**,
-**Players** and **Data** - with the player and period filters in the sidebar,
+Five public pages - **Overview** (the standings and charts), **Milestones**,
+**Round-ups** (the written notes), **Players** and **Data** - with the player and period filters in the sidebar,
 plus **Admin** behind the password.
 
-**Summary** opens with a standings table - who gained what this period - above
+**Overview** opens with a standings table - who gained what this period - above
 the charts. The stacked columns answer "what did they train"; nobody could read
 "who won" off twenty slices without adding them up.
 
-**Summaries** shows the newest group round-up in full at the top. It used to be
+**Round-ups** shows the newest group round-up in full at the top. It used to be
 two clicks down a tree whose folders stay shut, which meant the one thing the
 Claude spend buys was the most buried thing in the app.
 
@@ -292,10 +292,11 @@ emits them as CSS custom properties; the page styles itself from those and
 so a chart can never land on a background it does not match. There is no light
 mode or toggle - changing the constants in that module changes everything.
 
-The dashboard has four pages: **Summary** (charts comparing the players you
-tick), **Milestones** (the achievements Wise Old Man has recorded),
-**Summaries** (the written notes) and **Players** (the latest stored figures).
-A fifth, **Admin**, appears when a password is configured.
+The dashboard has five pages: **Overview** (standings and charts for the
+players you tick), **Milestones** (the achievements Wise Old Man has
+recorded), **Round-ups** (the written notes), **Players** (the latest stored
+figures) and **Data** (the export). A sixth, **Admin**, appears when a
+password is configured.
 
 ### Player colours
 
@@ -304,7 +305,7 @@ list, and that colour is used for them in every chart and every swatch. Pick a
 different one on the admin page. Choices are stored in `player_colors` in
 `data/config.json`, keyed by lowercase username.
 
-### Summary period
+### The period
 
 The dropdown picks a rolling look-back window: day, week, month, quarter (91
 days) or year. Gains run from a baseline snapshot to the newest one held.
@@ -330,7 +331,7 @@ kills than a week. Unranked means below the hiscore cutoff, so zero is the right
 thing to measure from - as it is for a boss that did not exist yet when the
 baseline was taken.
 
-### Summary charts
+### The charts
 
 **Experience gained by skill** — a stacked column per skill, one slice per
 included player. All 24 skills stay on the axis whether or not they moved, so an
@@ -434,7 +435,7 @@ coloured by player and labelled with the same icons the charts use.
 
 The **Since** dropdown filters to a rolling window or shows all time, and the
 feed only lists the players included by the sidebar swatches, so it narrows the
-same way the Summary tab does.
+same way the Overview page does.
 
 Two quirks of the API worth knowing, both handled in the display:
 
@@ -562,7 +563,7 @@ on insert, so re-running is harmless.
 
 ## Adding a chart
 
-A Summary chart is described once and drawn once. Describe it in
+An Overview chart is described once and drawn once. Describe it in
 `wom/catalog.py`:
 
 ```python
@@ -668,7 +669,7 @@ wom/
   scheduler.py       the six-hourly Eastern timer and its busy flag
   periods.py         the day/week/month/quarter/year windows
   icons.py           skill order, and where each sprite lives
-  catalog.py         what the Summary charts show
+  catalog.py         what the Overview charts show
   colors.py          the palette and per-player colour overrides
   context.py         ViewContext: what a chart builder is handed
   summaries.py       the digest, the Claude call and the once-a-day hook
