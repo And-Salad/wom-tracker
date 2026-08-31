@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import (Flask, Response, abort, jsonify, render_template, request,
                    send_file, send_from_directory)
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .. import periods, theme
 from ..colors import player_color
@@ -29,8 +30,8 @@ from .jobs import JobRunner
 log = logging.getLogger(__name__)
 
 
-class _Throttle:
-    """A simple per-address budget: `allowance` calls per `window` seconds."""
+class _Budget:
+    """Calls allowed per key over a window. One instance per bucket."""
 
     def __init__(self, allowance, window):
         self.allowance = allowance
@@ -42,23 +43,57 @@ class _Throttle:
         with self._lock:
             self._seen.clear()
 
-    def hold(self, address):
-        """Seconds to wait, or 0 when this call may go ahead."""
+    def check(self, key):
+        """Seconds to wait, or 0 if a call under this key may go ahead.
+
+        Only a call that is going ahead is recorded, so a request refused by
+        another bucket does not eat this one's allowance.
+        """
         now = time.monotonic()
         with self._lock:
-            calls = [t for t in self._seen.get(address, ()) if now - t < self.window]
+            calls = [t for t in self._seen.get(key, ()) if now - t < self.window]
+            self._seen[key] = calls
             if len(calls) >= self.allowance:
-                self._seen[address] = calls
                 return max(1, int(self.window - (now - calls[0])))
-            calls.append(now)
-            self._seen[address] = calls
-            # Addresses that stopped asking should not accumulate forever.
-            if len(self._seen) > 512:
-                self._seen = {a: t for a, t in self._seen.items() if t}
             return 0
 
+    def record(self, key):
+        now = time.monotonic()
+        with self._lock:
+            calls = [t for t in self._seen.get(key, ()) if now - t < self.window]
+            calls.append(now)
+            self._seen[key] = calls
+            if len(self._seen) > 1024:    # addresses that stopped asking
+                self._seen = {k: v for k, v in self._seen.items() if v}
 
-_export_throttle = _Throttle(allowance=6, window=60)
+
+# A full export is about 5 MB of egress and walks every stored reading, on a
+# machine that also runs the schedule. Nobody browsing needs many: five per
+# viewer per six hours, and twenty a day across everyone as the backstop, is
+# roughly 100 MB a day at today's size. Signing in as admin skips both.
+EXPORTS_PER_ADDRESS = 5
+EXPORT_ADDRESS_WINDOW = 6 * 3600
+EXPORTS_PER_DAY = 20
+EXPORT_DAY_WINDOW = 24 * 3600
+_EVERYONE = "*"
+
+_export_per_address = _Budget(EXPORTS_PER_ADDRESS, EXPORT_ADDRESS_WINDOW)
+_export_overall = _Budget(EXPORTS_PER_DAY, EXPORT_DAY_WINDOW)
+
+
+def _export_allowed(address, is_admin):
+    """(seconds_to_wait, which_limit). Admin is not budgeted."""
+    if is_admin:
+        return 0, None
+    waiting = _export_per_address.check(address)
+    if waiting:
+        return waiting, "address"
+    waiting = _export_overall.check(_EVERYONE)
+    if waiting:
+        return waiting, "everyone"
+    _export_per_address.record(address)
+    _export_overall.record(_EVERYONE)
+    return 0, None
 
 
 class BadRequest(Exception):
@@ -99,6 +134,18 @@ def _offset_minutes(value):
     return minutes if -14 * 60 <= minutes <= 14 * 60 else 0
 
 
+def _safe_cell(value):
+    """Defuse a text cell a spreadsheet would treat as a formula.
+
+    Excel and Sheets run a cell beginning =, +, - or @. Player names come from
+    the Wise Old Man API, so a hostile one would otherwise be a formula in
+    everyone's download. Only text is touched; the numbers stay numbers.
+    """
+    text = "" if value is None else str(value)
+    dangerous = ("=", "+", "-", "@", "\t", "\r")
+    return "'" + text if text[:1] in dangerous else text
+
+
 def _csv_stream(rows):
     """Yield the export a line at a time, so nothing is held whole in memory."""
     import csv
@@ -117,8 +164,9 @@ def _csv_stream(rows):
                      "value", "level", "rank"])
     yield flush()
     for row in rows:
-        writer.writerow([row["captured_at"], row["display_name"], row["username"],
-                         row["kind"], row["metric"], row["value"], row["level"],
+        writer.writerow([row["captured_at"], _safe_cell(row["display_name"]),
+                         _safe_cell(row["username"]), row["kind"],
+                         _safe_cell(row["metric"]), row["value"], row["level"],
                          row["rank"]])
         yield flush()
 
@@ -170,12 +218,20 @@ def _paragraphs(text):
 
 def create_app():
     app = Flask(__name__, static_folder="static", static_url_path="/static")
+    # Behind Fly's proxy every request arrives from an internal address, so
+    # remote_addr was the same value for everybody: the per-address budgets
+    # below were really one shared bucket, and six bad sign-ins from anyone
+    # locked out everyone. Trusting one hop of X-Forwarded-For is safe here
+    # because the app is only reachable through that proxy; run it exposed
+    # directly and this would be spoofable.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
     app.config["DATABASE"] = Database(DB_PATH)
     app.config["JOBS"] = JobRunner()
     # Set by web_app.py when it starts the scheduler; None when the dashboard
     # is served without one, in which case there is nothing to collide with.
     app.config.setdefault("SCHEDULER", None)
-    _export_throttle.reset()
+    _export_per_address.reset()
+    _export_overall.reset()
 
     # Admin is registered only when a password exists. A deployment that
     # forgets to set one has no admin routes at all, rather than open ones.
@@ -439,11 +495,19 @@ def create_app():
             abort(404)
         # A full export walks every stored reading, and the scheduler and the
         # summary writer are threads in this same process on one shared vCPU.
-        waiting = _export_throttle.hold(request.remote_addr or "?")
+        from flask import session as _session
+        waiting, which = _export_allowed(request.remote_addr or "?",
+                                         bool(_session.get("wom_admin")))
         if waiting:
+            hours = max(1, waiting // 3600)
             return Response(
-                "Too many exports from this address."
-                " Try again in {} seconds.".format(waiting),
+                ("Exports are limited to {} per six hours. Try again in about "
+                 "{} hour{}.".format(EXPORTS_PER_ADDRESS, hours,
+                                     "" if hours == 1 else "s")
+                 if which == "address" else
+                 "The daily export limit for everyone ({} a day) has been "
+                 "reached. Sign in as admin, or try again in about {} hour{}."
+                 .format(EXPORTS_PER_DAY, hours, "" if hours == 1 else "s")),
                 status=429, mimetype="text/plain",
                 headers={"Retry-After": str(waiting)})
         config = settings()
@@ -503,6 +567,30 @@ def create_app():
     @app.route("/assets/<path:name>")
     def asset(name):
         return send_from_directory(ASSET_DIR, name)
+
+    @app.after_request
+    def harden(response):
+        """Headers the browser should enforce, since the link is public.
+
+        The 301 to HTTPS does not protect a first plain-HTTP visit, nothing
+        stopped the admin page being framed, and no policy said where scripts
+        may come from. Inline script is forbidden outright - the two pages that
+        had any now load it from /static - while inline *styles* are allowed,
+        because the templates colour swatches that way and a style attribute
+        cannot execute.
+        """
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data:; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self'; "
+            "form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        if request.is_secure:
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
 
     @app.context_processor
     def helpers():

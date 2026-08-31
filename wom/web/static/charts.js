@@ -55,8 +55,19 @@
 
   function hideTip() { tip.style("opacity", 0); }
 
+  /* The tooltip is assembled as HTML, so everything that came from the
+     server is escaped on the way in. A display name arrives from the Wise Old
+     Man API; if one ever carried markup it would otherwise run here. */
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, function (ch) {
+      return {"&": "&amp;", "<": "&lt;", ">": "&gt;",
+              '"': "&quot;", "'": "&#39;"}[ch];
+    });
+  }
+
   function swatch(color, name) {
-    return '<span class="tip-dot" style="background:' + color + '"></span>' + name;
+    return '<span class="tip-dot" style="background:' +
+      escapeHtml(color) + '"></span>' + escapeHtml(name);
   }
 
   /* -- a card ---------------------------------------------------------- */
@@ -244,8 +255,9 @@
         .attr("stroke", COLOR.panel).attr("stroke-width", 0.5)
         .on("mouseenter mousemove touchstart touchmove", function (event, d) {
           showTip(event, swatch(s.color, s.name) + '<div class="tip-sub">' +
-            data.metrics[d.i].label + ": " + full.format(Math.round(d.v)) +
-            " " + data.unit + "</div>");
+            escapeHtml(data.metrics[d.i].label) + ": " +
+            full.format(Math.round(d.v)) + " " + escapeHtml(data.unit) +
+            "</div>");
         })
         .on("mouseleave", hideTip);
     });
@@ -432,7 +444,7 @@
         picks.forEach(function (d) {
           var value = fmt.style === "level"
             ? "level " + full.format(d.p[1]) + " (" + full.format(d.p[2]) + " XP)"
-            : full.format(d.p[1]) + " " + fmt.unit;
+            : full.format(d.p[1]) + " " + escapeHtml(fmt.unit || "");
           html += '<div class="tip-sub">' + swatch(d.s.color, d.s.name) +
             " &middot; " + value + "</div>";
         });

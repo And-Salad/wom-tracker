@@ -112,31 +112,12 @@
         {% endfor %}
       </table>
     </div>
-    <form method="post" action="/admin/prune" style="margin-top: 12px"
-          onsubmit="return confirm('Delete every stored snapshot for players no longer on the list?')">
+    <form method="post" action="/admin/prune" id="prune" style="margin-top: 12px">
       <button type="submit">Delete data for players off the list</button>
     </form>
   </div>
 {% endblock %}
 
 {% block scripts %}
-<script>
-  // Poll while something is running, so the page shows progress without a reload.
-  (function () {
-    var box = document.getElementById("job");
-    if (!box) { return; }
-    var note = box.querySelector(".job-note");
-    var out = box.querySelector(".job-log");
-    function tick() {
-      fetch("/admin/status").then(function (r) { return r.json(); }).then(function (job) {
-        note.textContent = job.note;
-        out.textContent = (job.lines || []).join("\n");
-        box.classList.toggle("busy", !!job.running);
-        box.classList.toggle("failed", !!job.failed);
-        if (job.running) { setTimeout(tick, 1200); }
-      }).catch(function () { /* the server will be back */ });
-    }
-    tick();
-  })();
-</script>
+<script src="/static/admin.js"></script>
 {% endblock %}

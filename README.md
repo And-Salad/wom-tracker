@@ -171,9 +171,16 @@ days, not UTC ones - the page sends its offset, because otherwise an Eastern
 viewer asking for "to 30 August" would stop at 20:00 their time and lose that
 day's last reading. A date that will not parse is refused with a 400 rather
 than ignored, since ignoring it exports the whole history while looking
-filtered. Exports are budgeted at six a minute per address: a full one walks
-every stored reading, and the scheduler and the summary writer are threads in
-the same process on one shared vCPU. `db.export_rows` yields in
+filtered. Exports are budgeted, because a full one is about 5 MB of egress and walks
+every stored reading on a machine that also runs the schedule: five per
+address per six hours, and twenty a day across everyone as the backstop, which
+is roughly 100 MB a day at today's size. Signing in as admin skips both.
+
+That budgeting only works because `ProxyFix` is applied: behind Fly's proxy
+every request arrives from an internal address, so before it, "per address"
+was one shared bucket - and six bad admin sign-ins from anyone locked out
+everyone, which is a better denial of service than the brute force it was
+meant to stop. `db.export_rows` yields in
 batches and the response streams, so asking for the whole history (66,000 rows
 here, 5 MB) neither builds a list in memory nor times out. A metric the account
 is unranked on exports as blank rather than the API's `-1`, so an empty cell
@@ -206,6 +213,13 @@ the summary settings, the colours, the prompts, and buttons to run an update,
 a round of summaries, or a history re-import. Those buttons run their work on a
 background thread and report progress to a page that polls, rather than holding
 a request open for a minute.
+
+Responses carry a CSP that forbids inline script outright - the two pages that
+had any load it from `/static` instead - plus `nosniff`, `DENY` framing,
+`no-referrer` and, over HTTPS, HSTS. Anything server-supplied that reaches the
+chart tooltips is escaped, since those are assembled as HTML, and text columns
+in the CSV export are prefixed when they start with a character a spreadsheet
+would run as a formula.
 
 Admin exists only when `WOM_ADMIN_PASSWORD` is set - the routes are not
 registered otherwise. The session cookie is `Secure`, `HttpOnly` and
