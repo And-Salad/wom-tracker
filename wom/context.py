@@ -1,9 +1,10 @@
 """What a chart is handed to build itself.
 
-Both front ends used to share this; only the web one is left, but it stays
-its own module because the chart builders in wom/web/data.py and the metric
-helpers in wom/db.py both lean on it and neither owns it.
+It is its own module rather than part of wom/web/data.py because the chart
+builders and the summary digests both lean on it and neither owns it.
 """
+
+from .colors import player_color
 
 
 class ViewContext:
@@ -65,7 +66,6 @@ class ViewContext:
 
     def color_for(self, player):
         """The chart colour for a player row or username - override, else palette."""
-        from ..colors import player_color
         username = player if isinstance(player, str) else player["username"]
         index = next((i for i, row in enumerate(self.players)
                       if row["username"] == username), 0)
