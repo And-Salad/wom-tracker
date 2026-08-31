@@ -7,8 +7,6 @@ small fetch instead of a page load and a server-side render.
 
 import logging
 import os
-import threading
-import time
 from datetime import datetime, timedelta, timezone
 
 from flask import (Flask, Response, abort, jsonify, render_template, request,
@@ -26,59 +24,33 @@ from ..util import (fmt_ago, fmt_datetime, fmt_int, parse_api_time,
 from . import data as web_data
 from .admin import PASSWORD_ENV, admin as admin_blueprint, admin_enabled
 from .jobs import JobRunner
+from .limits import Budget, Tripwire, client_address
 
 log = logging.getLogger(__name__)
 
 
-class _Budget:
-    """Calls allowed per key over a window. One instance per bucket."""
-
-    def __init__(self, allowance, window):
-        self.allowance = allowance
-        self.window = window
-        self._seen = {}
-        self._lock = threading.Lock()
-
-    def reset(self):
-        with self._lock:
-            self._seen.clear()
-
-    def check(self, key):
-        """Seconds to wait, or 0 if a call under this key may go ahead.
-
-        Only a call that is going ahead is recorded, so a request refused by
-        another bucket does not eat this one's allowance.
-        """
-        now = time.monotonic()
-        with self._lock:
-            calls = [t for t in self._seen.get(key, ()) if now - t < self.window]
-            self._seen[key] = calls
-            if len(calls) >= self.allowance:
-                return max(1, int(self.window - (now - calls[0])))
-            return 0
-
-    def record(self, key):
-        now = time.monotonic()
-        with self._lock:
-            calls = [t for t in self._seen.get(key, ()) if now - t < self.window]
-            calls.append(now)
-            self._seen[key] = calls
-            if len(self._seen) > 1024:    # addresses that stopped asking
-                self._seen = {k: v for k, v in self._seen.items() if v}
-
-
 # A full export is about 5 MB of egress and walks every stored reading, on a
-# machine that also runs the schedule. Nobody browsing needs many: five per
-# viewer per six hours, and twenty a day across everyone as the backstop, is
-# roughly 100 MB a day at today's size. Signing in as admin skips both.
+# machine that also runs the schedule. Five per viewer per six hours, twenty a
+# day across everyone as the backstop: roughly 100 MB a day at today's size.
 EXPORTS_PER_ADDRESS = 5
 EXPORT_ADDRESS_WINDOW = 6 * 3600
 EXPORTS_PER_DAY = 20
 EXPORT_DAY_WINDOW = 24 * 3600
 _EVERYONE = "*"
 
-_export_per_address = _Budget(EXPORTS_PER_ADDRESS, EXPORT_ADDRESS_WINDOW)
-_export_overall = _Budget(EXPORTS_PER_DAY, EXPORT_DAY_WINDOW)
+# The chart and player endpoints. A heavy human session is a couple of hundred
+# calls in five minutes; one scripted client managed 8,400 in the same time.
+# The per-address ceiling sits well above the first and far below the second,
+# and the tripwire above anything six people could produce between them.
+API_PER_ADDRESS = 600
+API_ADDRESS_WINDOW = 300
+API_TRIP_TOTAL = 3000
+API_TRIP_WINDOW = 300
+
+_export_per_address = Budget(EXPORTS_PER_ADDRESS, EXPORT_ADDRESS_WINDOW)
+_export_overall = Budget(EXPORTS_PER_DAY, EXPORT_DAY_WINDOW)
+_api_per_address = Budget(API_PER_ADDRESS, API_ADDRESS_WINDOW)
+_api_tripwire = Tripwire(API_TRIP_TOTAL, API_TRIP_WINDOW)
 
 
 def _export_allowed(address, is_admin):
@@ -186,36 +158,10 @@ def _json_stream(rows):
     yield "]"
 
 
-# Set by the proxy in front of us, and not passed through from the client, so
-# these can be believed where a bare X-Forwarded-For cannot.
-CLIENT_IP_HEADERS = ("Fly-Client-IP", "CF-Connecting-IP", "True-Client-IP")
-
-
 def _is_local(host):
+    """True for a hostname reached over plain HTTP in normal use."""
     name = (host or "").split(":")[0].lower()
     return name in ("localhost", "127.0.0.1", "::1", "") or name.endswith(".local")
-
-
-def client_address():
-    """The caller's address as well as we can know it, and where it came from.
-
-    Behind a proxy `remote_addr` is the proxy, which would put every visitor
-    in one throttling bucket: six bad sign-ins from anyone would lock out
-    everyone. Returns (address, source) so a log line can say which header
-    answered.
-    """
-    for header in CLIENT_IP_HEADERS:
-        value = (request.headers.get(header) or "").strip()
-        if value:
-            return value, header
-    # Leftmost is the original client. Note that waitress strips X-Forwarded-*
-    # unless it is told to trust a proxy, so on Fly this is a fallback for
-    # other deployments rather than the path normally taken - Fly-Client-IP is
-    # not a forwarded header and comes through untouched.
-    forwarded = (request.headers.get("X-Forwarded-For") or "").strip()
-    if forwarded:
-        return forwarded.split(",")[0].strip(), "X-Forwarded-For"
-    return request.remote_addr or "?", "remote_addr"
 
 
 def _coverage_note(baseline, since):
@@ -260,8 +206,10 @@ def create_app():
     # Set by web_app.py when it starts the scheduler; None when the dashboard
     # is served without one, in which case there is nothing to collide with.
     app.config.setdefault("SCHEDULER", None)
-    _export_per_address.reset()
-    _export_overall.reset()
+    app.config["TRIPWIRE"] = _api_tripwire
+    for budget in (_export_per_address, _export_overall, _api_per_address):
+        budget.reset()
+    _api_tripwire.reset()
 
     # Admin is registered only when a password exists. A deployment that
     # forgets to set one has no admin routes at all, rather than open ones.
@@ -461,8 +409,41 @@ def create_app():
                                    request.args.get("period", "").title() or "Week"),
                                selected={p["username"] for p in players})
 
+    def guard_data_endpoint():
+        """Refuse a data request that is abuse rather than browsing.
+
+        Returns a response to send instead, or None to carry on. Admin is not
+        budgeted, and can still read everything while the wire is tripped -
+        otherwise clearing it would mean working blind.
+        """
+        from flask import session as _session
+        if _session.get("wom_admin"):
+            return None
+        if _api_tripwire.tripped:
+            return Response(
+                "The dashboard has paused its data endpoints after a burst of "
+                "automated traffic. An admin needs to resume it.",
+                status=503, mimetype="text/plain", headers={"Retry-After": "3600"})
+        address, _source = client_address()
+        waiting = _api_per_address.check(address)
+        if waiting:
+            return Response(
+                "Too many requests. Try again in {} seconds.".format(waiting),
+                status=429, mimetype="text/plain",
+                headers={"Retry-After": str(waiting)})
+        _api_per_address.record(address)
+        if _api_tripwire.note(address):
+            return Response(
+                "The dashboard has paused its data endpoints after a burst of "
+                "automated traffic. An admin needs to resume it.",
+                status=503, mimetype="text/plain", headers={"Retry-After": "3600"})
+        return None
+
     @app.route("/api/player/<username>")
     def player_detail(username):
+        refused = guard_data_endpoint()
+        if refused is not None:
+            return refused
         """One player's current figures and what moved, for the expanding rows.
 
         Fetched when a row is opened rather than rendered with the page: six
@@ -566,6 +547,9 @@ def create_app():
 
     @app.route("/api/chart/<key>")
     def chart_data(key):
+        refused = guard_data_endpoint()
+        if refused is not None:
+            return refused
         config = settings()
         players = chosen(config, roster(config), strict=True)
         period = periods.by_label(request.args.get("period", "").title() or "Week")

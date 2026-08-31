@@ -36,6 +36,20 @@
     </div>
   </div>
 
+  {% if tripwire and tripwire.tripped %}
+    <div class="card" style="border-color:#d9a441">
+      <h3>Data endpoints are paused</h3>
+      <p class="hint">More than {{ tripwire.allowance }} chart and player
+        requests arrived within {{ tripwire.window // 60 }} minutes, which is
+        far more than browsing produces, so the dashboard stopped answering
+        them. The pages, the schedule and this page are unaffected.</p>
+      <p class="hint">Tripped by <code>{{ tripwire.by }}</code>.</p>
+      <form method="post" action="/admin/resume">
+        <button type="submit">Resume serving data</button>
+      </form>
+    </div>
+  {% endif %}
+
   <div class="card">
     <h3>Tracked players</h3>
     <p class="hint">One name per line, in the order you want them listed.</p>

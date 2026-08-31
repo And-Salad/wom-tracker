@@ -21,6 +21,7 @@ from .. import periods, summaries as core
 from ..colors import normalise, player_color, set_player_color
 from ..config import Config, ENV_KEYS, normalise_usernames
 from ..summaries import SUMMARY_MODELS
+from .limits import client_address
 
 log = logging.getLogger(__name__)
 
@@ -88,7 +89,6 @@ def requires_login(view):
 def login():
     error = None
     if request.method == "POST":
-        from .app import client_address
         address, source = client_address()
         waiting = _locked_out(address)
         if waiting:
@@ -133,10 +133,12 @@ def settings():
             "snapshots": database.snapshot_count(row["id"]) if row is not None else 0,
             "updated": row["updated_at"] if row is not None else None,
         })
+    tripwire = current_app.config.get("TRIPWIRE")
     return render_template(
         "admin.html", page="admin", config=config, roster=roster,
         models=SUMMARY_MODELS, env_keys=ENV_KEYS,
         job=current_app.config["JOBS"].status(),
+        tripwire=tripwire.status() if tripwire else None,
         periods=[p.key for p in periods.PERIODS])
 
 
@@ -192,6 +194,21 @@ def prune():
 
 
 # -- prompts --------------------------------------------------------------
+
+@admin.route("/admin/resume", methods=["POST"])
+@requires_login
+def resume():
+    """Clear the tripwire and serve data again."""
+    tripwire = current_app.config.get("TRIPWIRE")
+    if tripwire is None or not tripwire.tripped:
+        flash("Nothing to resume - the data endpoints are already serving.")
+    else:
+        was = tripwire.tripped_by
+        tripwire.reset()
+        log.warning("admin resumed the data endpoints (tripped by %s)", was)
+        flash("Serving again. It was tripped by {}.".format(was))
+    return redirect(url_for("admin.settings"))
+
 
 @admin.route("/admin/prompts", methods=["GET", "POST"])
 @requires_login

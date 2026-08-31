@@ -176,11 +176,27 @@ every stored reading on a machine that also runs the schedule: five per
 address per six hours, and twenty a day across everyone as the backstop, which
 is roughly 100 MB a day at today's size. Signing in as admin skips both.
 
-That budgeting only works because `ProxyFix` is applied: behind Fly's proxy
-every request arrives from an internal address, so before it, "per address"
-was one shared bucket - and six bad admin sign-ins from anyone locked out
-everyone, which is a better denial of service than the brute force it was
-meant to stop. `db.export_rows` yields in
+The chart and player endpoints carry a much higher ceiling - 600 per address
+per five minutes, against a heavy human session of a couple of hundred and a
+scripted client that managed 8,400 - plus a tripwire on the total across
+everyone. Past 3,000 in five minutes it latches: the data endpoints answer 503
+until an admin presses **Resume serving data**. That is deliberately a stop
+rather than a slowdown, so an abusive run costs one burst instead of hours of
+billed traffic. The trade is real and worth knowing: whoever trips it takes
+the data offline for everyone until you clear it, which is why the threshold
+sits far above anything people produce. The pages, the schedule and the admin
+page keep working throughout, and an admin can still read the data while it is
+tripped - otherwise clearing it would mean working blind.
+
+That budgeting only works because the client address is read from a header the
+proxy sets: behind Fly's proxy every
+request arrives from an internal address, so "per address" was one shared
+bucket - six bad admin sign-ins from anyone locked out everyone, which is a
+better denial of service than the brute force it was meant to stop. `ProxyFix`
+is not enough on its own: it reads the rightmost `X-Forwarded-For` entry, which
+is the proxy's own hop, and waitress strips those headers anyway unless told to
+trust a proxy. `Fly-Client-IP` is set by the proxy, is not a forwarded header,
+and survives. `wom/web/limits.py` holds all of this. `db.export_rows` yields in
 batches and the response streams, so asking for the whole history (66,000 rows
 here, 5 MB) neither builds a list in memory nor times out. A metric the account
 is unranked on exports as blank rather than the API's `-1`, so an empty cell
