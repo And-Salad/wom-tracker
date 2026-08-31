@@ -110,6 +110,9 @@
       // newest one may draw, whatever order the replies come back in.
       if (mine !== self.seq) { return; }
       self.host.classed("loading", false);
+      // Every answer says what window it answered over; the sidebar's dates
+      // show it, so a preset never leaves them reading something else.
+      if (window.Sidebar && payload.span) { window.Sidebar.showWindow(payload.span); }
       self.data = payload;
       self.draw();
     }).catch(function (err) {

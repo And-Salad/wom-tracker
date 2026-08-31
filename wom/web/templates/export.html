@@ -1,17 +1,7 @@
 {% extends "base.html" %}
 {% set page = 'export' %}
-{% set live = true %}
-{% set live_note = "The table updates as you tick." %}
+{% set live_note = "The table and chart update as you change these." %}
 {% block title %}Data - WOM Tracker{% endblock %}
-
-{% block sidebar_extra %}
-  <h2 style="margin-top:16px">Period</h2>
-  <select id="period" name="period">
-    {% for label in periods %}
-      <option value="{{ label }}" {{ 'selected' if label == period.label }}>{{ label }}</option>
-    {% endfor %}
-  </select>
-{% endblock %}
 
 {% block content %}
   <div class="card">
@@ -40,20 +30,9 @@
         <span>Metric</span>
         <select id="metric"></select>
       </label>
-      <div class="dates" id="dates">
-        <label class="field">
-          <span>From</span>
-          <input type="date" id="from">
-        </label>
-        <label class="field">
-          <span>To</span>
-          <input type="date" id="to">
-        </label>
-        <button type="button" id="unlock" class="clear" title="Back to the period"
-                aria-label="Clear these dates and follow the period" hidden>&times;</button>
-      </div>
+      <p class="hint count" id="count" style="margin-left:auto; align-self: end;
+                                              padding-bottom: 8px"></p>
     </div>
-    <p class="hint count" id="count"></p>
 
     <div class="scroll grid-scroll">
       <table class="grid" id="table">
@@ -99,7 +78,7 @@
         <strong id="who">players ticked in the sidebar</strong>.</p>
 
       <input type="hidden" name="picked" value="1">
-      <input type="hidden" name="tzoffset" id="tzoffset" value="">
+      <input type="hidden" name="tzoffset" id="export-tzoffset" value="">
       <div id="player-inputs"></div>
 
       <h4>Metrics</h4>

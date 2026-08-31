@@ -21,7 +21,7 @@ def catalog():
     return [spec.as_dict() for spec in specs()]
 
 
-def build(database, config, key, period, players, choice=None):
+def build(database, config, key, span, players, choice=None):
     """One chart's data, or an {"empty": message} payload when there is none."""
     spec = BY_KEY.get(key)
     if spec is None or spec.build is None:
@@ -29,7 +29,7 @@ def build(database, config, key, period, players, choice=None):
     if not players:
         return _empty("Include at least one player using the sidebar swatches.")
     ctx = ViewContext(database, config, players, selected=players,
-                      period=period, choice=choice)
+                      span=span, choice=choice)
     try:
         return spec.build(ctx, choice)
     except Exception as exc:                      # one bad chart, not a bad page
@@ -82,8 +82,7 @@ def _standings(ctx, _choice):
             "kills": round(sum(bosses.values())),
         })
     if not any(r["xp"] or r["kills"] for r in rows):
-        return _empty("Nobody gained anything in the last {}.".format(
-            ctx.period.label.lower()))
+        return _empty("Nobody gained anything in {}.".format(ctx.span.phrase))
     rows.sort(key=lambda r: -r["xp"])
     return {"type": "standings", "rows": rows,
             "coverage": _coverage(ctx, rows)}
@@ -93,7 +92,7 @@ def _standings(ctx, _choice):
 def _skill_gains(ctx, _choice):
     return _stacked(ctx, "skill", SKILL_ORDER, "Experience gained",
                     "experience gained",
-                    "No experience gained by the included players in the last {}.")
+                    "No experience gained by the included players in {}.")
 
 
 @chart("boss_gains")
@@ -104,9 +103,9 @@ def _boss_gains(ctx, _choice):
         for metric, value in per_player.items():
             totals[metric] = totals.get(metric, 0.0) + value
     ranked = [m for m, _v in sorted(totals.items(), key=lambda kv: -kv[1])][:TOP_BOSSES]
-    empty = "No boss kills by the included players in the last {}."
+    empty = "No boss kills by the included players in {}."
     if not ranked:
-        return _empty(empty.format(ctx.period.label.lower()))
+        return _empty(empty.format(ctx.span.phrase))
     return _stacked(ctx, "boss", ranked, "Kills gained", "kills gained", empty,
                     gains=gains)
 
@@ -120,7 +119,7 @@ def _level_trend(ctx, choice):
         ylabel="{} level".format("Total" if metric == "overall"
                                  else pretty_metric(metric)),
         tooltip={"style": "level"},
-        empty="No {} history for the included players in the last {{}}.".format(
+        empty="No {} history for the included players in {{}}.".format(
             choice.lower()))
 
 
@@ -134,7 +133,7 @@ def _log_and_clues(ctx, choice):
         ylabel="Collection log slots" if log_slots
                else "{} completed".format(choice),
         tooltip={"style": "count", "unit": "slots" if log_slots else "completed"},
-        empty="No {} history for the included players in the last {{}}.".format(
+        empty="No {} history for the included players in {{}}.".format(
             choice.lower()))
 
 
@@ -155,7 +154,7 @@ def _stacked(ctx, kind, metrics, ylabel, unit, empty, gains=None):
                        "color": ctx.color_for(player),
                        "values": values})
     if not series:
-        return _empty(empty.format(ctx.period.label.lower()))
+        return _empty(empty.format(ctx.span.phrase))
     return {
         "type": "stacked", "ylabel": ylabel, "unit": unit, "iconKind": kind,
         "metrics": [{"key": m, "label": pretty_metric(m)} for m in metrics],
@@ -170,9 +169,13 @@ def _coverage(ctx, series):
     three weeks ago still gets a bar on the Year chart, and without this the
     viewer has no way to know they are comparing a year against three weeks.
     """
-    now = datetime.now(timezone.utc)
-    opened = parse_api_time(ctx.period.start_iso())
-    asked = (now - opened).total_seconds()
+    # Measured against the window, not against now: a range that closed in
+    # June covers what it covers, and comparing it to today would report every
+    # player as short of it.
+    closes = (parse_api_time(ctx.span.until) if ctx.span.until
+              else datetime.now(timezone.utc))
+    opened = parse_api_time(ctx.span.since)
+    asked = (closes - opened).total_seconds()
     notes = []
     for entry in series:
         player = next((p for p in ctx.selected
@@ -186,7 +189,7 @@ def _coverage(ctx, series):
             continue
         notes.append({"name": entry["name"], "color": entry["color"],
                       "since": measured.strftime("%d %b %Y"),
-                      "days": max(1, int((now - measured).total_seconds() // 86400))})
+                      "days": max(1, int((closes - measured).total_seconds() // 86400))})
     return notes
 
 
@@ -221,11 +224,11 @@ def trend_series(database, players, color_for, kind, metric, field,
 
 def _trend(ctx, kind, metric, field, ylabel, tooltip, empty):
     """One line per player, sampled at whatever cadence the period wants."""
-    since = ctx.period.start_iso()
+    since = ctx.span.since
     series = trend_series(ctx.db, ctx.selected, ctx.color_for, kind, metric,
-                          field, since, bucket=ctx.period.bucket)
+                          field, since, ctx.span.until, bucket=ctx.span.bucket)
     if not series:
-        return _empty(empty.format(ctx.period.label.lower()))
+        return _empty(empty.format(ctx.span.phrase))
     start = parse_api_time(since)
     return {
         "type": "trend", "ylabel": ylabel, "tooltip": tooltip,

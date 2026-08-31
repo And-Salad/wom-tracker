@@ -11,11 +11,6 @@
 
   var full = new Intl.NumberFormat();
 
-  function periodValue() {
-    var picker = document.getElementById("period");
-    return picker ? picker.value : "Week";
-  }
-
   function el(tag, className, text) {
     var node = document.createElement(tag);
     if (className) { node.className = className; }
@@ -117,64 +112,127 @@
     });
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
-    var rows = [].slice.call(document.querySelectorAll("tr.player-row"));
-    if (!rows.length) { return; }
+  /* The roster is rebuilt here as well as rendered by the server, so the
+     sidebar's ticks need no page reload. The server still writes the first
+     copy, which is what a reader with no JavaScript gets. */
+  function rowNode(row) {
+    var tr = el("tr", "player-row");
+    tr.dataset.username = row.username;
+    tr.tabIndex = 0;
+    tr.setAttribute("role", "button");
+    tr.setAttribute("aria-expanded", "false");
 
-    rows.forEach(function (row) {
-      var detailRow = row.nextElementSibling;
-      var host = detailRow.querySelector(".detail-body");
-      var shown = null;              // the period the body currently reflects
+    var name = el("td", "name");
+    name.appendChild(el("span", "twist"));
+    var dot = el("span", "swatch");
+    dot.style.background = row.color;
+    dot.style.display = "inline-block";
+    dot.style.marginRight = "6px";
+    name.appendChild(dot);
+    name.appendChild(document.createTextNode(row.name));
+    tr.appendChild(name);
 
-      function open() { return !detailRow.hidden; }
-
-      function load() {
-        var wanted = periodValue();
-        if (shown === wanted) { return; }
-        host.textContent = "";
-        host.appendChild(el("p", "hint", "Loading..."));
-        var mine = wanted;
-        fetch("/api/player/" + encodeURIComponent(row.dataset.username) +
-              "?period=" + encodeURIComponent(wanted))
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (mine !== periodValue()) { return; }   // the period moved on
-            shown = mine;
-            render(host, data);
-          })
-          .catch(function (err) {
-            host.textContent = "";
-            host.appendChild(el("p", "hint", "Could not load this player: " + err));
-          });
-      }
-
-      function toggle() {
-        detailRow.hidden = open();
-        row.classList.toggle("open", !detailRow.hidden);
-        row.setAttribute("aria-expanded", String(!detailRow.hidden));
-        if (!detailRow.hidden) { load(); }
-      }
-
-      row.addEventListener("click", toggle);
-      // The row is a button, so it answers to the keyboard like one.
-      row.addEventListener("keydown", function (event) {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          toggle();
-        }
-      });
-      row.__reload = function () { shown = null; if (open()) { load(); } };
+    [["dim", row.type], ["num", row.combat], ["num", row.total_level],
+     ["num", row.exp], ["num", row.ehp], ["num", row.ehb],
+     ["dim", row.updated]].forEach(function (cell) {
+      tr.appendChild(el("td", cell[0], cell[1]));
     });
 
-    var picker = document.getElementById("period");
-    if (picker) {
-      picker.addEventListener("change", function () {
-        // Keep the address bar in step so the view can be linked.
-        var params = new URLSearchParams(location.search);
-        params.set("period", picker.value);
-        history.replaceState(null, "", "/players?" + params.toString());
-        rows.forEach(function (row) { row.__reload(); });
+    var detail = el("tr", "detail-row");
+    detail.hidden = true;
+    var holder = el("td");
+    holder.colSpan = 8;
+    holder.appendChild(el("div", "detail-body"));
+    detail.appendChild(holder);
+    return [tr, detail];
+  }
+
+  function wire(row) {
+    var detailRow = row.nextElementSibling;
+    var host = detailRow.querySelector(".detail-body");
+    var shown = null;              // the window the body currently reflects
+
+    function open() { return !detailRow.hidden; }
+
+    function load() {
+      var wanted = window.Sidebar.query();
+      if (shown === wanted) { return; }
+      host.textContent = "";
+      host.appendChild(el("p", "hint", "Loading..."));
+      var mine = wanted;
+      fetch("/api/player/" + encodeURIComponent(row.dataset.username) +
+            "?" + wanted)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          // The window moved on while this was in flight.
+          if (mine !== window.Sidebar.query()) { return; }
+          shown = mine;
+          render(host, data);
+        })
+        .catch(function (err) {
+          host.textContent = "";
+          host.appendChild(el("p", "hint", "Could not load this player: " + err));
+        });
+    }
+
+    function toggle() {
+      detailRow.hidden = open();
+      row.classList.toggle("open", !detailRow.hidden);
+      row.setAttribute("aria-expanded", String(!detailRow.hidden));
+      if (!detailRow.hidden) { load(); }
+    }
+
+    row.addEventListener("click", toggle);
+    // The row is a button, so it answers to the keyboard like one.
+    row.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggle();
+      }
+    });
+    row.__reload = function () { shown = null; if (open()) { load(); } };
+    row.__open = function () { if (!open()) { toggle(); } };
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    var body = document.querySelector("table tbody");
+    if (!body) { return; }
+    [].slice.call(body.querySelectorAll("tr.player-row")).forEach(wire);
+
+    function refill(rows, reopen) {
+      body.textContent = "";
+      if (!rows.length) {
+        var empty = el("tr");
+        var cell = el("td", "dim", "No players are ticked.");
+        cell.colSpan = 8;
+        empty.appendChild(cell);
+        body.appendChild(empty);
+        return;
+      }
+      rows.forEach(function (row) {
+        var pair = rowNode(row);
+        body.appendChild(pair[0]);
+        body.appendChild(pair[1]);
+        wire(pair[0]);
+        // A row the reader had open stays open across a change of window.
+        if (reopen[row.username]) { pair[0].__open(); }
       });
     }
+
+    var seq = 0;
+    window.Sidebar.onChange(function (query) {
+      var open = {};
+      [].slice.call(body.querySelectorAll("tr.player-row.open"))
+        .forEach(function (row) { open[row.dataset.username] = true; });
+      var mine = ++seq;
+      fetch("/api/players?" + query)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (mine !== seq) { return; }
+          window.Sidebar.showWindow(data.span);
+          refill(data.rows || [], open);
+        })
+        .catch(function () { /* the table on screen is still true */ });
+    });
   });
 })();

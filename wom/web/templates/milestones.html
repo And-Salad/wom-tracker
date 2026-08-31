@@ -1,20 +1,12 @@
 {% extends "base.html" %}
 {% set page = 'milestones' %}
+{% set live_note = "The feed updates as you change these." %}
 {% block title %}Milestones - WOM Tracker{% endblock %}
-
-{% block sidebar_extra %}
-  <h2 style="margin-top:16px">Since</h2>
-  <select name="period">
-    {% for label in periods %}
-      <option value="{{ label }}" {{ 'selected' if label == period }}>{{ label }}</option>
-    {% endfor %}
-  </select>
-{% endblock %}
 
 {% block content %}
   <div class="card">
     <h3>Milestones</h3>
-    <p class="hint">
+    <p class="hint" id="count">
       {{ feed | length }} achievement{{ '' if feed | length == 1 else 's' }},
       newest first. A leading ~ means Wise Old Man only knows the date roughly.
     </p>
@@ -23,7 +15,7 @@
         <thead>
           <tr><th></th><th>Achieved</th><th></th><th>Player</th><th>Milestone</th></tr>
         </thead>
-        <tbody>
+        <tbody id="feed">
           {% for row in feed %}
             <tr>
               <td>
@@ -44,4 +36,8 @@
       </table>
     </div>
   </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/milestones.js"></script>
 {% endblock %}

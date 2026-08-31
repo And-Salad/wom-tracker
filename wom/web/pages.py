@@ -4,69 +4,58 @@ import os
 
 from flask import Blueprint, abort, render_template, send_file, send_from_directory
 
-from .. import periods
 from ..icons import ASSET_DIR, icon_path
 from . import views
 from .data import catalog
-from .selection import (chosen, colors, current_period, database, page_context,
-                        roster, settings, status)
+from .selection import database, page_context, status
 
 pages = Blueprint("pages", __name__)
+
+
+def _shell(scope):
+    """What every page hands the sidebar: who, and over what window."""
+    return {"players": scope["players"],
+            "selected": {p["username"] for p in scope["selected"]},
+            "colors": scope["palette"],
+            "span": scope["span"].as_dict(),
+            "period_labels": scope["period_labels"],
+            "status": status(scope["config"])}
 
 
 @pages.route("/")
 def dashboard():
     scope = page_context()
-    return render_template(
-        "dashboard.html", players=scope["players"],
-        selected={p["username"] for p in scope["selected"]},
-        colors=scope["palette"], periods=periods.labels(),
-        period=current_period(), specs=catalog(),
-        status=status(scope["config"]))
+    return render_template("dashboard.html", specs=catalog(), **_shell(scope))
 
 
 @pages.route("/milestones")
 def milestones():
-    from flask import request
-
     scope = page_context()
-    label = request.args.get("period", "All time")
-    period = None if label == "All time" else periods.by_label(label)
+    span = scope["span"]
     return render_template(
-        "milestones.html", players=scope["players"],
-        selected={p["username"] for p in scope["selected"]},
-        colors=scope["palette"],
-        periods=["All time"] + periods.labels(), period=label,
+        "milestones.html",
         feed=views.milestone_feed(database(), scope["selected"], scope["palette"],
-                                  since=period.start_iso() if period else None),
-        status=status(scope["config"]))
+                                  since=span.since, until=span.until),
+        **_shell(scope))
 
 
 @pages.route("/summaries")
 def summaries_page():
     scope = page_context()
     return render_template(
-        "summaries.html", players=scope["players"],
-        selected={p["username"] for p in scope["selected"]},
-        colors=scope["palette"],
+        "summaries.html",
         latest=views.latest_round_ups(database()),
         tree=views.summary_tree(database(), scope["selected"], scope["palette"]),
-        status=status(scope["config"]))
+        **_shell(scope))
 
 
 @pages.route("/players")
 def players_page():
-    config = settings()
-    players = roster(config)
-    palette = colors(config, players)
-    # The ticks filter every other page; on this one they used to do nothing.
-    shown = chosen(players)
+    scope = page_context()
     return render_template(
-        "players.html", rows=views.player_rows(database(), shown, palette),
-        players=players, colors=palette,
-        selected={p["username"] for p in shown},
-        periods=periods.labels(), period=current_period(),
-        status=status(config))
+        "players.html",
+        rows=views.player_rows(database(), scope["selected"], scope["palette"]),
+        **_shell(scope))
 
 
 # -- files ----------------------------------------------------------------

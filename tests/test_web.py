@@ -257,7 +257,7 @@ def test_the_table_carries_every_metric_with_its_movement(client, app):
     assert rows[("attack", "skill")]["value"] == 5000
     assert rows[("attack", "skill")]["gained"] == 4000
     assert rows[("zulrah", "boss")]["gained"] == 40
-    assert body["period"] == "Week"
+    assert body["span"]["label"] == "Week"
 
 
 def test_the_table_honours_the_player_ticks(client, app):
@@ -277,9 +277,10 @@ def test_the_table_carries_the_colour_the_charts_use(client, app):
 def test_table_dates_snap_to_the_period_when_none_are_given(client, app):
     """The inputs have to show the window in force, in the viewer's days."""
     seed(app)
-    window = client.get("/api/table?period=Week&tzoffset=0").get_json()["window"]
-    assert window["from"] and window["to"], window
-    assert window["from"] < window["to"]
+    span = client.get("/api/table?period=Week&tzoffset=0").get_json()["span"]
+    assert span["from"] and span["to"], span
+    assert span["from"] < span["to"]
+    assert span["custom"] is False, "a preset is not a custom range"
 
 
 def test_dates_override_the_period_and_close_the_window(client, app):
@@ -294,7 +295,9 @@ def test_dates_override_the_period_and_close_the_window(client, app):
     row = [r for r in body["rows"] if r["metric"] == "attack"][0]
     assert row["value"] == 3000, "the reading inside the window, not the newest"
     assert row["gained"] == 2000, "measured from the 25th, not from today"
-    assert body["window"] == {"from": "2026-08-24", "to": "2026-08-28"}
+    assert body["span"]["from"] == "2026-08-24"
+    assert body["span"]["to"] == "2026-08-28"
+    assert body["span"]["custom"] is True
 
 
 def test_a_typo_in_a_table_date_is_refused_not_ignored(client, app):
@@ -360,3 +363,75 @@ def test_the_data_page_offers_the_export_behind_a_button(client, app):
     # The form still posts to the same places; only its housing moved.
     assert 'formaction="/export.csv"' in body
     assert 'formaction="/export.json"' in body
+
+
+# -- one sidebar, five tabs -----------------------------------------------
+
+def test_every_tab_but_round_ups_carries_the_same_window_controls(client, app):
+    seed(app)
+    for path in ("/", "/milestones", "/players", "/export"):
+        body = client.get(path).get_data(as_text=True)
+        for control in ('id="period"', 'id="from"', 'id="to"', 'id="all-none"'):
+            assert control in body, "{} is missing {}".format(path, control)
+    # Round-ups are written per calendar window, so a date range means nothing
+    # there - and a control that cannot work should not be shown.
+    round_ups = client.get("/summaries").get_data(as_text=True)
+    assert 'id="all-none"' in round_ups, "the ticks still apply"
+    assert 'id="from"' not in round_ups
+    assert 'id="period"' not in round_ups
+
+
+def test_all_time_opens_at_the_first_reading_held(client, app):
+    """Not an unbounded window: the gains baseline needs a real start."""
+    seed(app)
+    span = client.get("/api/table?period=All time&tzoffset=0").get_json()["span"]
+    assert span["from"] == "2026-08-25", span
+    assert span["choice"] == "All time"
+    assert span["custom"] is False, "a named window is not a custom range"
+
+
+def test_all_time_is_not_mangled_into_a_period(client, app):
+    """"All time".title() is "All Time", which used to fall back to Week."""
+    seed(app)
+    body = client.get("/api/table?period=All+time&tzoffset=0").get_json()
+    assert body["span"]["label"] == "All time"
+
+
+def test_a_custom_range_names_no_note(client, app):
+    """A note is filed under a calendar window; a range names none, and one
+    from some other span must not be passed off as this one's."""
+    database = seed(app)
+    from wom import periods
+    window = periods.latest_window("week")
+    database.save_summary(1, window, "A week's work.", "hash")
+
+    weekly = client.get("/api/player/zezima?period=Week").get_json()
+    assert weekly["note"], "the weekly note is offered for the weekly window"
+
+    custom = client.get("/api/player/zezima?period=Custom&from=2026-08-01"
+                        "&to=2026-08-20&tzoffset=0").get_json()
+    assert custom["note"] is None
+    assert custom["period"] == "01 Aug 2026 to 20 Aug 2026"
+
+
+def test_the_milestone_feed_closes_at_the_end_of_the_window(client, app):
+    database = seed(app)
+    database.save_achievements(1, [
+        {"name": "99 Attack", "metric": "attack", "measure": "levels",
+         "threshold": 13034431, "createdAt": "2026-08-26T00:00:00.000Z",
+         "accuracy": 1000},
+        {"name": "99 Strength", "metric": "strength", "measure": "levels",
+         "threshold": 13034431, "createdAt": "2026-08-30T00:00:00.000Z",
+         "accuracy": 1000},
+    ])
+    body = client.get("/api/milestones?period=Custom&from=2026-08-25"
+                      "&to=2026-08-27&tzoffset=0").get_json()
+    assert [row["name"] for row in body["feed"]] == ["99 Attack"], \
+        "the 30th falls outside the window and must not be listed"
+
+
+def test_the_roster_can_be_refetched_without_a_reload(client, app):
+    seed(app)
+    body = client.get("/api/players?period=Week").get_json()
+    assert [row["name"] for row in body["rows"]] == ["Zezima"]
+    assert body["span"]["choice"] == "Week"

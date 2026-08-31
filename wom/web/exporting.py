@@ -13,10 +13,8 @@ from datetime import datetime
 from flask import (Blueprint, Response, abort, current_app, render_template,
                    request, session)
 
-from .. import periods
 from .dates import BadRequest, day_bound, offset_minutes
-from .selection import (chosen, colors, current_period, database, roster,
-                        settings, status)
+from .selection import chosen, database, roster, settings
 
 exporting = Blueprint("exporting", __name__)
 
@@ -27,13 +25,10 @@ COLUMNS = ("captured_at", "player", "username", "kind", "metric",
 
 @exporting.route("/export")
 def export_page():
-    config = settings()
-    players = roster(config)
-    return render_template("export.html", players=players,
-                           colors=colors(config, players),
-                           selected={p["username"] for p in chosen(players)},
-                           kinds=KINDS, periods=periods.labels(),
-                           period=current_period(), status=status(config))
+    from .selection import page_context
+    from .pages import _shell
+    scope = page_context()
+    return render_template("export.html", kinds=KINDS, **_shell(scope))
 
 
 @exporting.route("/export.<fmt>")

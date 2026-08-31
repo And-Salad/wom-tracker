@@ -8,7 +8,6 @@ could call them and nothing could test them.
 
 from flask import current_app, request
 
-from .. import periods
 from ..colors import player_color
 from ..config import Config
 from ..scheduler import next_slot, parse_last_run
@@ -60,7 +59,19 @@ def colors(config, players):
 
 
 def current_period():
+    """The rolling period named in the request, ignoring any dates.
+
+    Still the right question for the one thing a date range cannot answer:
+    which calendar window a written note is stored under.
+    """
+    from .. import periods
     return periods.by_label(request.args.get("period", "").title() or DEFAULT_PERIOD)
+
+
+def current_span(players=None):
+    """The window the request is asking about: the period, or the dates."""
+    from .timespan import current_timespan
+    return current_timespan(database(), players)
 
 
 def status(config):
@@ -75,11 +86,15 @@ def status(config):
 
 def page_context(strict=False):
     """Everything a page needs about the current request, resolved once."""
+    from .timespan import labels
     config = settings()
     players = roster(config)
+    selected = chosen(players, strict=strict)
     return {
         "config": config,
         "players": players,
-        "selected": chosen(players, strict=strict),
+        "selected": selected,
         "palette": colors(config, players),
+        "span": current_span(selected),
+        "period_labels": labels(),
     }

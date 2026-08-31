@@ -11,13 +11,15 @@ class ViewContext:
     """Everything a chart or table function is given to render itself."""
 
     def __init__(self, database, config, players=None, selected=None,
-                 period=None, choice=None):
+                 span=None, choice=None):
         self.db = database
         self.config = config
         self.players = players or []    # every tracked player, display order
         # The players ticked in the sidebar - what the Summary tab compares.
         self.selected = list(selected) if selected is not None else list(self.players)
-        self.period = period            # a wom.periods.Period, on the Summary tab
+        # The window every figure here is measured over: a rolling period, a
+        # pair of dates, or the whole history. See wom/web/timespan.py.
+        self.span = span
         # The value from a chart's own dropdown, for charts that declare one.
         self.choice = choice
         # Per-refresh memo. A context is built fresh for every redraw, so it
@@ -35,11 +37,8 @@ class ViewContext:
         player_id = player if isinstance(player, int) else player["id"]
         key = (player_id, kind)
         if key not in self._gains:
-            since = self.period.start_iso()
-            if player_id not in self._bounds:
-                self._bounds[player_id] = self.db.snapshot_bounds(player_id, since)
             self._gains[key] = self.db.metric_gains(
-                player_id, since, kind, bounds=self._bounds[player_id])
+                player_id, self.span.since, kind, bounds=self.bounds_for(player_id))
         return self._gains[key]
 
     def bounds_for(self, player):
@@ -47,7 +46,7 @@ class ViewContext:
         player_id = player if isinstance(player, int) else player["id"]
         if player_id not in self._bounds:
             self._bounds[player_id] = self.db.snapshot_bounds(
-                player_id, self.period.start_iso())
+                player_id, self.span.since, self.span.until)
         return self._bounds[player_id]
 
     def baseline(self, player):

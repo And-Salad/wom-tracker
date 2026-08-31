@@ -1,16 +1,7 @@
 {% extends "base.html" %}
 {% set page = 'dashboard' %}
-{% set live = true %}
+{% set live_note = "Charts update as you change these." %}
 {% block title %}Overview - WOM Tracker{% endblock %}
-
-{% block sidebar_extra %}
-  <h2 style="margin-top:16px">Period</h2>
-  <select id="period" name="period">
-    {% for label in periods %}
-      <option value="{{ label }}" {{ 'selected' if label == period.label }}>{{ label }}</option>
-    {% endfor %}
-  </select>
-{% endblock %}
 
 {% block content %}
   {% for item in specs %}

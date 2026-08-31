@@ -32,6 +32,21 @@
   }
   .side h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
              color: var(--muted); margin: 0 0 10px; }
+  .side-head { display: flex; align-items: baseline; gap: 8px; }
+  .side-head h2 { margin-bottom: 6px; }
+  /* Not a button to look at, but a button to press: it sits inside a heading
+     and must not shout louder than the names under it. */
+  button.link {
+    margin-left: auto; background: none; border: none; padding: 0;
+    color: var(--accent); font-size: 12px; text-transform: uppercase;
+    letter-spacing: .04em; font-weight: 600;
+  }
+  button.link:hover { text-decoration: underline; }
+  /* Stacked in the sidebar's 232px, where the Data page laid them side by side. */
+  .side-dates { display: block; margin-top: 8px; }
+  .side-dates .field { margin: 0 0 8px; }
+  .side-dates .clear { padding: 3px 9px; font-size: 14px; }
+  .side select { width: 100%; }
   .side label { display: flex; align-items: center; gap: 8px; padding: 3px 0;
                 cursor: pointer; }
   .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
@@ -351,7 +366,10 @@
 <main>
   {% if not bare %}
   <form class="side" method="get" id="filters">
-    <h2>Players</h2>
+    <div class="side-head">
+      <h2>Players</h2>
+      <button type="button" id="all-none" class="link">All</button>
+    </div>
     {% for player in players %}
       <label>
         <input type="checkbox" name="player" value="{{ player['username'] }}"
@@ -360,12 +378,34 @@
         {{ player['display_name'] }}
       </label>
     {% endfor %}
-    {% block sidebar_extra %}{% endblock %}
-    {% if not live %}
-      <p style="margin:12px 0 0"><button type="submit">Apply</button></p>
-    {% else %}
-      <p class="live-note">{{ live_note or "Charts update as you tick." }}</p>
+    <input type="hidden" name="picked" value="1">
+
+    {% if not no_window %}
+      <h2 style="margin-top:16px">Period</h2>
+      <select id="period" name="period">
+        {% for label in period_labels %}
+          <option value="{{ label }}" {{ 'selected' if label == span.choice }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <input type="hidden" name="tzoffset" id="tzoffset" value="">
+      <div class="dates side-dates" id="dates">
+        <label class="field">
+          <span>From</span>
+          <input type="date" id="from" name="from" value="{{ span['from'] }}">
+        </label>
+        <label class="field">
+          <span>To</span>
+          <input type="date" id="to" name="to" value="{{ span['to'] }}">
+        </label>
+        <button type="button" id="unlock" class="clear" title="Back to the period"
+                aria-label="Clear these dates and follow the period"
+                {{ '' if span.custom else 'hidden' }}>&times;</button>
+      </div>
     {% endif %}
+
+    {% block sidebar_extra %}{% endblock %}
+    <p class="live-note">{{ live_note or "Everything updates as you change these." }}</p>
+    <noscript><p style="margin:12px 0 0"><button type="submit">Apply</button></p></noscript>
   </form>
   {% endif %}
   <div class="content">
@@ -376,6 +416,7 @@
   Read-only view &middot; updates run automatically every six hours.
   {% if admin_enabled and not signed_in %}<a href="/admin" style="color: var(--muted)">Admin</a>{% endif %}
 </footer>
+{% if not bare %}<script src="/static/sidebar.js"></script>{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

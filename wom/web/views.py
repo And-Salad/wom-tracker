@@ -95,13 +95,14 @@ def player_note(database, player, period_key):
             "paragraphs": paragraphs(rows[0]["text"])}
 
 
-def milestone_feed(database, selected, palette, since=None, limit=300):
+def milestone_feed(database, selected, palette, since=None, until=None,
+                   limit=300):
     """The achievements feed, newest first."""
     from ..icons import icon_kind_for
 
     feed = []
     for row in database.achievements(player_ids=[p["id"] for p in selected],
-                                     since=since, limit=limit):
+                                     since=since, until=until, limit=limit):
         dated = row["achieved_at"] and row["achieved_at"] > "1990"
         accuracy = row["accuracy"]
         vague = accuracy is None or accuracy < 0 or accuracy > 86400000
@@ -143,16 +144,19 @@ def player_rows(database, players, palette):
     return rows
 
 
-def player_detail(database, player, period):
-    """One player's note, current figures, and what moved, grouped by kind."""
-    since = period.start_iso()
-    bounds = database.snapshot_bounds(player["id"], since)
+def player_detail(database, player, span):
+    """One player's note, figures, and what moved, grouped by kind."""
+    since = span.since
+    bounds = database.snapshot_bounds(player["id"], since, span.until)
 
     groups = []
     for kind, title in METRIC_GROUPS:
         gains = database.metric_gains(player["id"], since, kind, bounds=bounds)
         rows = []
-        for row in database.latest_snapshot_metrics(player["id"], kind):
+        end = bounds[1]
+        readings = (database.snapshot_metrics(end["id"], kind) if end
+                    else database.latest_snapshot_metrics(player["id"], kind))
+        for row in readings:
             if row["value"] is None and row["level"] is None:
                 continue          # unranked and never seen: not worth a line
             rows.append({
@@ -169,9 +173,12 @@ def player_detail(database, player, period):
         groups.append({"kind": kind, "title": title, "rows": rows,
                        "moved": sum(1 for r in rows if r["gained"])})
 
-    return {"player": player["display_name"], "period": period.label,
-            "note": player_note(database, player, period.key),
-            "writes_notes": period.key in periods.SUMMARY_PERIODS,
+    return {"player": player["display_name"], "period": span.label,
+            # A custom range names no calendar window, so there is no note
+            # filed under it - and none is offered rather than one from some
+            # other span being passed off as this one's.
+            "note": player_note(database, player, span.key) if span.key else None,
+            "writes_notes": span.key in periods.SUMMARY_PERIODS,
             "coverage": coverage_note(bounds[0], since), "groups": groups}
 
 

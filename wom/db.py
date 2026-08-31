@@ -276,7 +276,7 @@ class Database:
                 added += cur.rowcount
         return added
 
-    def achievements(self, player_ids=None, since=None, limit=500):
+    def achievements(self, player_ids=None, since=None, until=None, limit=500):
         """Milestones for the given players, newest first."""
         sql = ("SELECT a.*, p.display_name, p.username FROM achievements a"
                " JOIN players p ON p.id = a.player_id WHERE 1=1")
@@ -289,6 +289,9 @@ class Database:
         if since:
             sql += " AND a.achieved_at >= ?"
             params.append(since)
+        if until:
+            sql += " AND a.achieved_at < ?"
+            params.append(until)
         sql += " ORDER BY a.achieved_at DESC, a.name LIMIT ?"
         params.append(limit)
         return self.query(sql, params)
@@ -601,6 +604,19 @@ class Database:
         gap_before = abs((edge - parse_api_time(before["captured_at"])).total_seconds())
         gap_after = abs((parse_api_time(after["captured_at"]) - edge).total_seconds())
         return before if gap_before <= gap_after else after
+
+    def earliest_reading(self, player_ids):
+        """The first reading held for any of these players, for "All time".
+
+        An unbounded window is not the same as no window: the gains baseline
+        and a chart's axis both need a real start.
+        """
+        if not player_ids:
+            return None
+        row = self.query_one(
+            "SELECT MIN(captured_at) AS first FROM snapshots WHERE player_id IN ({})"
+            .format(",".join("?" * len(player_ids))), list(player_ids))
+        return row["first"] if row else None
 
     def latest_snapshot(self, player_id):
         return self.query_one(
