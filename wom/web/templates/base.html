@@ -145,7 +145,8 @@
   th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
   th { color: var(--muted); font-weight: 600; font-size: 12px;
        text-transform: uppercase; letter-spacing: .03em; }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  /* The header has to be told as well, or it stays left over right-set figures. */
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
   td.name { white-space: nowrap; }
   td.dim { color: var(--muted); }
   .scroll { overflow-x: auto; }
