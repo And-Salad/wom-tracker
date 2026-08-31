@@ -250,15 +250,6 @@ class Database:
             conn.execute("UPDATE players SET backfilled_at=? WHERE id=?",
                          (when or _utcnow(), player_id))
 
-    def clear_backfill(self, player_id=None):
-        """Forget that history was imported, so the next run fetches it again."""
-        conn = self.connect()
-        with conn:
-            if player_id is None:
-                conn.execute("UPDATE players SET backfilled_at=NULL")
-            else:
-                conn.execute("UPDATE players SET backfilled_at=NULL WHERE id=?", (player_id,))
-
     def snapshot_count(self, player_id):
         row = self.query_one("SELECT COUNT(*) AS n FROM snapshots WHERE player_id=?",
                              (player_id,))
@@ -561,9 +552,6 @@ class Database:
                 return
             for row in rows:
                 yield row
-
-    def recent_runs(self, limit=20):
-        return self.query("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,))
 
     # -- gains over a window ----------------------------------------------
 

@@ -35,7 +35,7 @@ LOG_METRICS = {
 
 
 class ChartSpec:
-    """One chart on the Summary page, in whichever front end draws it."""
+    """One chart on the Summary page: what it shows, and what builds it."""
 
     def __init__(self, key, title, kind, description="", options=None):
         self.key = key
@@ -43,6 +43,34 @@ class ChartSpec:
         self.kind = kind                  # stacked | trend
         self.description = description
         self.options = list(options) if options else None
+        self.build = None                 # set by @chart, below
+
+    def as_dict(self):
+        return {"key": self.key, "title": self.title,
+                "description": self.description, "kind": self.kind,
+                "options": self.options}
+
+
+def chart(key):
+    """Attach a builder to its spec.
+
+    The two used to live in separate files with nothing checking they agreed,
+    so a chart could be described and never built, or built under a key
+    nothing described. Now the decorator raises on the spot.
+    """
+    def decorate(func):
+        spec = BY_KEY.get(key)
+        if spec is None:
+            raise KeyError(
+                "no chart named {!r} in SUMMARY_CHARTS - describe it first".format(key))
+        spec.build = func
+        return func
+    return decorate
+
+
+def specs():
+    """Every chart that is both described and built, in display order."""
+    return [spec for spec in SUMMARY_CHARTS if spec.build is not None]
 
 
 SUMMARY_CHARTS = (

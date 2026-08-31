@@ -65,11 +65,10 @@ def test_the_client_address_prefers_a_header_the_proxy_sets(app):
         assert client_address()[1] == "remote_addr"
 
 
-def test_data_endpoints_refuse_a_caller_past_the_ceiling(client, app, monkeypatch):
-    from wom.web import app as web_app
-
-    monkeypatch.setattr(web_app, "_api_per_address", Budget(allowance=3, window=60))
-    monkeypatch.setattr(web_app, "_api_tripwire", Tripwire(allowance=999, window=60))
+def test_data_endpoints_refuse_a_caller_past_the_ceiling(client, app):
+    limits = app.config["LIMITS"]
+    limits.api_per_address = Budget(allowance=3, window=60)
+    limits.api_tripwire = Tripwire(allowance=999, window=60)
     headers = {"Fly-Client-IP": "203.0.113.20"}
     for _ in range(3):
         assert client.get("/api/chart/skill_gains", headers=headers).status_code == 200
@@ -78,13 +77,11 @@ def test_data_endpoints_refuse_a_caller_past_the_ceiling(client, app, monkeypatc
                       headers={"Fly-Client-IP": "203.0.113.21"}).status_code == 200
 
 
-def test_a_tripped_wire_stops_data_but_not_the_site(client, app, monkeypatch):
-    from wom.web import app as web_app
-
+def test_a_tripped_wire_stops_data_but_not_the_site(client, app):
+    limits = app.config["LIMITS"]
     wire = Tripwire(allowance=2, window=60)
-    monkeypatch.setattr(web_app, "_api_tripwire", wire)
-    monkeypatch.setattr(web_app, "_api_per_address", Budget(allowance=999, window=60))
-    app.config["TRIPWIRE"] = wire
+    limits.api_tripwire = wire
+    limits.api_per_address = Budget(allowance=999, window=60)
 
     headers = {"Fly-Client-IP": "203.0.113.30"}
     for _ in range(3):
@@ -97,13 +94,10 @@ def test_a_tripped_wire_stops_data_but_not_the_site(client, app, monkeypatch):
     assert client.get("/admin/login").status_code == 200, "admin stays reachable"
 
 
-def test_an_admin_is_not_budgeted_and_can_still_read(signed_in, app, monkeypatch):
-    from wom.web import app as web_app
-
+def test_an_admin_is_not_budgeted_and_can_still_read(signed_in, app):
     wire = Tripwire(allowance=1, window=60)
     wire.note("1.1.1.1")
-    monkeypatch.setattr(web_app, "_api_tripwire", wire)
-    app.config["TRIPWIRE"] = wire
+    app.config["LIMITS"].api_tripwire = wire
     assert wire.tripped
     assert signed_in.get("/api/chart/skill_gains").status_code == 200
 
@@ -111,13 +105,11 @@ def test_an_admin_is_not_budgeted_and_can_still_read(signed_in, app, monkeypatch
     assert not wire.tripped
 
 
-def test_exports_are_budgeted_per_address_and_overall(app, monkeypatch):
-    from wom.web import app as web_app
+def test_exports_are_budgeted_per_address_and_overall():
+    from wom.web.limits import Limits
 
-    monkeypatch.setattr(web_app, "_export_per_address", Budget(3, 3600))
-    monkeypatch.setattr(web_app, "_export_overall", Budget(5, 86400))
-
+    limits = Limits(exports_per_address=3, exports_per_day=5)
     granted = sum(1 for n in range(12)
-                  if web_app._export_allowed("10.0.0.{}".format(n // 3), False)[0] == 0)
+                  if limits.export_allowed("10.0.0.{}".format(n // 3), False)[0] == 0)
     assert granted == 5, "the overall cap is the backstop"
-    assert web_app._export_allowed("10.0.0.9", is_admin=True) == (0, None)
+    assert limits.export_allowed("10.0.0.9", is_admin=True) == (0, None)

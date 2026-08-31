@@ -1,0 +1,85 @@
+"""Who the current request is about: the roster, the ticks, the colours.
+
+Every page answers the same three questions before it does anything else -
+which players exist, which of them this request wants, and what colour each is
+drawn in. These were closures inside the app factory, which meant nothing else
+could call them and nothing could test them.
+"""
+
+from flask import current_app, request
+
+from .. import periods
+from ..colors import player_color
+from ..config import Config
+from ..scheduler import next_slot, parse_last_run
+from ..util import fmt_ago
+
+DEFAULT_PERIOD = "Week"
+
+
+def database():
+    return current_app.config["DATABASE"]
+
+
+def settings():
+    """Re-read per request, so a change under /admin shows up immediately."""
+    return Config()
+
+
+def roster(config):
+    """Every tracked player, in the order the settings list them."""
+    stored = {row["username"]: row for row in database().players()}
+    ordered = []
+    for name in config.get("usernames", []):
+        row = stored.pop(name.lower(), None)
+        if row is not None:
+            ordered.append(row)
+    ordered.extend(stored.values())
+    return ordered
+
+
+def chosen(players, strict=False):
+    """The players this request asks for.
+
+    A bare URL with no ?player= means everyone, so a shared link works.
+    `strict` turns that fallback off for the data endpoints, where an empty
+    list means the viewer really has unticked every box and should be told so
+    rather than shown the whole roster back.
+    """
+    wanted = request.args.getlist("player")
+    if not wanted:
+        return [] if strict and request.args.get("picked") else players
+    wanted = {name.lower() for name in wanted}
+    picked = [p for p in players if p["username"] in wanted]
+    return picked if strict else (picked or players)
+
+
+def colors(config, players):
+    return {p["username"]: player_color(config, p["username"], index)
+            for index, p in enumerate(players)}
+
+
+def current_period():
+    return periods.by_label(request.args.get("period", "").title() or DEFAULT_PERIOD)
+
+
+def status(config):
+    """The line in the header: how many, how fresh, when next."""
+    last = parse_last_run(config.get("last_run", ""))
+    return {
+        "last": fmt_ago(last.isoformat()) if last else "never",
+        "next": next_slot().astimezone().strftime("%a %H:%M"),
+        "players": len(config.get("usernames", [])),
+    }
+
+
+def page_context(strict=False):
+    """Everything a page needs about the current request, resolved once."""
+    config = settings()
+    players = roster(config)
+    return {
+        "config": config,
+        "players": players,
+        "selected": chosen(players, strict=strict),
+        "palette": colors(config, players),
+    }

@@ -10,7 +10,6 @@ to set one is not quietly wide open.
 import hmac
 import logging
 import os
-import threading
 import time
 from functools import wraps
 
@@ -21,7 +20,7 @@ from .. import periods, summaries as core
 from ..colors import normalise, player_color, set_player_color
 from ..config import Config, ENV_KEYS, normalise_usernames
 from ..summaries import SUMMARY_MODELS
-from .limits import client_address
+from .limits import Budget, client_address
 
 log = logging.getLogger(__name__)
 
@@ -30,35 +29,10 @@ admin = Blueprint("admin", __name__)
 PASSWORD_ENV = "WOM_ADMIN_PASSWORD"
 
 # This login is on the public internet, so an unlimited guess rate is the whole
-# attack. Failures are counted per address and the door shuts for a while.
-MAX_ATTEMPTS = 6
-LOCKOUT_SECONDS = 300
-_attempts = {}                 # address -> [failures, locked out until]
-_attempts_lock = threading.Lock()
-
-
-def _locked_out(address):
-    """Seconds still to wait, or 0 when this address may try again."""
-    with _attempts_lock:
-        failures, until = _attempts.get(address, (0, 0.0))
-        remaining = until - time.monotonic()
-        if remaining <= 0 and until:
-            _attempts.pop(address, None)      # the lockout expired
-            return 0
-        return int(remaining) if failures >= MAX_ATTEMPTS else 0
-
-
-def _note_failure(address):
-    with _attempts_lock:
-        failures = _attempts.get(address, (0, 0.0))[0] + 1
-        until = time.monotonic() + LOCKOUT_SECONDS if failures >= MAX_ATTEMPTS else 0.0
-        _attempts[address] = (failures, until)
-        return failures
-
-
-def _note_success(address):
-    with _attempts_lock:
-        _attempts.pop(address, None)
+# attack. Six tries buys a five minute wait, counted per address.
+SIGN_IN_ATTEMPTS = 6
+SIGN_IN_WINDOW = 300
+_sign_in = Budget(SIGN_IN_ATTEMPTS, SIGN_IN_WINDOW)
 
 
 def admin_password():
@@ -90,28 +64,26 @@ def login():
     error = None
     if request.method == "POST":
         address, source = client_address()
-        waiting = _locked_out(address)
+        waiting = _sign_in.check(address)
         if waiting:
             error = "Too many attempts. Try again in {} seconds.".format(waiting)
         elif hmac.compare_digest(request.form.get("password", ""), admin_password()):
-            _note_success(address)
             session["wom_admin"] = True
             session.permanent = True
             return redirect(request.args.get("next") or url_for("admin.settings"))
         else:
-            failures = _note_failure(address)
+            _sign_in.record(address)
             # A wrong guess should cost real time even before the lockout.
             time.sleep(0.5)
             error = "That is not the password."
-            log.warning("failed admin sign-in from %s via %s (%d)",
-                        address, source, failures)
+            log.warning("failed admin sign-in from %s via %s", address, source)
     return render_template("admin_login.html", error=error, page="admin")
 
 
 @admin.route("/admin/logout", methods=["POST"])
 def logout():
     session.pop("wom_admin", None)
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("pages.dashboard"))
 
 
 # -- settings -------------------------------------------------------------
@@ -133,7 +105,7 @@ def settings():
             "snapshots": database.snapshot_count(row["id"]) if row is not None else 0,
             "updated": row["updated_at"] if row is not None else None,
         })
-    tripwire = current_app.config.get("TRIPWIRE")
+    tripwire = current_app.config["LIMITS"].api_tripwire
     return render_template(
         "admin.html", page="admin", config=config, roster=roster,
         models=SUMMARY_MODELS, env_keys=ENV_KEYS,
@@ -199,8 +171,8 @@ def prune():
 @requires_login
 def resume():
     """Clear the tripwire and serve data again."""
-    tripwire = current_app.config.get("TRIPWIRE")
-    if tripwire is None or not tripwire.tripped:
+    tripwire = current_app.config["LIMITS"].api_tripwire
+    if not tripwire.tripped:
         flash("Nothing to resume - the data endpoints are already serving.")
     else:
         was = tripwire.tripped_by

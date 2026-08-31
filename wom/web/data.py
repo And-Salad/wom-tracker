@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone
 
 from ..catalog import (BY_KEY, CHOICE_METRICS, COLLECTION_LOG, LOG_METRICS,
-                       SUMMARY_CHARTS, TOP_BOSSES, TOTAL_LEVEL)
+                       TOP_BOSSES, TOTAL_LEVEL, chart, specs)
 from ..icons import SKILL_ORDER
 from ..context import ViewContext
 from ..util import parse_api_time, pretty_metric
@@ -18,21 +18,20 @@ log = logging.getLogger(__name__)
 
 def catalog():
     """The chart list the page builds its cards and dropdowns from."""
-    return [{"key": s.key, "title": s.title, "description": s.description,
-             "kind": s.kind, "options": s.options} for s in SUMMARY_CHARTS]
+    return [spec.as_dict() for spec in specs()]
 
 
 def build(database, config, key, period, players, choice=None):
     """One chart's data, or an {"empty": message} payload when there is none."""
     spec = BY_KEY.get(key)
-    if spec is None:
+    if spec is None or spec.build is None:
         return None
     if not players:
         return _empty("Include at least one player using the sidebar swatches.")
-    ctx = ViewContext(database, config, players[0], players, selected=players,
+    ctx = ViewContext(database, config, players, selected=players,
                       period=period, choice=choice)
     try:
-        return _BUILDERS[key](ctx, choice)
+        return spec.build(ctx, choice)
     except Exception as exc:                      # one bad chart, not a bad page
         log.exception("chart data %s failed", key)
         return _empty("Chart failed: {}".format(exc))
@@ -44,12 +43,14 @@ def _empty(message):
 
 # -- the four charts ------------------------------------------------------
 
+@chart("skill_gains")
 def _skill_gains(ctx, _choice):
     return _stacked(ctx, "skill", SKILL_ORDER, "Experience gained",
                     "experience gained",
                     "No experience gained by the included players in the last {}.")
 
 
+@chart("boss_gains")
 def _boss_gains(ctx, _choice):
     gains = {p["id"]: ctx.gains(p, "boss") for p in ctx.selected}
     totals = {}
@@ -64,6 +65,7 @@ def _boss_gains(ctx, _choice):
                     gains=gains)
 
 
+@chart("level_trend")
 def _level_trend(ctx, choice):
     choice = choice or TOTAL_LEVEL
     metric = CHOICE_METRICS.get(choice, "overall")
@@ -76,6 +78,7 @@ def _level_trend(ctx, choice):
             choice.lower()))
 
 
+@chart("log_and_clues")
 def _log_and_clues(ctx, choice):
     choice = choice or COLLECTION_LOG
     metric = LOG_METRICS.get(choice, "collections_logged")
@@ -87,10 +90,6 @@ def _log_and_clues(ctx, choice):
         tooltip={"style": "count", "unit": "slots" if log_slots else "completed"},
         empty="No {} history for the included players in the last {{}}.".format(
             choice.lower()))
-
-
-_BUILDERS = {"skill_gains": _skill_gains, "boss_gains": _boss_gains,
-             "level_trend": _level_trend, "log_and_clues": _log_and_clues}
 
 
 # -- shared shapes --------------------------------------------------------
@@ -176,11 +175,3 @@ def _trend(ctx, kind, metric, field, ylabel, tooltip, empty):
         "since": int(start.timestamp() * 1000),
         "series": series,
     }
-
-
-def payload(database, config, players, period, choices):
-    """Every chart at once, for the first paint."""
-    return {"period": period.label,
-            "charts": {spec.key: build(database, config, spec.key, period, players,
-                                       choices.get(spec.key))
-                       for spec in SUMMARY_CHARTS}}

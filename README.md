@@ -583,6 +583,25 @@ shapes, icons, legend, tooltips and the responsive behaviour. A genuinely new
 shape needs a branch in `Chart.prototype.draw` and a drawing function beside
 `stacked` and `trend`.
 
+## Tests
+
+```bash
+py -m pytest
+```
+
+Sixty-seven of them, and most encode a bug this app has already shipped: the
+unranked metric that counted as no movement, the baseline that measured a month
+from four years earlier, compaction keeping the wrong reading of the day, an
+empty prune list removing nobody, an export date ignored rather than refused,
+admin routes reachable while signed out, icons escaping their directory, the
+tripwire that has to latch. They run against a throwaway data directory - set
+by `tests/conftest.py` before anything imports `wom.config` - and perform no
+network calls: the API client is a stand-in and the Claude path is never
+entered.
+
+What is deliberately not covered is I/O: `wom/api.py`'s retry loop, the
+Anthropic call, and the scheduler thread. Everything else sits at 84-90%.
+
 ## Layout
 
 ```
@@ -607,12 +626,19 @@ wom/
   theme.py           the palette, emitted as CSS variables
   util.py            formatting helpers
   web/
-    app.py           routes: the pages and /api/chart/<key>
+    app.py           the application factory: config, hardening, blueprints
+    pages.py         the HTML routes
+    api.py           /api/chart and /api/player, and the guard in front
+    exporting.py     the export page, its CSV and JSON, and the date parsing
     admin.py         the password-gated half
+    views.py         rows into view models, so routes stay thin
+    selection.py     who the request is about: roster, ticks, colours
+    limits.py        budgets, the tripwire, and the caller's address
     data.py          the JSON behind each chart
     jobs.py          background jobs the admin buttons start
     static/          D3 and charts.js, the browser-side drawing
     templates/       the pages themselves
+tests/               pytest, against a throwaway data directory
 assets/skills/       skill icons (from RuneLite)
 assets/bosses/       boss and activity icons (hiscore sprites, via Wise Old Man)
 data/                config, database, prompts and logs (created on first run)

@@ -10,11 +10,10 @@ from .colors import player_color
 class ViewContext:
     """Everything a chart or table function is given to render itself."""
 
-    def __init__(self, database, config, player=None, players=None, selected=None,
+    def __init__(self, database, config, players=None, selected=None,
                  period=None, choice=None):
         self.db = database
         self.config = config
-        self.player = player            # sqlite3.Row for the highlighted player, or None
         self.players = players or []    # every tracked player, display order
         # The players ticked in the sidebar - what the Summary tab compares.
         self.selected = list(selected) if selected is not None else list(self.players)
@@ -55,14 +54,6 @@ class ViewContext:
             self._bounds[player_id] = self.db.snapshot_bounds(
                 player_id, self.period.start_iso())
         return self._bounds[player_id][0]
-
-    @property
-    def player_id(self):
-        return self.player["id"] if self.player is not None else None
-
-    @property
-    def player_name(self):
-        return self.player["display_name"] if self.player is not None else "no player selected"
 
     def color_for(self, player):
         """The chart colour for a player row or username - override, else palette."""

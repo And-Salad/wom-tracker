@@ -163,6 +163,23 @@ def test_export_json_is_valid_and_marks_unranked_as_null(client, app):
 
 
 def test_a_spreadsheet_formula_in_a_name_is_defused(app):
-    from wom.web.app import _safe_cell
-    assert _safe_cell("=cmd|calc") == "'=cmd|calc"
-    assert _safe_cell("Zezima") == "Zezima"
+    from wom.web.exporting import safe_cell
+    assert safe_cell("=cmd|calc") == "'=cmd|calc"
+    assert safe_cell("Zezima") == "Zezima"
+
+
+def test_every_described_chart_has_a_builder():
+    """Describing a chart and forgetting to build it used to be silent."""
+    from wom import catalog
+    import wom.web.data  # noqa: F401  - importing attaches the builders
+
+    missing = [s.key for s in catalog.SUMMARY_CHARTS if s.build is None]
+    assert missing == [], "described but never built: {}".format(missing)
+
+
+def test_a_builder_for_an_unknown_chart_is_refused():
+    from wom.catalog import chart
+
+    import pytest
+    with pytest.raises(KeyError):
+        chart("no_such_chart")(lambda ctx, choice: None)

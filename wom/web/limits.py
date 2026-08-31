@@ -133,3 +133,60 @@ class Tripwire:
             "window": self.window,
             "recent": self.seen_in_window,
         }
+
+
+# A full export is about 5 MB of egress and walks every stored reading, on a
+# machine that also runs the schedule. Five per viewer per six hours, twenty a
+# day across everyone as the backstop: roughly 100 MB a day at today's size.
+EXPORTS_PER_ADDRESS = 5
+EXPORT_ADDRESS_WINDOW = 6 * 3600
+EXPORTS_PER_DAY = 20
+EXPORT_DAY_WINDOW = 24 * 3600
+
+# The chart and player endpoints. A heavy human session is a couple of hundred
+# calls in five minutes; one scripted client managed 8,400 in the same time.
+# The per-address ceiling sits well above the first and far below the second,
+# and the tripwire above anything a few people could produce between them.
+API_PER_ADDRESS = 600
+API_ADDRESS_WINDOW = 300
+API_TRIP_TOTAL = 3000
+API_TRIP_WINDOW = 300
+
+_EVERYONE = "*"
+
+
+class Limits:
+    """Every budget for one application.
+
+    An instance per app rather than module-level state: two apps in a process
+    (which is every test run) would otherwise share one another's counters,
+    and the factory had to reset globals on the way past.
+    """
+
+    def __init__(self,
+                 exports_per_address=EXPORTS_PER_ADDRESS,
+                 exports_per_day=EXPORTS_PER_DAY,
+                 api_per_address=API_PER_ADDRESS,
+                 api_trip_total=API_TRIP_TOTAL):
+        self.exports_per_address = exports_per_address
+        self.exports_per_day = exports_per_day
+        self.export_per_address = Budget(exports_per_address, EXPORT_ADDRESS_WINDOW)
+        self.export_overall = Budget(exports_per_day, EXPORT_DAY_WINDOW)
+        self.api_per_address = Budget(api_per_address, API_ADDRESS_WINDOW)
+        self.api_tripwire = Tripwire(api_trip_total, API_TRIP_WINDOW)
+
+    address = staticmethod(client_address)
+
+    def export_allowed(self, address, is_admin):
+        """(seconds_to_wait, which_limit). Admin is not budgeted."""
+        if is_admin:
+            return 0, None
+        waiting = self.export_per_address.check(address)
+        if waiting:
+            return waiting, "address"
+        waiting = self.export_overall.check(_EVERYONE)
+        if waiting:
+            return waiting, "everyone"
+        self.export_per_address.record(address)
+        self.export_overall.record(_EVERYONE)
+        return 0, None
