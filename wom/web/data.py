@@ -43,6 +43,52 @@ def _empty(message):
 
 # -- the four charts ------------------------------------------------------
 
+def _levels_gained(ctx, player):
+    """Total levels gained over the window.
+
+    metric_gains returns the change in a metric's *value*, which for a skill
+    is experience. Levels live in their own column, so they are read from the
+    two bracketing snapshots directly.
+    """
+    start, end = ctx.bounds_for(player)
+    if start is None or end is None or start["id"] == end["id"]:
+        return 0
+    levels = {}
+    for snapshot_id in (start["id"], end["id"]):
+        row = ctx.db.query_one(
+            "SELECT level FROM metrics WHERE snapshot_id=? AND kind='skill'"
+            " AND metric='overall'", (snapshot_id,))
+        levels[snapshot_id] = (row["level"] if row and row["level"] else 0)
+    return max(0, levels[end["id"]] - levels[start["id"]])
+
+
+@chart("standings")
+def _standings(ctx, _choice):
+    """The one number per player the charts make you add up by eye.
+
+    The stacked columns answer "what did they train"; nobody could read "who
+    won" off them without summing twenty slices.
+    """
+    rows = []
+    for player in ctx.selected:
+        skills = ctx.gains(player, "skill")
+        bosses = ctx.gains(player, "boss")
+        rows.append({
+            "username": player["username"],
+            "name": player["display_name"],
+            "color": ctx.color_for(player),
+            "xp": round(sum(v for m, v in skills.items() if m != "overall")),
+            "levels": _levels_gained(ctx, player),
+            "kills": round(sum(bosses.values())),
+        })
+    if not any(r["xp"] or r["kills"] for r in rows):
+        return _empty("Nobody gained anything in the last {}.".format(
+            ctx.period.label.lower()))
+    rows.sort(key=lambda r: -r["xp"])
+    return {"type": "standings", "rows": rows,
+            "coverage": _coverage(ctx, rows)}
+
+
 @chart("skill_gains")
 def _skill_gains(ctx, _choice):
     return _stacked(ctx, "skill", SKILL_ORDER, "Experience gained",

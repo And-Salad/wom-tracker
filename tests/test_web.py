@@ -183,3 +183,37 @@ def test_a_builder_for_an_unknown_chart_is_refused():
     import pytest
     with pytest.raises(KeyError):
         chart("no_such_chart")(lambda ctx, choice: None)
+
+
+def test_the_newest_round_up_is_readable_without_clicking(client, app):
+    """The Claude spend buys this text; it was two clicks down a closed tree."""
+    from wom import periods
+    database = seed(app)
+    window = periods.latest_window("day")
+    database.save_group_summary(window, "Everyone had a quiet day.", "hash")
+    body = client.get("/summaries").get_data(as_text=True)
+    assert "Everyone had a quiet day." in body
+    assert "round-up" in body
+
+
+def test_standings_answer_who_won(client, app):
+    seed(app)
+    rows = client.get("/api/chart/standings?period=Week").get_json()["rows"]
+    assert rows and "xp" in rows[0] and "kills" in rows[0] and "levels" in rows[0]
+    assert rows == sorted(rows, key=lambda r: -r["xp"]), "the leader comes first"
+
+
+def test_the_player_ticks_filter_the_players_page(client, app):
+    """They filter every other page; this one used to ignore them."""
+    database = seed(app)
+    database.save_player_details({"id": 2, "username": "other",
+                                  "displayName": "Other", "type": "regular"})
+    from wom.config import Config
+    settings = Config()
+    settings["usernames"] = ["Zezima", "Other"]
+    settings.save()
+
+    both = client.get("/players").get_data(as_text=True)
+    one = client.get("/players?player=zezima").get_data(as_text=True)
+    assert both.count('class="player-row"') == 2
+    assert one.count('class="player-row"') == 1

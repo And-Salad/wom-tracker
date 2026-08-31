@@ -61,6 +61,26 @@ def summary_tree(database, selected, palette):
     return tree
 
 
+def latest_round_up(database):
+    """The newest group summary, ready to read without opening anything.
+
+    This is the thing the Claude spend buys, and it was two clicks down a tree
+    whose folders stay shut - the template even marked the first leaf open,
+    inside a folder that was not, so the intent never took effect.
+    """
+    newest = None
+    for period, title in SUMMARY_FOLDERS:
+        rows = database.group_summaries(period=period, limit=1)
+        if rows and (newest is None or rows[0]["window_key"] > newest[0]["window_key"]):
+            newest = (rows[0], title)
+    if newest is None:
+        return None
+    row, title = newest
+    return {"title": title, "label": row["label"],
+            "ago": fmt_ago(row["generated_at"]),
+            "paragraphs": paragraphs(row["text"])}
+
+
 def milestone_feed(database, selected, palette, since=None, limit=300):
     """The achievements feed, newest first."""
     from ..icons import icon_kind_for

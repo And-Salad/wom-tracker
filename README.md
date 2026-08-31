@@ -156,8 +156,17 @@ Five public pages - **Summary** (the charts), **Milestones**, **Summaries**,
 **Players** and **Data** - with the player and period filters in the sidebar,
 plus **Admin** behind the password.
 
+**Summary** opens with a standings table - who gained what this period - above
+the charts. The stacked columns answer "what did they train"; nobody could read
+"who won" off twenty slices without adding them up.
+
+**Summaries** shows the newest group round-up in full at the top. It used to be
+two clicks down a tree whose folders stay shut, which meant the one thing the
+Claude spend buys was the most buried thing in the app.
+
 **Players** lists the latest figures, and opens: each player expands into
-skills, bosses and activities, every row carrying the current value, the level
+skills, bosses and activities - the table row is the control, rather than a
+second list of the same players below the table - every row carrying the current value, the level
 or rank, and what it gained over the chosen period, sorted so whatever moved is
 at the top. If the readings cover less of the window than the period asks for,
 it says so - the same distinction the charts and the summaries make, because a

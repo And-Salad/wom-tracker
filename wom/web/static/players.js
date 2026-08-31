@@ -1,9 +1,10 @@
 /* The expanding player rows.
  *
- * A player's detail is three trees - skills, bosses, activities - and every
- * player's worth of that is a few hundred kilobytes nobody has asked to see.
- * So it is fetched when a row is first opened, and again only if the period
- * changes underneath it.
+ * The table row is the control - there is one list of players on this page,
+ * not a table and an accordion repeating each other. A player's detail is
+ * three trees, and every player's worth of that is a few hundred kilobytes
+ * nobody has asked to see, so it is fetched when a row is first opened and
+ * again only if the period changes underneath it.
  */
 (function () {
   "use strict";
@@ -101,18 +102,21 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    var rows = [].slice.call(document.querySelectorAll("details.detail"));
+    var rows = [].slice.call(document.querySelectorAll("tr.player-row"));
     if (!rows.length) { return; }
 
     rows.forEach(function (row) {
-      var host = row.querySelector(".detail-body");
+      var detailRow = row.nextElementSibling;
+      var host = detailRow.querySelector(".detail-body");
       var shown = null;              // the period the body currently reflects
+
+      function open() { return !detailRow.hidden; }
 
       function load() {
         var wanted = periodValue();
         if (shown === wanted) { return; }
         host.textContent = "";
-        host.appendChild(el("p", "hint", "Loading…"));
+        host.appendChild(el("p", "hint", "Loading..."));
         var mine = wanted;
         fetch("/api/player/" + encodeURIComponent(row.dataset.username) +
               "?period=" + encodeURIComponent(wanted))
@@ -128,8 +132,22 @@
           });
       }
 
-      row.addEventListener("toggle", function () { if (row.open) { load(); } });
-      row.__reload = function () { shown = null; if (row.open) { load(); } };
+      function toggle() {
+        detailRow.hidden = open();
+        row.classList.toggle("open", !detailRow.hidden);
+        row.setAttribute("aria-expanded", String(!detailRow.hidden));
+        if (!detailRow.hidden) { load(); }
+      }
+
+      row.addEventListener("click", toggle);
+      // The row is a button, so it answers to the keyboard like one.
+      row.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          toggle();
+        }
+      });
+      row.__reload = function () { shown = null; if (open()) { load(); } };
     });
 
     var picker = document.getElementById("period");

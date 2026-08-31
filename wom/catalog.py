@@ -74,6 +74,8 @@ def specs():
 
 
 SUMMARY_CHARTS = (
+    ChartSpec("standings", "This period", "standings",
+              description="Who did what, before the detail below."),
     ChartSpec("skill_gains", "Experience gained by skill", "stacked",
               description="Each column is a skill; each slice is one of the "
                           "included players."),

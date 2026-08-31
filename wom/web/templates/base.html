@@ -57,6 +57,25 @@
     text-align: center; padding: 44px 12px; font-size: 13px;
   }
   .plot rect, .plot circle, .plot image { cursor: crosshair; }
+  /* The roster table doubles as the control for its own detail. */
+  tr.player-row { cursor: pointer; }
+  tr.player-row:hover td, tr.player-row:focus td { background: var(--raised); }
+  tr.player-row .twist {
+    display: inline-block; width: 0; height: 0; margin-right: 7px;
+    border-left: 5px solid var(--muted);
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform .12s ease; vertical-align: middle;
+  }
+  tr.player-row.open .twist { transform: rotate(90deg); }
+  tr.detail-row > td { padding: 0 10px 12px; }
+
+  .standings { font-size: 14px; }
+  .standings th { padding-top: 0; }
+  .standings td { padding: 5px 10px; border-bottom: 1px solid var(--line); }
+  .standings td.rank { color: var(--muted); width: 20px; }
+  .standings td.name { white-space: nowrap; }
+  .standings tr.leader td { color: var(--ink); font-weight: 600; }
+  .standings tr.leader td.rank { color: var(--accent); }
   .plot .coverage { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
   .plot .coverage .tip-dot { display: inline-block; width: 8px; height: 8px;
                              border-radius: 2px; margin: 0 4px 0 8px; }
@@ -73,27 +92,31 @@
 
   /* The summaries tree. Plain <details>/<summary>, so expanding and
      collapsing works with no JavaScript at all. */
-  .tree summary.node {
+  .tree summary.node, .detail-body summary.node {
     cursor: pointer; list-style: none; padding: 5px 4px; border-radius: 6px;
     display: flex; align-items: center; gap: 8px; user-select: none;
   }
-  .tree summary.node::-webkit-details-marker { display: none; }
+  .tree summary.node::-webkit-details-marker,
+  .detail-body summary.node::-webkit-details-marker { display: none; }
   /* Drawn with borders rather than a glyph, so it depends on no font. */
-  .tree summary.node::before {
+  .tree summary.node::before, .detail-body summary.node::before {
     content: ""; flex: none; width: 0; height: 0; margin: 0 2px;
     border-left: 5px solid var(--muted);
     border-top: 4px solid transparent;
     border-bottom: 4px solid transparent;
     transition: transform .12s ease;
   }
-  .tree details[open] > summary.node::before { transform: rotate(90deg); }
-  .tree summary.node:hover { background: var(--raised); }
+  .tree details[open] > summary.node::before,
+  .detail-body details[open] > summary.node::before { transform: rotate(90deg); }
+  .tree summary.node:hover, .detail-body summary.node:hover {
+    background: var(--raised);
+  }
   .tree summary.player { font-size: 15px; font-weight: 600; }
   .tree .folder > summary.node { color: var(--ink); font-weight: 500; }
   .tree .leaf > summary.node { color: var(--muted); font-weight: 400; }
   .tree .folder { margin-left: 14px; }
   .tree .leaf { margin-left: 14px; }
-  .tree .count {
+  .tree .count, .detail-body .count {
     margin-left: auto; color: var(--muted); font-size: 12px;
     font-variant-numeric: tabular-nums;
   }

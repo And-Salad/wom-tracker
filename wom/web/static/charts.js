@@ -137,7 +137,38 @@
   Chart.prototype.draw = function () {
     if (!this.data) { return; }
     if (this.data.empty) { this.message(this.data.empty); return; }
-    if (this.data.type === "stacked") { this.stacked(); } else { this.trend(); }
+    if (this.data.type === "standings") { this.standings(); }
+    else if (this.data.type === "stacked") { this.stacked(); }
+    else { this.trend(); }
+  };
+
+  /* Not a chart: the one line per player the columns below make you add up by
+     eye. Built as a table because that is what it is. */
+  Chart.prototype.standings = function () {
+    var host = this.host;
+    host.html("");
+    var table = host.append("table").attr("class", "standings");
+    var head = table.append("tr");
+    ["", "Player", "XP gained", "Levels", "Boss kills"].forEach(function (label, i) {
+      head.append("th").attr("class", i > 1 ? "num" : null).text(label);
+    });
+    this.data.rows.forEach(function (row, index) {
+      var tr = table.append("tr").attr("class", index === 0 ? "leader" : null);
+      tr.append("td").attr("class", "rank").text(index + 1);
+      var name = tr.append("td").attr("class", "name");
+      name.append("span").attr("class", "swatch")
+        .style("background", row.color).style("display", "inline-block")
+        .style("margin-right", "7px");
+      name.append("span").text(row.name);
+      tr.append("td").attr("class", "num").text(full.format(row.xp));
+      tr.append("td").attr("class", "num dim")
+        .text(row.levels ? "+" + row.levels : "");
+      tr.append("td").attr("class", "num dim")
+        .text(row.kills ? full.format(row.kills) : "");
+    });
+    if (this.data.coverage && this.data.coverage.length) {
+      this.coverage(this.data.rows);
+    }
   };
 
   /* -- axes ------------------------------------------------------------ */

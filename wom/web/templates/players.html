@@ -9,28 +9,31 @@
       <option value="{{ label }}" {{ 'selected' if label == period.label }}>{{ label }}</option>
     {% endfor %}
   </select>
-  <p class="live-note">Sets what "gained" means in the detail below.</p>
+  <p class="live-note">Sets what "gained" means when a row is open.</p>
 {% endblock %}
 
 {% block content %}
   <div class="card">
     <h3>Players</h3>
-    <p class="hint">Latest stored figures. Open a player below for their
-      skills, bosses and activities, and what moved this period.</p>
+    <p class="hint">Latest stored figures. Click a row for that player's skills,
+      bosses and activities, and what moved this period.</p>
     <div class="scroll">
-      <table>
+      <table class="roster">
         <thead>
           <tr>
             <th>Player</th><th>Type</th>
             <th class="num">Combat</th><th class="num">Total level</th>
             <th class="num">Total XP</th><th class="num">EHP</th><th class="num">EHB</th>
-            <th class="num">Snapshots</th><th>Last update</th>
+            <th>Last update</th>
           </tr>
         </thead>
         <tbody>
           {% for row in rows %}
-            <tr>
+            {# The row is the control: one list of players on this page, not two. #}
+            <tr class="player-row" data-username="{{ row.username }}"
+                tabindex="0" role="button" aria-expanded="false">
               <td class="name">
+                <span class="twist" aria-hidden="true"></span>
                 <span class="swatch" style="background: {{ row.color }};
                       display:inline-block; margin-right:6px"></span>{{ row.name }}
               </td>
@@ -40,26 +43,17 @@
               <td class="num">{{ row.exp }}</td>
               <td class="num">{{ row.ehp }}</td>
               <td class="num">{{ row.ehb }}</td>
-              <td class="num dim">{{ row.snapshots }}</td>
               <td class="dim">{{ row.updated }}</td>
             </tr>
+            <tr class="detail-row" hidden>
+              <td colspan="8"><div class="detail-body"></div></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="8" class="dim">No players are ticked.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-  </div>
-
-  <div class="tree">
-    {% for row in rows %}
-      <details class="card detail" data-username="{{ row.username }}">
-        <summary class="node player">
-          <span class="swatch" style="background: {{ row.color }}"></span>
-          {{ row.name }}
-          <span class="count">{{ row.total_level }} total</span>
-        </summary>
-        <div class="detail-body"><p class="hint">Opening...</p></div>
-      </details>
-    {% endfor %}
   </div>
 {% endblock %}
 

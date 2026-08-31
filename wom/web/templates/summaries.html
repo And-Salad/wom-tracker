@@ -3,8 +3,18 @@
 {% block title %}Summaries - WOM Tracker{% endblock %}
 
 {% block content %}
+  {% if latest %}
+    <div class="card latest">
+      <h3>{{ latest.title }} round-up &middot; {{ latest.label }}</h3>
+      <p class="hint">Written {{ latest.ago }}. Everything else is below.</p>
+      {% for paragraph in latest.paragraphs %}
+        <p>{{ paragraph }}</p>
+      {% endfor %}
+    </div>
+  {% endif %}
+
   {% for player in tree %}
-    <details class="card tree" {{ 'open' if loop.first }}>
+    <details class="card tree">
       <summary class="node player" style="color: {{ player.color }}">
         {{ player.player }}
         <span class="count">{{ player.total }}</span>
@@ -15,7 +25,7 @@
             {{ folder.title }} <span class="count">{{ folder.count }}</span>
           </summary>
           {% for entry in folder.entries %}
-            <details class="leaf" {{ 'open' if loop.first and folder.period == 'day' }}>
+            <details class="leaf">
               <summary class="node">
                 {{ entry.label }} <span class="count">{{ entry.ago }}</span>
               </summary>

@@ -42,6 +42,14 @@ class ViewContext:
                 player_id, since, kind, bounds=self._bounds[player_id])
         return self._gains[key]
 
+    def bounds_for(self, player):
+        """The pair of snapshots this player's window is measured between."""
+        player_id = player if isinstance(player, int) else player["id"]
+        if player_id not in self._bounds:
+            self._bounds[player_id] = self.db.snapshot_bounds(
+                player_id, self.period.start_iso())
+        return self._bounds[player_id]
+
     def baseline(self, player):
         """The snapshot this player's gains are actually measured from.
 
@@ -49,11 +57,7 @@ class ViewContext:
         so this can sit well inside the window - the caller decides whether
         that is worth telling the viewer about.
         """
-        player_id = player if isinstance(player, int) else player["id"]
-        if player_id not in self._bounds:
-            self._bounds[player_id] = self.db.snapshot_bounds(
-                player_id, self.period.start_iso())
-        return self._bounds[player_id][0]
+        return self.bounds_for(player)[0]
 
     def color_for(self, player):
         """The chart colour for a player row or username - override, else palette."""

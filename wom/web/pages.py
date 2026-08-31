@@ -8,8 +8,8 @@ from .. import periods
 from ..icons import ASSET_DIR, icon_path
 from . import views
 from .data import catalog
-from .selection import (colors, current_period, database, page_context, roster,
-                        settings, status)
+from .selection import (chosen, colors, current_period, database, page_context,
+                        roster, settings, status)
 
 pages = Blueprint("pages", __name__)
 
@@ -49,6 +49,7 @@ def summaries_page():
         "summaries.html", players=scope["players"],
         selected={p["username"] for p in scope["selected"]},
         colors=scope["palette"],
+        latest=views.latest_round_up(database()),
         tree=views.summary_tree(database(), scope["selected"], scope["palette"]),
         status=status(scope["config"]))
 
@@ -58,10 +59,12 @@ def players_page():
     config = settings()
     players = roster(config)
     palette = colors(config, players)
+    # The ticks filter every other page; on this one they used to do nothing.
+    shown = chosen(players)
     return render_template(
-        "players.html", rows=views.player_rows(database(), players, palette),
+        "players.html", rows=views.player_rows(database(), shown, palette),
         players=players, colors=palette,
-        selected={p["username"] for p in players},
+        selected={p["username"] for p in shown},
         periods=periods.labels(), period=current_period(),
         status=status(config))
 
