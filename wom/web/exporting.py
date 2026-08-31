@@ -13,7 +13,9 @@ from datetime import datetime, timedelta
 from flask import (Blueprint, Response, abort, current_app, render_template,
                    request, session)
 
-from .selection import chosen, colors, database, roster, settings, status
+from .. import periods
+from .selection import (chosen, colors, current_period, database, roster,
+                        settings, status)
 
 exporting = Blueprint("exporting", __name__)
 
@@ -32,8 +34,9 @@ def export_page():
     players = roster(config)
     return render_template("export.html", players=players,
                            colors=colors(config, players),
-                           selected={p["username"] for p in players},
-                           kinds=KINDS, status=status(config))
+                           selected={p["username"] for p in chosen(players)},
+                           kinds=KINDS, periods=periods.labels(),
+                           period=current_period(), status=status(config))
 
 
 @exporting.route("/export.<fmt>")

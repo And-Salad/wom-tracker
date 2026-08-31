@@ -8,7 +8,8 @@ from flask import Blueprint, Response, abort, current_app, jsonify, session
 
 from . import data as web_data
 from . import views
-from .selection import chosen, current_period, database, roster, settings
+from .selection import (chosen, colors, current_period, database, roster,
+                        settings)
 
 api = Blueprint("api", __name__)
 
@@ -76,3 +77,27 @@ def player_detail(username):
 def request_choice():
     from flask import request
     return request.args.get("choice")
+
+
+@api.route("/api/table")
+def metric_table():
+    """Every metric for the ticked players, for the table on /export.
+
+    Sorting and filtering happen in the browser, so the whole set goes over
+    once per change of player or period rather than once per column click.
+    """
+    refused = guard()
+    if refused is not None:
+        return refused
+    config = settings()
+    players = roster(config)
+    picked = chosen(players, strict=True)
+    if not picked:
+        return jsonify({"rows": [],
+                        "empty": "Include at least one player using the "
+                                 "sidebar swatches."})
+    period = current_period()
+    rows = views.metric_table(database(), picked, period, colors(config, players))
+    response = jsonify({"rows": rows, "period": period.label})
+    response.headers["Cache-Control"] = "no-cache"
+    return response

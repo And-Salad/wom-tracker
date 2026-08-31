@@ -196,3 +196,37 @@ def coverage_note(baseline, since):
             "since": fmt_datetime(baseline["captured_at"], "%d %b %Y"),
             "note": "measured only from {} ({}d)".format(
                 fmt_datetime(baseline["captured_at"], "%d %b %Y"), covered)}
+
+
+def metric_table(database, players, period, palette):
+    """Every current metric for the included players, and how far it moved.
+
+    The same ground the export covers, answered in the page. A question like
+    "who trained slayer this week" was previously a download and a spreadsheet;
+    as rows it is a filter and a sort. One row per player per metric, so the
+    browser can group it whichever way the viewer asks for.
+    """
+    since = period.start_iso()
+    rows = []
+    for player in players:
+        bounds = database.snapshot_bounds(player["id"], since)
+        color = palette.get(player["username"], "")
+        for kind, title in METRIC_GROUPS:
+            gains = database.metric_gains(player["id"], since, kind, bounds=bounds)
+            for row in database.latest_snapshot_metrics(player["id"], kind):
+                if row["value"] is None and row["level"] is None:
+                    continue      # unranked and never seen: not worth a line
+                rows.append({
+                    "player": player["display_name"],
+                    "username": player["username"],
+                    "color": color,
+                    "kind": kind,
+                    "kind_label": title,
+                    "metric": row["metric"],
+                    "label": pretty_metric(row["metric"]),
+                    "level": row["level"],
+                    "value": row["value"],
+                    "rank": row["rank"],
+                    "gained": round(gains.get(row["metric"], 0.0), 2),
+                })
+    return rows

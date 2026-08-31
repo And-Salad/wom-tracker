@@ -245,3 +245,40 @@ def test_a_player_note_is_named_by_its_own_window(client, app):
 def test_a_player_with_no_note_for_that_period_says_nothing(client, app):
     seed(app)
     assert client.get("/api/player/zezima?period=Year").get_json()["note"] is None
+
+
+# -- the table on the Data page -------------------------------------------
+
+def test_the_table_carries_every_metric_with_its_movement(client, app):
+    """The page answers what the export used to be the only way to ask."""
+    seed(app)
+    body = client.get("/api/table?period=Week").get_json()
+    rows = {(r["metric"], r["kind"]): r for r in body["rows"]}
+    assert rows[("attack", "skill")]["value"] == 5000
+    assert rows[("attack", "skill")]["gained"] == 4000
+    assert rows[("zulrah", "boss")]["gained"] == 40
+    assert body["period"] == "Week"
+
+
+def test_the_table_honours_the_player_ticks(client, app):
+    seed(app)
+    body = client.get("/api/table?period=Week&picked=1").get_json()
+    assert "empty" in body and not body["rows"]
+
+
+def test_the_table_carries_the_colour_the_charts_use(client, app):
+    """The swatch beside a name has to be the one that name is drawn in."""
+    seed(app)
+    row = client.get("/api/table?period=Week").get_json()["rows"][0]
+    standing = client.get("/api/chart/standings?period=Week").get_json()["rows"][0]
+    assert row["color"] == standing["color"]
+
+
+def test_the_data_page_offers_the_export_behind_a_button(client, app):
+    seed(app)
+    body = client.get("/export").get_data(as_text=True)
+    assert 'id="open-export"' in body
+    assert "<dialog" in body
+    # The form still posts to the same places; only its housing moved.
+    assert 'formaction="/export.csv"' in body
+    assert 'formaction="/export.json"' in body

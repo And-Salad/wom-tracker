@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "wom-web",
+      "runtimeExecutable": "py",
+      "runtimeArgs": ["web_app.py", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}

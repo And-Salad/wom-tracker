@@ -191,6 +191,11 @@
     .detail-body { margin-left: 6px; }
     .detail-table { font-size: 12px; }
     th, td { padding: 5px 7px; }
+    .toolbar { gap: 8px; }
+    .toolbar .field { flex: 1 1 100%; }
+    .toolbar .count { margin-left: 0 !important; padding-bottom: 0 !important; }
+    dialog { padding: 12px; }
+    .dialog-actions button { flex: 1 1 auto; }
   }
 
   /* Nothing may push the page sideways: a chart or a table that cannot fit
@@ -246,6 +251,66 @@
   .job.failed .job-note { color: #e5707e; }
   .job-log { margin: 6px 0 0; max-height: 200px; overflow: auto; color: var(--muted);
              font: 12px/1.5 Consolas, ui-monospace, monospace; white-space: pre-wrap; }
+
+  /* -- the Data page --------------------------------------------------
+     A long table of every metric, sorted and filtered in the browser. */
+  .toolbar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;
+             margin: 4px 0 10px; }
+  .toolbar .field { margin: 0; min-width: 180px; flex: 1 1 200px; }
+  .toolbar .count { white-space: nowrap; }
+  /* Six players' worth of metrics is ~700 rows, which as a plain table is a
+     20,000px page. It scrolls in its own box instead, so the search, the
+     filters and the count stay on screen while you read down it. */
+  .grid-scroll { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; }
+  .grid { font-size: 13px; }
+  /* Sticky, so the column you sorted by is still named 600 rows down. */
+  .grid thead th { position: sticky; top: 0; z-index: 1; background: var(--card);
+                   cursor: pointer; user-select: none; white-space: nowrap;
+                   box-shadow: inset 0 -1px 0 var(--line); }
+  .grid thead th:hover, .grid thead th:focus { color: var(--ink); outline: none; }
+  /* The arrow is drawn, not typed: it must not depend on a font having it. */
+  .grid thead th.sorted { color: var(--accent); }
+  .grid thead th.sorted::after {
+    content: ""; display: inline-block; margin-left: 6px; vertical-align: middle;
+    border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-bottom: 5px solid currentColor;
+  }
+  .grid thead th.sorted.desc::after {
+    border-bottom: 0; border-top: 5px solid currentColor;
+  }
+  .grid td { padding: 4px 10px; }
+  .grid td.metric { white-space: nowrap; }
+  .grid tr:not(.moved) td { color: var(--muted); }
+  .grid td.gain { color: var(--accent); }
+  .grid tbody tr:hover td { background: var(--raised); }
+  @media (max-width: 820px) {
+    /* Five columns in 325px: give back what the padding is taking, and let
+       the metric wrap. A column is as wide as its widest cell, and
+       "Chambers Of Xeric Challenge Mode" was pushing the figures off the
+       side of the phone on every one of 666 rows. */
+    .grid { font-size: 12px; }
+    .grid th, .grid td { padding: 4px 6px; }
+    .grid td.metric { white-space: normal; }
+    .grid-scroll { max-height: 65vh; }
+  }
+
+  /* The export form, now behind a button rather than in front of the table. */
+  dialog {
+    background: var(--card); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px 18px; max-width: 560px; width: calc(100% - 24px);
+    box-shadow: 0 18px 50px rgba(0,0,0,.55);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.55); }
+  dialog h3 { margin: 0 0 2px; font-size: 15px; }
+  dialog h4 { margin: 16px 0 6px; font-size: 13px; color: var(--muted);
+              text-transform: uppercase; letter-spacing: .04em; }
+  .dialog-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px;
+                    padding-top: 12px; border-top: 1px solid var(--line); }
+  button.quiet { background: var(--raised); color: var(--muted);
+                 border: 1px solid var(--line); margin-right: auto; }
+  dialog details.columns { margin-top: 14px; }
+  dialog details.columns summary { cursor: pointer; color: var(--muted);
+                                   font-size: 13px; }
 </style>
 </head>
 <body>
@@ -282,7 +347,7 @@
     {% if not live %}
       <p style="margin:12px 0 0"><button type="submit">Apply</button></p>
     {% else %}
-      <p class="live-note">Charts update as you tick.</p>
+      <p class="live-note">{{ live_note or "Charts update as you tick." }}</p>
     {% endif %}
   </form>
   {% endif %}

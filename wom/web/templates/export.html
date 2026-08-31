@@ -1,28 +1,87 @@
 {% extends "base.html" %}
 {% set page = 'export' %}
-{% set bare = true %}
+{% set live = true %}
+{% set live_note = "The table updates as you tick." %}
 {% block title %}Data - WOM Tracker{% endblock %}
+
+{% block sidebar_extra %}
+  <h2 style="margin-top:16px">Period</h2>
+  <select id="period" name="period">
+    {% for label in periods %}
+      <option value="{{ label }}" {{ 'selected' if label == period.label }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+{% endblock %}
 
 {% block content %}
   <div class="card">
-    <h3>Export the stored readings</h3>
-    <p class="hint">Every snapshot the tracker holds, as one row per metric per
-      reading. Narrow it by player, by what kind of metric, and by date.</p>
-
-    <form method="get" id="export" action="/export.csv">
-      <h4>Players</h4>
-      <div class="pickers">
-        {% for player in players %}
-          <label class="tick">
-            <input type="checkbox" name="player" value="{{ player['username'] }}"
-                   {{ 'checked' if player['username'] in selected }}>
-            <span class="swatch" style="background: {{ colors[player['username']] }}"></span>
-            {{ player['display_name'] }}
-          </label>
-        {% endfor %}
+    <div class="card-head">
+      <div>
+        <h3>Every metric</h3>
+        <p class="hint">One row per player per metric: where they stand now,
+          and how far it moved over the period. Sort by any column.</p>
       </div>
+      <p style="margin:0 0 0 auto">
+        <button type="button" id="open-export">Export a file&hellip;</button>
+      </p>
+    </div>
+
+    <div class="toolbar">
+      <label class="field">
+        <span>Search</span>
+        <input type="search" id="q" placeholder="metric or player"
+               autocomplete="off" spellcheck="false">
+      </label>
+      <label class="field" style="max-width: 160px">
+        <span>Kind</span>
+        <select id="kind">
+          <option value="">All</option>
+          {% for key, title in kinds %}
+            <option value="{{ key }}">{{ title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="tick" style="align-self: end; padding-bottom: 7px">
+        <input type="checkbox" id="moved"> Only what moved
+      </label>
+      <p class="hint count" id="count" style="margin-left:auto; align-self: end;
+                                              padding-bottom: 8px"></p>
+    </div>
+
+    <div class="scroll grid-scroll">
+      <table class="grid" id="table">
+        <thead>
+          <tr>
+            <th data-sort="player">Player</th>
+            <th data-sort="label">Metric</th>
+            <th data-sort="kind_label" class="wide-only">Kind</th>
+            <th data-sort="level" class="num wide-only">Level</th>
+            <th data-sort="value" class="num">Value</th>
+            <th data-sort="gained" class="num">Gained</th>
+            <th data-sort="rank" class="num wide-only">Rank</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="hint" id="state">Loading&hellip;</p>
+    <p class="hint" style="margin-top:8px">A blank rank means the account is
+      not on the hiscores for that metric, which is not the same as zero.
+      &ldquo;Gained&rdquo; is measured from the last reading before the period
+      opened, so an account first seen mid-period shows only what it has been
+      watched for.</p>
+  </div>
+
+  <dialog id="export-dialog">
+    <form method="get" id="export" action="/export.csv">
+      <h3>Export the stored readings</h3>
+      <p class="hint">Not this table: the whole history behind it, as one row
+        per metric per reading. Covers the
+        <strong id="who">players ticked in the sidebar</strong>.</p>
+
       <input type="hidden" name="picked" value="1">
       <input type="hidden" name="tzoffset" id="tzoffset" value="">
+      <div id="player-inputs"></div>
 
       <h4>Metrics</h4>
       <div class="pickers">
@@ -33,7 +92,6 @@
           </label>
         {% endfor %}
       </div>
-      <p class="hint">Leave all three ticked for everything.</p>
 
       <h4>Dates</h4>
       <div class="row">
@@ -44,25 +102,21 @@
           <span>To</span><input type="date" name="to">
         </label>
       </div>
-      <p class="hint">Both are inclusive and both are optional - leave them
-        empty for the whole history. Dates mean your days, not UTC ones.</p>
+      <p class="hint">Both inclusive, both optional - leave them empty for the
+        whole history. Dates mean your days, not UTC ones.</p>
 
-      <p style="margin-top:16px">
+      <p class="hint" id="estimate" style="margin-top:10px"></p>
+
+      <div class="dialog-actions">
+        <button type="button" id="close-export" class="quiet">Cancel</button>
         <button type="submit" formaction="/export.csv">Download CSV</button>
-        <button type="submit" formaction="/export.json"
-                style="margin-left:8px">Download JSON</button>
-      </p>
+        <button type="submit" formaction="/export.json">Download JSON</button>
+      </div>
     </form>
 
-    <p class="hint" id="estimate"></p>
-  </div>
-
-  <div class="card">
-    <h3>What you get</h3>
-    <p class="hint">One row per metric per reading, oldest first:</p>
-    <div class="scroll">
-      <table>
-        <tr><th>Column</th><th>Meaning</th></tr>
+    <details class="columns">
+      <summary class="node">What the file contains</summary>
+      <table class="detail-table">
         <tr><td class="name">captured_at</td>
             <td class="dim">when Wise Old Man took the reading (UTC)</td></tr>
         <tr><td class="name">player</td><td class="dim">display name</td></tr>
@@ -78,13 +132,10 @@
         <tr><td class="name">rank</td>
             <td class="dim">hiscore rank, blank where unranked</td></tr>
       </table>
-    </div>
-    <p class="hint">A metric the account is not ranked on is stored as blank
-      rather than the API's <code>-1</code>, so an empty cell means "not on the
-      hiscores", not "zero".</p>
-  </div>
+    </details>
+  </dialog>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/export.js"></script>
+<script src="/static/table.js"></script>
 {% endblock %}
