@@ -159,12 +159,21 @@ plus **Admin** behind the password.
 **Players** lists the latest figures, and opens: each player expands into
 skills, bosses and activities, every row carrying the current value, the level
 or rank, and what it gained over the chosen period, sorted so whatever moved is
-at the top. That detail is fetched when a row is opened rather than rendered
+at the top. If the readings cover less of the window than the period asks for,
+it says so - the same distinction the charts and the summaries make, because a
+week nobody measured otherwise reads exactly like a quiet week. That detail is fetched when a row is opened rather than rendered
 with the page - every player's worth of it is a few hundred kilobytes nobody
 has asked to see - and refetched if the period changes underneath it.
 
 **Data** exports the stored readings as CSV or JSON: one row per metric per
-reading, filtered by player, by kind, and by date. `db.export_rows` yields in
+reading, filtered by player, by kind, and by date. The dates mean the viewer's
+days, not UTC ones - the page sends its offset, because otherwise an Eastern
+viewer asking for "to 30 August" would stop at 20:00 their time and lose that
+day's last reading. A date that will not parse is refused with a 400 rather
+than ignored, since ignoring it exports the whole history while looking
+filtered. Exports are budgeted at six a minute per address: a full one walks
+every stored reading, and the scheduler and the summary writer are threads in
+the same process on one shared vCPU. `db.export_rows` yields in
 batches and the response streams, so asking for the whole history (66,000 rows
 here, 5 MB) neither builds a list in memory nor times out. A metric the account
 is unranked on exports as blank rather than the API's `-1`, so an empty cell

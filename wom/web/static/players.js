@@ -86,10 +86,15 @@
 
   function render(host, data) {
     host.textContent = "";
-    var caption = el("p", "hint",
-      data.period + " · " + data.groups.reduce(function (n, g) {
-        return n + g.moved; }, 0) + " metrics moved");
-    host.appendChild(caption);
+    var moved = data.groups.reduce(function (n, g) { return n + g.moved; }, 0);
+    host.appendChild(el("p", "hint",
+      data.period + " · " + moved + " metric" + (moved === 1 ? "" : "s") + " moved"));
+    // Wise Old Man only has the readings it has. Say when the figures cover
+    // less than the period asks for, or a week nobody watched reads as a
+    // quiet week rather than an unmeasured one.
+    if (data.coverage && data.coverage.short) {
+      host.appendChild(el("p", "warn-note", data.coverage.note));
+    }
     data.groups.forEach(function (group, index) {
       host.appendChild(groupNode(group, index === 0));
     });

@@ -7,6 +7,8 @@ small fetch instead of a page load and a server-side render.
 
 import logging
 import os
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from flask import (Flask, Response, abort, jsonify, render_template, request,
@@ -18,7 +20,8 @@ from ..config import Config, DB_PATH
 from ..db import Database
 from ..icons import ASSET_DIR, icon_kind_for, icon_path
 from ..scheduler import next_slot, parse_last_run
-from ..util import fmt_ago, fmt_datetime, fmt_int, pretty_metric
+from ..util import (fmt_ago, fmt_datetime, fmt_int, parse_api_time,
+                    pretty_metric)
 from . import data as web_data
 from .admin import PASSWORD_ENV, admin as admin_blueprint, admin_enabled
 from .jobs import JobRunner
@@ -26,18 +29,74 @@ from .jobs import JobRunner
 log = logging.getLogger(__name__)
 
 
-def _day_bound(value, end_of_day=False):
-    """A yyyy-mm-dd from a date input as the ISO stamp the rows are keyed by."""
+class _Throttle:
+    """A simple per-address budget: `allowance` calls per `window` seconds."""
+
+    def __init__(self, allowance, window):
+        self.allowance = allowance
+        self.window = window
+        self._seen = {}
+        self._lock = threading.Lock()
+
+    def reset(self):
+        with self._lock:
+            self._seen.clear()
+
+    def hold(self, address):
+        """Seconds to wait, or 0 when this call may go ahead."""
+        now = time.monotonic()
+        with self._lock:
+            calls = [t for t in self._seen.get(address, ()) if now - t < self.window]
+            if len(calls) >= self.allowance:
+                self._seen[address] = calls
+                return max(1, int(self.window - (now - calls[0])))
+            calls.append(now)
+            self._seen[address] = calls
+            # Addresses that stopped asking should not accumulate forever.
+            if len(self._seen) > 512:
+                self._seen = {a: t for a, t in self._seen.items() if t}
+            return 0
+
+
+_export_throttle = _Throttle(allowance=6, window=60)
+
+
+class BadRequest(Exception):
+    """Something in the query string cannot be honoured."""
+
+
+def _day_bound(value, end_of_day=False, offset_minutes=0):
+    """A date from the picker as the UTC stamp the rows are keyed by.
+
+    Readings are stored in UTC but the picker hands over the viewer's local
+    day, so the bound is shifted by their offset: without it an Eastern
+    viewer's "to 30 August" stops at 20:00 their time and quietly drops that
+    day's 18:00 reading.
+
+    An unparseable date raises rather than returning None. None means "no
+    bound", and treating a typo as no bound exports the whole history while
+    looking filtered.
+    """
     text = (value or "").strip()
     if not text:
         return None
     try:
         day = datetime.strptime(text, "%Y-%m-%d")
     except ValueError:
-        return None
+        raise BadRequest("{!r} is not a date. Use yyyy-mm-dd.".format(text))
     if end_of_day:
         day += timedelta(days=1)      # `to` is inclusive of the day named
-    return day.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    return (day - timedelta(minutes=offset_minutes)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _offset_minutes(value):
+    """The viewer's minutes east of UTC, as the page reports them."""
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return minutes if -14 * 60 <= minutes <= 14 * 60 else 0
 
 
 def _csv_stream(rows):
@@ -79,6 +138,31 @@ def _json_stream(rows):
     yield "]"
 
 
+def _coverage_note(baseline, since):
+    """How much of the window the figures actually cover, when it is not all.
+
+    Wise Old Man only has the readings it has, and a player it saw once
+    yesterday still gets a "Week" column of gains. The charts caption this and
+    the written summaries spell it out; without it here a period nobody
+    measured reads exactly like a quiet one.
+    """
+    if baseline is None:
+        return {"short": True, "since": None, "days": 0,
+                "note": "not measured in this period"}
+    opened = parse_api_time(since)
+    measured = parse_api_time(baseline["captured_at"])
+    asked = (datetime.now(timezone.utc) - opened).total_seconds()
+    inside = (measured - opened).total_seconds()
+    if inside <= asked * 0.1:            # slop for the six-hourly cadence
+        return {"short": False}
+    covered = max(1, int((datetime.now(timezone.utc) - measured).total_seconds()
+                         // 86400))
+    return {"short": True, "days": covered,
+            "since": fmt_datetime(baseline["captured_at"], "%d %b %Y"),
+            "note": "measured only from {} ({}d)".format(
+                fmt_datetime(baseline["captured_at"], "%d %b %Y"), covered)}
+
+
 def _paragraphs(text):
     """Split a summary into paragraphs for the template to wrap in <p>."""
     return [block.strip() for block in (text or "").split("\n\n") if block.strip()]
@@ -91,6 +175,7 @@ def create_app():
     # Set by web_app.py when it starts the scheduler; None when the dashboard
     # is served without one, in which case there is nothing to collide with.
     app.config.setdefault("SCHEDULER", None)
+    _export_throttle.reset()
 
     # Admin is registered only when a password exists. A deployment that
     # forgets to set one has no admin routes at all, rather than open ones.
@@ -331,7 +416,7 @@ def create_app():
         return jsonify({
             "player": player["display_name"],
             "period": period.label,
-            "measured_from": bounds[0]["captured_at"] if bounds[0] else None,
+            "coverage": _coverage_note(bounds[0], since),
             "groups": groups,
         })
 
@@ -352,13 +437,27 @@ def create_app():
     def export_data(fmt):
         if fmt not in ("csv", "json"):
             abort(404)
+        # A full export walks every stored reading, and the scheduler and the
+        # summary writer are threads in this same process on one shared vCPU.
+        waiting = _export_throttle.hold(request.remote_addr or "?")
+        if waiting:
+            return Response(
+                "Too many exports from this address."
+                " Try again in {} seconds.".format(waiting),
+                status=429, mimetype="text/plain",
+                headers={"Retry-After": str(waiting)})
         config = settings()
         database = app.config["DATABASE"]
         chosen_players = chosen(config, roster(config), strict=True)
         kinds = [k for k in request.args.getlist("kind")
                  if k in ("skill", "boss", "activity")]
-        since = _day_bound(request.args.get("from"))
-        until = _day_bound(request.args.get("to"), end_of_day=True)
+        offset = _offset_minutes(request.args.get("tzoffset"))
+        try:
+            since = _day_bound(request.args.get("from"), offset_minutes=offset)
+            until = _day_bound(request.args.get("to"), end_of_day=True,
+                               offset_minutes=offset)
+        except BadRequest as exc:
+            return Response(str(exc), status=400, mimetype="text/plain")
         rows = database.export_rows([p["id"] for p in chosen_players],
                                     kinds=kinds, since=since, until=until)
         name = "wom-export-{}.{}".format(
