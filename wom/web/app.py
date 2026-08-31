@@ -35,6 +35,9 @@ def create_app():
     app = Flask(__name__, static_folder="static", static_url_path="/static")
     app.config["DATABASE"] = Database(DB_PATH)
     app.config["JOBS"] = JobRunner()
+    # Set by web_app.py when it starts the scheduler; None when the dashboard
+    # is served without one, in which case there is nothing to collide with.
+    app.config.setdefault("SCHEDULER", None)
 
     # Admin is registered only when a password exists. A deployment that
     # forgets to set one has no admin routes at all, rather than open ones.
@@ -42,6 +45,13 @@ def create_app():
     if app.config["ADMIN"]:
         app.secret_key = _session_key()
         app.permanent_session_lifetime = timedelta(days=14)
+        # Every admin action is a form POST authenticated by this cookie alone.
+        # Lax is what stops another site POSTing one on a signed-in viewer's
+        # behalf; browsers default to it, but that is their choice rather than
+        # ours until it is said here. Secure because fly.toml forces HTTPS.
+        app.config.update(SESSION_COOKIE_SAMESITE="Lax",
+                          SESSION_COOKIE_HTTPONLY=True,
+                          SESSION_COOKIE_SECURE=_https_only())
         app.register_blueprint(admin_blueprint)
     else:
         log.warning("%s is not set: the admin pages are disabled", PASSWORD_ENV)
@@ -275,6 +285,12 @@ def create_app():
                 "status": status(settings())}
 
     return app
+
+
+def _https_only():
+    """Mark the cookie Secure unless this is a plain-HTTP local run."""
+    return os.environ.get("WOM_INSECURE_COOKIE", "").strip().lower() not in (
+        "1", "true", "yes")
 
 
 def _session_key():

@@ -56,6 +56,9 @@ def start_scheduler(app):
             log.exception("writing the scheduled summaries failed")
 
     scheduler = SlotScheduler(config, job)
+    # The admin page's buttons take the same "something is running" flag, so a
+    # scheduled slot cannot fire into the middle of a manual run.
+    app.config["SCHEDULER"] = scheduler
     scheduler.start()
     log.info("update scheduler running inside the web server")
     return scheduler

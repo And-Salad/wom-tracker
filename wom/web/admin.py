@@ -10,6 +10,8 @@ to set one is not quietly wide open.
 import hmac
 import logging
 import os
+import threading
+import time
 from functools import wraps
 
 from flask import (Blueprint, current_app, flash, redirect, render_template,
@@ -25,6 +27,37 @@ log = logging.getLogger(__name__)
 admin = Blueprint("admin", __name__)
 
 PASSWORD_ENV = "WOM_ADMIN_PASSWORD"
+
+# This login is on the public internet, so an unlimited guess rate is the whole
+# attack. Failures are counted per address and the door shuts for a while.
+MAX_ATTEMPTS = 6
+LOCKOUT_SECONDS = 300
+_attempts = {}                 # address -> [failures, locked out until]
+_attempts_lock = threading.Lock()
+
+
+def _locked_out(address):
+    """Seconds still to wait, or 0 when this address may try again."""
+    with _attempts_lock:
+        failures, until = _attempts.get(address, (0, 0.0))
+        remaining = until - time.monotonic()
+        if remaining <= 0 and until:
+            _attempts.pop(address, None)      # the lockout expired
+            return 0
+        return int(remaining) if failures >= MAX_ATTEMPTS else 0
+
+
+def _note_failure(address):
+    with _attempts_lock:
+        failures = _attempts.get(address, (0, 0.0))[0] + 1
+        until = time.monotonic() + LOCKOUT_SECONDS if failures >= MAX_ATTEMPTS else 0.0
+        _attempts[address] = (failures, until)
+        return failures
+
+
+def _note_success(address):
+    with _attempts_lock:
+        _attempts.pop(address, None)
 
 
 def admin_password():
@@ -55,15 +88,21 @@ def requires_login(view):
 def login():
     error = None
     if request.method == "POST":
-        given = request.form.get("password", "")
-        # compare_digest rather than ==: no early exit, so a wrong guess tells
-        # an attacker nothing about how much of it was right.
-        if hmac.compare_digest(given, admin_password()):
+        address = request.remote_addr or "?"
+        waiting = _locked_out(address)
+        if waiting:
+            error = "Too many attempts. Try again in {} seconds.".format(waiting)
+        elif hmac.compare_digest(request.form.get("password", ""), admin_password()):
+            _note_success(address)
             session["wom_admin"] = True
             session.permanent = True
             return redirect(request.args.get("next") or url_for("admin.settings"))
-        error = "That is not the password."
-        log.warning("failed admin sign-in from %s", request.remote_addr)
+        else:
+            failures = _note_failure(address)
+            # A wrong guess should cost real time even before the lockout.
+            time.sleep(0.5)
+            error = "That is not the password."
+            log.warning("failed admin sign-in from %s (%d)", address, failures)
     return render_template("admin_login.html", error=error, page="admin")
 
 
@@ -106,7 +145,10 @@ def save_settings():
     names = normalise_usernames(request.form.get("usernames", "").splitlines())
     config["usernames"] = names
     config["summaries_enabled"] = bool(request.form.get("summaries_enabled"))
-    config["summary_model"] = request.form.get("summary_model") or "claude-sonnet-5"
+    # Only the models the page offers: anything else is stored happily and
+    # then fails on every future API call, visible only in the log.
+    model = request.form.get("summary_model", "")
+    config["summary_model"] = model if model in SUMMARY_MODELS else "claude-sonnet-5"
     config["user_agent_contact"] = request.form.get("user_agent_contact", "").strip()
     # A key supplied by the environment is not editable here, and a blank box
     # means "leave it alone" rather than "erase it".
@@ -176,7 +218,27 @@ def prompts():
 def run(action):
     runner = current_app.config["JOBS"]
     database = current_app.config["DATABASE"]
+    scheduler = current_app.config.get("SCHEDULER")
     config = Config()
+
+    def exclusive(body):
+        """Wrap a job so it cannot overlap the six-hourly run.
+
+        JobRunner only stops two admin jobs colliding; the scheduler is a
+        separate thread in this same process, and both touch the API and the
+        same rows. The scheduler's flag is the one both sides check.
+        """
+        def work(job):
+            if scheduler is not None and not scheduler.claim():
+                job.finish("the scheduled update is running - try again shortly",
+                           failed=True)
+                return
+            try:
+                body(job)
+            finally:
+                if scheduler is not None:
+                    scheduler.release()
+        return work
 
     if action == "update":
         def work(job):
@@ -196,7 +258,7 @@ def run(action):
             config["last_run"] = _stamp()
             config.save()
             job.finish("update finished")
-        started = runner.start("update", work)
+        started = runner.start("update", exclusive(work))
 
     elif action == "summarise":
         def work(job):
@@ -209,7 +271,7 @@ def run(action):
                 progress=lambda e: job.say(
                     "{}: {}".format(e["player"], e["note"]), keep=True))
             job.finish("summaries finished")
-        started = runner.start("summarise", work)
+        started = runner.start("summarise", exclusive(work))
 
     elif action == "backfill":
         def work(job):
@@ -222,7 +284,7 @@ def run(action):
                 count, note = backfill_player(client, database, name, force=True)
                 job.say("{}: {}".format(name, note or "nothing to import"), keep=True)
             job.finish("history import finished")
-        started = runner.start("backfill", work)
+        started = runner.start("backfill", exclusive(work))
 
     else:
         flash("Unknown action.")

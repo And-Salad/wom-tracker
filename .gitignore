@@ -10,10 +10,10 @@
 # wom/config.py and wom/summaries.py.
 data/
 
-# Icons are fetched, not authored: `py fetch_icons.py` downloads all of them
-# from Wise Old Man and RuneLite. Delete this line if you would rather have
-# the repo be self-contained.
-assets/
+# assets/ is deliberately NOT ignored. The Dockerfile copies it, so leaving it
+# out of the repo made `fly deploy` work only from a machine that happened to
+# have run fetch_icons.py - a clean clone failed the build. 311KB is a fair
+# price for a deploy that does not depend on the working directory.
 
 # Python
 __pycache__/

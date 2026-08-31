@@ -135,15 +135,35 @@ class SlotScheduler:
 
     def run_now(self, trigger="manual"):
         """Fire the job on a worker thread unless one is already running."""
+        if not self.claim():
+            return False
+        threading.Thread(
+            target=self._run_job, args=(trigger,), name="wom-update", daemon=True
+        ).start()
+        return True
+
+    def claim(self):
+        """Take the "something is running" flag, or False if it is already taken.
+
+        The flag exists so a scheduled run and a manual one cannot overlap. The
+        hosted admin page runs its own jobs on its own threads rather than
+        through run_now, and has to take the same flag or the six-hourly slot
+        can fire straight into the middle of a manual update - two passes over
+        the same players, two sets of API calls, and for summaries two sets of
+        paid-for Claude calls.
+        """
         with self._running_lock:
             if self._busy:
                 return False
             self._busy = True
         self._notify()
-        threading.Thread(
-            target=self._run_job, args=(trigger,), name="wom-update", daemon=True
-        ).start()
         return True
+
+    def release(self):
+        """Give the flag back. Always pair this with a successful claim()."""
+        with self._running_lock:
+            self._busy = False
+        self._notify()
 
     # -- internals --------------------------------------------------------
 
@@ -155,8 +175,7 @@ class SlotScheduler:
         except Exception:
             log.exception("scheduled update failed")
         finally:
-            self._busy = False
-            self._notify()
+            self.release()
 
     def _notify(self):
         if self.on_state_change:
