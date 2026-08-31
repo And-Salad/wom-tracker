@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% set page = 'export' %}
+{% set bare = true %}
+{% block title %}Data - WOM Tracker{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <h3>Export the stored readings</h3>
+    <p class="hint">Every snapshot the tracker holds, as one row per metric per
+      reading. Narrow it by player, by what kind of metric, and by date.</p>
+
+    <form method="get" id="export" action="/export.csv">
+      <h4>Players</h4>
+      <div class="pickers">
+        {% for player in players %}
+          <label class="tick">
+            <input type="checkbox" name="player" value="{{ player['username'] }}"
+                   {{ 'checked' if player['username'] in selected }}>
+            <span class="swatch" style="background: {{ colors[player['username']] }}"></span>
+            {{ player['display_name'] }}
+          </label>
+        {% endfor %}
+      </div>
+      <input type="hidden" name="picked" value="1">
+
+      <h4>Metrics</h4>
+      <div class="pickers">
+        {% for key, title in kinds %}
+          <label class="tick">
+            <input type="checkbox" name="kind" value="{{ key }}" checked>
+            {{ title }}
+          </label>
+        {% endfor %}
+      </div>
+      <p class="hint">Leave all three ticked for everything.</p>
+
+      <h4>Dates</h4>
+      <div class="row">
+        <label class="field" style="max-width: 200px">
+          <span>From</span><input type="date" name="from">
+        </label>
+        <label class="field" style="max-width: 200px">
+          <span>To</span><input type="date" name="to">
+        </label>
+      </div>
+      <p class="hint">Both are inclusive, and both are optional - leave them
+        empty for the whole history.</p>
+
+      <p style="margin-top:16px">
+        <button type="submit" formaction="/export.csv">Download CSV</button>
+        <button type="submit" formaction="/export.json"
+                style="margin-left:8px">Download JSON</button>
+      </p>
+    </form>
+
+    <p class="hint" id="estimate"></p>
+  </div>
+
+  <div class="card">
+    <h3>What you get</h3>
+    <p class="hint">One row per metric per reading, oldest first:</p>
+    <div class="scroll">
+      <table>
+        <tr><th>Column</th><th>Meaning</th></tr>
+        <tr><td class="name">captured_at</td>
+            <td class="dim">when Wise Old Man took the reading (UTC)</td></tr>
+        <tr><td class="name">player</td><td class="dim">display name</td></tr>
+        <tr><td class="name">username</td>
+            <td class="dim">lowercase key, stable if a display name changes</td></tr>
+        <tr><td class="name">kind</td>
+            <td class="dim">skill, boss or activity</td></tr>
+        <tr><td class="name">metric</td>
+            <td class="dim">the Wise Old Man metric name, e.g. <code>zulrah</code></td></tr>
+        <tr><td class="name">value</td>
+            <td class="dim">XP for a skill, kills for a boss, score for an activity</td></tr>
+        <tr><td class="name">level</td><td class="dim">skills only</td></tr>
+        <tr><td class="name">rank</td>
+            <td class="dim">hiscore rank, blank where unranked</td></tr>
+      </table>
+    </div>
+    <p class="hint">A metric the account is not ranked on is stored as blank
+      rather than the API's <code>-1</code>, so an empty cell means "not on the
+      hiscores", not "zero".</p>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Say roughly how much is being asked for, so a year of everything is not a
+  // surprise when it lands.
+  (function () {
+    var form = document.getElementById("export");
+    var out = document.getElementById("estimate");
+    function count() {
+      var players = form.querySelectorAll("input[name=player]:checked").length;
+      var kinds = form.querySelectorAll("input[name=kind]:checked").length;
+      if (!players) { out.textContent = "Pick at least one player."; return; }
+      if (!kinds) { out.textContent = "Pick at least one kind of metric."; return; }
+      out.textContent = players + (players === 1 ? " player" : " players") +
+        " across " + kinds + (kinds === 1 ? " kind" : " kinds") + " of metric.";
+    }
+    form.addEventListener("change", count);
+    count();
+  })();
+</script>
+{% endblock %}

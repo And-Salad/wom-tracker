@@ -2,10 +2,21 @@
 {% set page = 'players' %}
 {% block title %}Players - WOM Tracker{% endblock %}
 
+{% block sidebar_extra %}
+  <h2 style="margin-top:16px">Period</h2>
+  <select id="period" name="period">
+    {% for label in periods %}
+      <option value="{{ label }}" {{ 'selected' if label == period.label }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <p class="live-note">Sets what "gained" means in the detail below.</p>
+{% endblock %}
+
 {% block content %}
   <div class="card">
     <h3>Players</h3>
-    <p class="hint">Latest stored figures for every tracked account.</p>
+    <p class="hint">Latest stored figures. Open a player below for their
+      skills, bosses and activities, and what moved this period.</p>
     <div class="scroll">
       <table>
         <thead>
@@ -37,4 +48,21 @@
       </table>
     </div>
   </div>
+
+  <div class="tree">
+    {% for row in rows %}
+      <details class="card detail" data-username="{{ row.username }}">
+        <summary class="node player">
+          <span class="swatch" style="background: {{ row.color }}"></span>
+          {{ row.name }}
+          <span class="count">{{ row.total_level }} total</span>
+        </summary>
+        <div class="detail-body"><p class="hint">Opening...</p></div>
+      </details>
+    {% endfor %}
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/players.js"></script>
 {% endblock %}

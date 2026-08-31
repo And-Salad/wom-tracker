@@ -529,6 +529,39 @@ class Database:
             params.append(kind)
         return self.query(sql + " ORDER BY metric", params)
 
+    def export_rows(self, player_ids, kinds=None, since=None, until=None,
+                    batch=2000):
+        """Every stored reading in a range, oldest first, yielded in batches.
+
+        For the export page, which can legitimately ask for a year of every
+        metric for everyone - tens of thousands of rows. Yielding keeps the
+        whole result off the heap and lets the response stream.
+        """
+        if not player_ids:
+            return
+        sql = ("SELECT m.captured_at, p.display_name, p.username, m.kind,"
+               "       m.metric, m.value, m.level, m.rank"
+               "  FROM metrics m JOIN players p ON p.id = m.player_id"
+               " WHERE m.player_id IN ({})".format(",".join("?" * len(player_ids))))
+        params = list(player_ids)
+        if kinds:
+            sql += " AND m.kind IN ({})".format(",".join("?" * len(kinds)))
+            params.extend(kinds)
+        if since:
+            sql += " AND m.captured_at >= ?"
+            params.append(since)
+        if until:
+            sql += " AND m.captured_at < ?"
+            params.append(until)
+        sql += " ORDER BY m.captured_at, p.display_name, m.kind, m.metric"
+        cursor = self.connect().execute(sql, params)
+        while True:
+            rows = cursor.fetchmany(batch)
+            if not rows:
+                return
+            for row in rows:
+                yield row
+
     def recent_runs(self, limit=20):
         return self.query("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,))
 

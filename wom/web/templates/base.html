@@ -154,6 +154,10 @@
     .tree .folder, .tree .leaf { margin-left: 8px; }
     .tree .body { margin-left: 12px; padding-left: 8px; }
     .tip { max-width: calc(100vw - 24px); }
+    /* Five columns do not fit 375px; keep the name, the measure and the gain. */
+    .wide-only { display: none; }
+    .detail-body { margin-left: 6px; }
+    .detail-table { font-size: 12px; }
     th, td { padding: 5px 7px; }
   }
 
@@ -162,6 +166,25 @@
   body { overflow-x: hidden; }
   .scroll { -webkit-overflow-scrolling: touch; }
   .live-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+
+  /* Expanding player rows, and the export form. */
+  .tree details.detail { padding: 8px 12px; margin-bottom: 8px; }
+  .tree details.detail > summary.node { font-size: 15px; font-weight: 600; }
+  .detail-body { margin: 4px 0 6px 22px; }
+  .detail-body > .folder { margin-left: 0; }
+  .detail-table { font-size: 13px; }
+  .detail-table td { padding: 3px 8px; border-bottom: 1px solid var(--line); }
+  .detail-table tr.moved td { color: var(--ink); }
+  .detail-table tr:not(.moved) td { color: var(--muted); }
+  .detail-table td.gain { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .row-icon { width: 18px; height: 18px; image-rendering: pixelated;
+              vertical-align: middle; margin-right: 7px; }
+  .detail-table td.name { white-space: nowrap; }
+  .detail-table td.measure { white-space: nowrap; }
+  .pickers { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  .pickers .tick { margin: 0; }
+  code { background: var(--raised); padding: 1px 5px; border-radius: 4px;
+         font-size: 12px; }
 
   /* Admin. Deliberately plain: it is a form, not a dashboard. */
   .flash { background: var(--raised); border: 1px solid var(--line);
@@ -200,6 +223,7 @@
     <a href="/milestones" class="{{ 'on' if page == 'milestones' }}">Milestones</a>
     <a href="/summaries" class="{{ 'on' if page == 'summaries' }}">Summaries</a>
     <a href="/players" class="{{ 'on' if page == 'players' }}">Players</a>
+    <a href="/export" class="{{ 'on' if page == 'export' }}">Data</a>
     {% if admin_enabled %}
       <a href="/admin" class="{{ 'on' if page == 'admin' }}">{{ 'Admin' if signed_in else 'Sign in' }}</a>
     {% endif %}

@@ -9,8 +9,8 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
-from flask import (Flask, abort, jsonify, render_template, request, send_file,
-                   send_from_directory)
+from flask import (Flask, Response, abort, jsonify, render_template, request,
+                   send_file, send_from_directory)
 
 from .. import periods, theme
 from ..colors import player_color
@@ -24,6 +24,59 @@ from .admin import PASSWORD_ENV, admin as admin_blueprint, admin_enabled
 from .jobs import JobRunner
 
 log = logging.getLogger(__name__)
+
+
+def _day_bound(value, end_of_day=False):
+    """A yyyy-mm-dd from a date input as the ISO stamp the rows are keyed by."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        day = datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return None
+    if end_of_day:
+        day += timedelta(days=1)      # `to` is inclusive of the day named
+    return day.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _csv_stream(rows):
+    """Yield the export a line at a time, so nothing is held whole in memory."""
+    import csv
+    import io as _io
+
+    buffer = _io.StringIO()
+    writer = csv.writer(buffer)
+
+    def flush():
+        value = buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        return value
+
+    writer.writerow(["captured_at", "player", "username", "kind", "metric",
+                     "value", "level", "rank"])
+    yield flush()
+    for row in rows:
+        writer.writerow([row["captured_at"], row["display_name"], row["username"],
+                         row["kind"], row["metric"], row["value"], row["level"],
+                         row["rank"]])
+        yield flush()
+
+
+def _json_stream(rows):
+    """The same, as a JSON array built one element at a time."""
+    import json as _json
+    yield "["
+    first = True
+    for row in rows:
+        yield ("" if first else ",") + _json.dumps({
+            "captured_at": row["captured_at"], "player": row["display_name"],
+            "username": row["username"], "kind": row["kind"],
+            "metric": row["metric"], "value": row["value"],
+            "level": row["level"], "rank": row["rank"]})
+        first = False
+    yield "]"
 
 
 def _paragraphs(text):
@@ -219,6 +272,7 @@ def create_app():
                 (player["id"],))
             rows.append({
                 "name": player["display_name"],
+                "username": player["username"],
                 "color": palette[player["username"]],
                 "type": pretty_metric(player["type"] or "-"),
                 "combat": fmt_int(player["combat_level"]),
@@ -231,7 +285,88 @@ def create_app():
             })
         return render_template("players.html", rows=rows, status=status(config),
                                players=players, colors=palette,
+                               periods=periods.labels(),
+                               period=periods.by_label(
+                                   request.args.get("period", "").title() or "Week"),
                                selected={p["username"] for p in players})
+
+    @app.route("/api/player/<username>")
+    def player_detail(username):
+        """One player's current figures and what moved, for the expanding rows.
+
+        Fetched when a row is opened rather than rendered with the page: six
+        players' worth of every skill, boss and activity is a few hundred
+        kilobytes nobody has asked to see yet.
+        """
+        database = app.config["DATABASE"]
+        player = database.player_by_username(username)
+        if player is None:
+            abort(404)
+        period = periods.by_label(request.args.get("period", "").title() or "Week")
+        since = period.start_iso()
+        bounds = database.snapshot_bounds(player["id"], since)
+
+        groups = []
+        for kind, title in (("skill", "Skills"), ("boss", "Bosses"),
+                            ("activity", "Activities")):
+            gains = database.metric_gains(player["id"], since, kind, bounds=bounds)
+            rows = []
+            for row in database.latest_snapshot_metrics(player["id"], kind):
+                if row["value"] is None and row["level"] is None:
+                    continue        # unranked and never seen: not worth a line
+                rows.append({
+                    "metric": row["metric"],
+                    "label": pretty_metric(row["metric"]),
+                    "value": row["value"],
+                    "level": row["level"],
+                    "rank": row["rank"],
+                    "gained": round(gains.get(row["metric"], 0.0), 2),
+                })
+            # What moved first, then the rest alphabetically: on a week's view
+            # most of a hundred boss rows are zeroes.
+            rows.sort(key=lambda r: (-r["gained"], r["label"]))
+            groups.append({"kind": kind, "title": title, "rows": rows,
+                           "moved": sum(1 for r in rows if r["gained"])})
+
+        return jsonify({
+            "player": player["display_name"],
+            "period": period.label,
+            "measured_from": bounds[0]["captured_at"] if bounds[0] else None,
+            "groups": groups,
+        })
+
+    # -- exporting ---------------------------------------------------------
+
+    @app.route("/export")
+    def export_page():
+        config = settings()
+        players = roster(config)
+        return render_template(
+            "export.html", players=players, colors=colors(config, players),
+            selected={p["username"] for p in players},
+            kinds=[("skill", "Skills"), ("boss", "Bosses"),
+                   ("activity", "Activities")],
+            status=status(config))
+
+    @app.route("/export.<fmt>")
+    def export_data(fmt):
+        if fmt not in ("csv", "json"):
+            abort(404)
+        config = settings()
+        database = app.config["DATABASE"]
+        chosen_players = chosen(config, roster(config), strict=True)
+        kinds = [k for k in request.args.getlist("kind")
+                 if k in ("skill", "boss", "activity")]
+        since = _day_bound(request.args.get("from"))
+        until = _day_bound(request.args.get("to"), end_of_day=True)
+        rows = database.export_rows([p["id"] for p in chosen_players],
+                                    kinds=kinds, since=since, until=until)
+        name = "wom-export-{}.{}".format(
+            datetime.now().strftime("%Y%m%d"), fmt)
+        stream = _csv_stream(rows) if fmt == "csv" else _json_stream(rows)
+        return Response(stream, mimetype=(
+            "text/csv" if fmt == "csv" else "application/json"), headers={
+                "Content-Disposition": 'attachment; filename="{}"'.format(name)})
 
     # -- data -------------------------------------------------------------
 

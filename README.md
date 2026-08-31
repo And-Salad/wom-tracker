@@ -152,9 +152,23 @@ at all outside the morning slot.
 
 ## The pages
 
-Four public pages - **Summary** (the charts), **Milestones**, **Summaries** and
-**Players** - with the player and period filters in the sidebar, plus **Admin**
-behind the password.
+Five public pages - **Summary** (the charts), **Milestones**, **Summaries**,
+**Players** and **Data** - with the player and period filters in the sidebar,
+plus **Admin** behind the password.
+
+**Players** lists the latest figures, and opens: each player expands into
+skills, bosses and activities, every row carrying the current value, the level
+or rank, and what it gained over the chosen period, sorted so whatever moved is
+at the top. That detail is fetched when a row is opened rather than rendered
+with the page - every player's worth of it is a few hundred kilobytes nobody
+has asked to see - and refetched if the period changes underneath it.
+
+**Data** exports the stored readings as CSV or JSON: one row per metric per
+reading, filtered by player, by kind, and by date. `db.export_rows` yields in
+batches and the response streams, so asking for the whole history (66,000 rows
+here, 5 MB) neither builds a list in memory nor times out. A metric the account
+is unranked on exports as blank rather than the API's `-1`, so an empty cell
+means "not on the hiscores" and not "zero".
 
 The charts are drawn in the browser with D3 (`wom/web/static/charts.js`). The
 server only answers with JSON from `/api/chart/<key>`, so ticking a player or
