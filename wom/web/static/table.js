@@ -47,12 +47,10 @@
     var who = whoBox.value;
     var kind = kindBox.value;
     var metric = metricBox.value;
-    var movedOnly = document.getElementById("moved").checked;
     return rows.filter(function (row) {
       if (row.kind !== kind) { return false; }
       if (who && row.username !== who) { return false; }
       if (metric && row.metric !== metric) { return false; }
-      if (movedOnly && !row.gained) { return false; }
       return true;
     });
   }
@@ -160,10 +158,13 @@
     // Counted against the chosen kind, not the whole set: "6 of 666" when
     // 522 of those are bosses you did not ask for is a misleading fraction.
     var inKind = rows.filter(function (r) { return r.kind === kindBox.value; }).length;
-    count.textContent = shown.length === inKind
+    count.textContent = (shown.length === inKind
       ? full.format(inKind) + " rows"
       : full.format(shown.length) + " of " + full.format(inKind) + " " +
-        kindName(kindBox.value);
+        kindName(kindBox.value)) +
+      // The period picker still sits in the sidebar while the dates hold the
+      // window, and a control that looks live but is not needs saying.
+      (locked ? " · these dates, not the period" : "");
     state.textContent = shown.length ? "" :
       (rows.length ? "Nothing matches those filters."
                    : "No readings for the included players.");
@@ -178,6 +179,38 @@
     });
   }
 
+  // -- the dates -----------------------------------------------------------
+
+  /* The two date inputs follow the period until somebody types in one of
+     them. From that moment the dates are the window and the period no longer
+     moves them - otherwise changing the period, or simply reloading, would
+     silently throw away the range being read. The x puts them back under the
+     period's control. */
+  var fromBox = document.getElementById("from");
+  var toBox = document.getElementById("to");
+  var unlock = document.getElementById("unlock");
+  var locked = false;
+
+  function snap(window) {
+    if (locked) { return; }
+    fromBox.value = window.from || "";
+    toBox.value = window.to || "";
+  }
+
+  function lock() {
+    locked = true;
+    unlock.hidden = false;
+    document.getElementById("dates").classList.add("locked");
+    load();
+  }
+
+  function release() {
+    locked = false;
+    unlock.hidden = true;
+    document.getElementById("dates").classList.remove("locked");
+    load();
+  }
+
   // -- talking to the server -----------------------------------------------
 
   function query() {
@@ -188,6 +221,13 @@
     params.set("picked", "1");
     document.querySelectorAll(".side input[name=player]:checked")
       .forEach(function (box) { params.append("player", box.value); });
+    if (locked) {
+      // Readings are stored in UTC; say which day the viewer means, or a "to"
+      // of 30 August would stop at 20:00 for anyone west of Greenwich.
+      params.set("tzoffset", String(-new Date().getTimezoneOffset()));
+      if (fromBox.value) { params.set("from", fromBox.value); }
+      if (toBox.value) { params.set("to", toBox.value); }
+    }
     return params.toString();
   }
 
@@ -215,6 +255,7 @@
           state.textContent = payload.empty;
           return;
         }
+        snap(payload.window || {});
         refreshChoices();
         render();
       }).catch(function (err) {
@@ -315,9 +356,15 @@
       fill(metricBox, metricOptions(kindBox.value), metricBox.value);
       render();
     });
-    [whoBox, metricBox, document.getElementById("moved")].forEach(function (node) {
+    [whoBox, metricBox].forEach(function (node) {
       node.addEventListener("change", render);
     });
+
+    // Typing in either date locks both; the x hands them back to the period.
+    [fromBox, toBox].forEach(function (box) {
+      box.addEventListener("change", lock);
+    });
+    unlock.addEventListener("click", release);
 
     document.getElementById("period").addEventListener("change", load);
     document.querySelectorAll(".side input[name=player]").forEach(function (box) {

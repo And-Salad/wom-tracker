@@ -255,6 +255,18 @@
              margin: 4px 0 10px; }
   .toolbar .field { margin: 0; min-width: 180px; flex: 1 1 200px; }
   .toolbar .count { white-space: nowrap; }
+  /* The dates sit at the far end of the filters and are narrower than a
+     select: a yyyy-mm-dd input needs no more room than it needs. */
+  .dates { display: flex; gap: 8px; align-items: flex-end; margin-left: auto; }
+  .toolbar .dates .field { min-width: 0; flex: 0 1 148px; }
+  /* Held dates are outlined, so it is clear at a glance that the period
+     picker in the sidebar is no longer what the table is answering. */
+  .dates.locked .field input { border-color: var(--accent); }
+  button.clear {
+    background: transparent; color: var(--muted); border: 1px solid var(--line);
+    font-size: 16px; line-height: 1; padding: 6px 10px; margin-bottom: 1px;
+  }
+  button.clear:hover { color: var(--ink); border-color: var(--accent); }
   /* Six players' worth of metrics is ~700 rows, which as a plain table is a
      20,000px page. It scrolls in its own box instead, so the search, the
      filters and the count stay on screen while you read down it. */
@@ -285,6 +297,9 @@
        cuts "Chambers Of Xeric Challenge Mode" to nothing. One per row. */
     .toolbar { gap: 8px; }
     .toolbar .field { flex: 1 1 100%; }
+    /* From, To and the x share one row rather than taking three. */
+    .dates { margin-left: 0; width: 100%; }
+    .toolbar .dates .field { flex: 1 1 0; }
     .toolbar .count { margin-left: 0 !important; padding-bottom: 0 !important; }
     /* Five columns in 325px: give back what the padding is taking, and let
        the metric wrap. A column is as wide as its widest cell, and

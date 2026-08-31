@@ -274,14 +274,46 @@ def test_the_table_carries_the_colour_the_charts_use(client, app):
     assert row["color"] == standing["color"]
 
 
+def test_table_dates_snap_to_the_period_when_none_are_given(client, app):
+    """The inputs have to show the window in force, in the viewer's days."""
+    seed(app)
+    window = client.get("/api/table?period=Week&tzoffset=0").get_json()["window"]
+    assert window["from"] and window["to"], window
+    assert window["from"] < window["to"]
+
+
+def test_dates_override_the_period_and_close_the_window(client, app):
+    """A range that ended in the past must not report its gains against
+    today's totals: 'value' is where they stood at the end of the range."""
+    database = seed(app)
+    database.save_snapshot(1, snapshot("2026-08-28T12:00:00.000Z",
+                                       skills={"attack": (3000, 50)},
+                                       bosses={"zulrah": 30}))
+    body = client.get("/api/table?period=Week&from=2026-08-24&to=2026-08-28"
+                      "&tzoffset=0").get_json()
+    row = [r for r in body["rows"] if r["metric"] == "attack"][0]
+    assert row["value"] == 3000, "the reading inside the window, not the newest"
+    assert row["gained"] == 2000, "measured from the 25th, not from today"
+    assert body["window"] == {"from": "2026-08-24", "to": "2026-08-28"}
+
+
+def test_a_typo_in_a_table_date_is_refused_not_ignored(client, app):
+    """Ignoring it would widen the window while looking narrowed."""
+    seed(app)
+    response = client.get("/api/table?from=24/08/2026")
+    assert response.status_code == 400
+
+
 def test_the_table_filters_are_distinct_and_kind_is_always_one(client, app):
     """Player, kind and metric each get their own control, and kind has no
     "All": 666 rows of everything at once is not a view anybody asked for."""
     seed(app)
     body = client.get("/export").get_data(as_text=True)
-    for control in ('id="who-filter"', 'id="kind"', 'id="metric"'):
+    for control in ('id="who-filter"', 'id="kind"', 'id="metric"',
+                    'id="from"', 'id="to"', 'id="unlock"'):
         assert control in body, control
     assert 'id="q"' not in body, "the free-text search is gone"
+    assert 'id="moved"' not in body, "the moved-only tick is gone"
     kind = body[body.index('id="kind"'):body.index("</select>", body.index('id="kind"'))]
     assert 'value=""' not in kind, "kind must always name one kind"
     assert kind.index('value="skill"') < kind.index('value="boss"'),         "skills first, so the page opens on them"

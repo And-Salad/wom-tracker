@@ -18,8 +18,9 @@
     <div class="card-head">
       <div>
         <h3>Every metric</h3>
-        <p class="hint">One row per player per metric: where they stand now,
-          and how far it moved over the period. Sort by any column.</p>
+        <p class="hint">One row per player per metric: where they stood at the
+          end of the window, and how far it moved inside it. Sort by any
+          column.</p>
       </div>
       <p style="margin:0 0 0 auto">
         <button type="button" id="open-export">Export a file&hellip;</button>
@@ -43,12 +44,20 @@
         <span>Metric</span>
         <select id="metric"></select>
       </label>
-      <label class="tick" style="align-self: end; padding-bottom: 7px">
-        <input type="checkbox" id="moved"> Only what moved
-      </label>
-      <p class="hint count" id="count" style="margin-left:auto; align-self: end;
-                                              padding-bottom: 8px"></p>
+      <div class="dates" id="dates">
+        <label class="field">
+          <span>From</span>
+          <input type="date" id="from">
+        </label>
+        <label class="field">
+          <span>To</span>
+          <input type="date" id="to">
+        </label>
+        <button type="button" id="unlock" class="clear" title="Back to the period"
+                aria-label="Clear these dates and follow the period" hidden>&times;</button>
+      </div>
     </div>
+    <p class="hint count" id="count"></p>
 
     <div class="scroll grid-scroll">
       <table class="grid" id="table">
@@ -66,10 +75,12 @@
       </table>
     </div>
     <p class="hint" id="state">Loading&hellip;</p>
-    <p class="hint" style="margin-top:8px">A blank rank means the account is
-      not on the hiscores for that metric, which is not the same as zero.
-      &ldquo;Gained&rdquo; is measured from the last reading before the period
-      opened, so an account first seen mid-period shows only what it has been
+    <p class="hint" style="margin-top:8px">The window is the period in the
+      sidebar until you set a date, after which the dates hold it until you
+      clear them with the &times;. A blank rank means the account is not on the
+      hiscores for that metric, which is not the same as zero.
+      &ldquo;Gained&rdquo; is measured from the last reading before the window
+      opened, so an account first seen inside it shows only what it has been
       watched for.</p>
   </div>
 

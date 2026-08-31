@@ -198,22 +198,28 @@ def coverage_note(baseline, since):
                 fmt_datetime(baseline["captured_at"], "%d %b %Y"), covered)}
 
 
-def metric_table(database, players, period, palette):
-    """Every current metric for the included players, and how far it moved.
+def metric_table(database, players, since, until, palette):
+    """Every metric for the included players, and how far it moved.
 
     The same ground the export covers, answered in the page. A question like
     "who trained slayer this week" was previously a download and a spreadsheet;
     as rows it is a filter and a sort. One row per player per metric, so the
     browser can group it whichever way the viewer asks for.
+
+    `until` closes the window. Where it stood is then read from the last
+    reading inside the window rather than the newest one on file: a range that
+    ended in June must not report June's gains against today's totals.
     """
-    since = period.start_iso()
     rows = []
     for player in players:
-        bounds = database.snapshot_bounds(player["id"], since)
+        start, end = database.snapshot_bounds(player["id"], since, until)
+        if end is None:
+            continue              # nothing on file for this player by then
         color = palette.get(player["username"], "")
         for kind, title in METRIC_GROUPS:
-            gains = database.metric_gains(player["id"], since, kind, bounds=bounds)
-            for row in database.latest_snapshot_metrics(player["id"], kind):
+            gains = database.metric_gains(player["id"], since, kind,
+                                          bounds=(start, end))
+            for row in database.snapshot_metrics(end["id"], kind):
                 if row["value"] is None and row["level"] is None:
                     continue      # unranked and never seen: not worth a line
                 rows.append({

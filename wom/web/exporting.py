@@ -8,12 +8,13 @@ than assembled and then sent.
 import csv
 import io
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from flask import (Blueprint, Response, abort, current_app, render_template,
                    request, session)
 
 from .. import periods
+from .dates import BadRequest, day_bound, offset_minutes
 from .selection import (chosen, colors, current_period, database, roster,
                         settings, status)
 
@@ -22,10 +23,6 @@ exporting = Blueprint("exporting", __name__)
 KINDS = (("skill", "Skills"), ("boss", "Bosses"), ("activity", "Activities"))
 COLUMNS = ("captured_at", "player", "username", "kind", "metric",
            "value", "level", "rank")
-
-
-class BadRequest(Exception):
-    """Something in the query string cannot be honoured."""
 
 
 @exporting.route("/export")
@@ -83,42 +80,6 @@ def _refused(limits, waiting, which):
                    .format(limits.exports_per_day, hours, plural))
     return Response(message, status=429, mimetype="text/plain",
                     headers={"Retry-After": str(waiting)})
-
-
-# -- the query string -----------------------------------------------------
-
-def day_bound(value, end_of_day=False, offset_minutes=0):
-    """A date from the picker as the UTC stamp the rows are keyed by.
-
-    Readings are stored in UTC but the picker hands over the viewer's local
-    day, so the bound is shifted by their offset: without it an Eastern
-    viewer's "to 30 August" stops at 20:00 their time and quietly drops that
-    day's last reading.
-
-    An unparseable date raises rather than returning None. None means "no
-    bound", and treating a typo as no bound exports the whole history while
-    looking filtered.
-    """
-    text = (value or "").strip()
-    if not text:
-        return None
-    try:
-        day = datetime.strptime(text, "%Y-%m-%d")
-    except ValueError:
-        raise BadRequest("{!r} is not a date. Use yyyy-mm-dd.".format(text))
-    if end_of_day:
-        day += timedelta(days=1)          # `to` is inclusive of the day named
-    return (day - timedelta(minutes=offset_minutes)).strftime(
-        "%Y-%m-%dT%H:%M:%S.000Z")
-
-
-def offset_minutes(value):
-    """The viewer's minutes east of UTC, as the page reports them."""
-    try:
-        minutes = int(value)
-    except (TypeError, ValueError):
-        return 0
-    return minutes if -14 * 60 <= minutes <= 14 * 60 else 0
 
 
 # -- writing it out -------------------------------------------------------

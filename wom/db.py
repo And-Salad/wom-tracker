@@ -520,6 +520,20 @@ class Database:
             params.append(kind)
         return self.query(sql + " ORDER BY metric", params)
 
+    def snapshot_metrics(self, snapshot_id, kind=None):
+        """One named reading's metrics.
+
+        The same rows as latest_snapshot_metrics, for a snapshot already
+        chosen. A window that ends in the past has to report where the account
+        stood then, not where it stands now.
+        """
+        sql = "SELECT * FROM metrics WHERE snapshot_id=?"
+        params = [snapshot_id]
+        if kind:
+            sql += " AND kind=?"
+            params.append(kind)
+        return self.query(sql + " ORDER BY metric", params)
+
     def export_rows(self, player_ids, kinds=None, since=None, until=None,
                     batch=2000):
         """Every stored reading in a range, oldest first, yielded in batches.
