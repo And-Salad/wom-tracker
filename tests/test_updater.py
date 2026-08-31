@@ -1,0 +1,116 @@
+"""One update pass, against a stand-in for the API."""
+
+from conftest import snapshot
+
+from wom.api import WomError
+from wom.updater import update_all, update_one
+
+
+class FakeClient:
+    """Answers like the Wise Old Man client, and records what was asked."""
+
+    def __init__(self, details=None, fail_update=False, fail_fetch=False,
+                 snapshots=None, achievements=None):
+        self.details = details or {
+            "id": 1, "username": "zezima", "displayName": "Zezima",
+            "type": "regular", "exp": 500,
+            "latestSnapshot": snapshot("2026-08-31T00:00:00.000Z",
+                                       skills={"attack": (500, 40)}),
+        }
+        self.fail_update = fail_update
+        self.fail_fetch = fail_fetch
+        self.snapshots = snapshots or []
+        self._achievements = achievements or []
+        self.calls = []
+
+    def update_player(self, username):
+        self.calls.append(("update", username))
+        if self.fail_update:
+            raise WomError("rate limited", 429)
+        return self.details
+
+    def get_player(self, username):
+        self.calls.append(("get", username))
+        if self.fail_fetch:
+            raise WomError("not found", 404)
+        return self.details
+
+    def get_achievements(self, username):
+        self.calls.append(("achievements", username))
+        return self._achievements
+
+    def iter_snapshots(self, username, **kwargs):
+        self.calls.append(("snapshots", username))
+        return iter(self.snapshots)
+
+
+def test_a_successful_pass_stores_the_player_and_its_snapshot(db):
+    result = update_one(FakeClient(), db, "zezima")
+    assert result.ok
+    assert db.player_by_username("zezima")["display_name"] == "Zezima"
+    assert db.snapshot_count(1) == 1
+
+
+def test_a_failed_refresh_falls_back_to_the_stored_profile(db):
+    """A player updated moments ago still has current data worth keeping."""
+    client = FakeClient(fail_update=True)
+    result = update_one(client, db, "zezima")
+    assert result.ok, "a refused refresh is not a failed update"
+    assert "cached profile" in result.message
+    assert [c[0] for c in client.calls][:2] == ["update", "get"]
+
+
+def test_both_calls_failing_is_a_failure(db):
+    result = update_one(FakeClient(fail_update=True, fail_fetch=True), db, "zezima")
+    assert not result.ok
+
+
+def test_history_is_imported_once(db):
+    client = FakeClient(snapshots=[
+        snapshot("2026-01-01T00:00:00.000Z", skills={"attack": (10, 1)}),
+        snapshot("2026-02-01T00:00:00.000Z", skills={"attack": (20, 2)}),
+    ])
+    first = update_one(client, db, "zezima")
+    assert first.imported == 2
+    second = update_one(client, db, "zezima")
+    assert second.imported == 0, "backfill runs once, not on every pass"
+    assert [c for c in client.calls].count(("snapshots", "zezima")) == 1
+
+
+def test_milestones_are_counted_only_when_new(db):
+    client = FakeClient(achievements=[
+        {"name": "99 Attack", "metric": "attack", "threshold": 13034431,
+         "createdAt": "2026-08-01T00:00:00.000Z", "accuracy": 1},
+    ])
+    assert update_one(client, db, "zezima").milestones == 1
+    assert update_one(client, db, "zezima").milestones == 0
+
+
+def test_a_broken_achievements_call_does_not_fail_the_update(db):
+    class NoAchievements(FakeClient):
+        def get_achievements(self, username):
+            raise WomError("boom", 500)
+
+    assert update_one(NoAchievements(), db, "zezima").ok
+
+
+def test_update_all_records_a_run_and_reports_progress(db):
+    seen = []
+    results = update_all(FakeClient(), db, ["zezima"],
+                         progress=lambda i, n, r: seen.append(r.username))
+    assert len(results) == 1 and seen == ["zezima"]
+    run = db.query_one("SELECT * FROM runs ORDER BY id DESC LIMIT 1")
+    assert run["ok_count"] == 1 and run["fail_count"] == 0
+
+
+def test_update_all_can_be_cancelled(db):
+    results = update_all(FakeClient(), db, ["a", "b", "c"], cancelled=lambda: True)
+    assert results == []
+
+
+def test_a_callback_that_raises_does_not_break_the_run(db):
+    def explode(*_args):
+        raise RuntimeError("the UI is on fire")
+
+    results = update_all(FakeClient(), db, ["zezima"], progress=explode)
+    assert results[0].ok
