@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set page = 'dashboard' %}
+{% set live = true %}
+{% block title %}Summary - WOM Tracker{% endblock %}
+
+{% block sidebar_extra %}
+  <h2 style="margin-top:16px">Period</h2>
+  <select id="period" name="period">
+    {% for label in periods %}
+      <option value="{{ label }}" {{ 'selected' if label == period.label }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+{% endblock %}
+
+{% block content %}
+  {% for item in specs %}
+    <div class="card chart" data-key="{{ item.key }}">
+      <div class="card-head">
+        <div>
+          <h3>{{ item.title }}</h3>
+          <p class="hint">{{ item.description }}</p>
+        </div>
+        {% if item.options %}
+          <label class="pick">Show
+            <select class="choice">
+              {% for option in item.options %}
+                <option value="{{ option }}">{{ option }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        {% endif %}
+      </div>
+      <div class="plot loading"></div>
+    </div>
+  {% endfor %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/d3.v7.min.js"></script>
+  <script src="/static/charts.js"></script>
+{% endblock %}

@@ -1,0 +1,39 @@
+# Everything personal lives in data/ and none of it belongs in the repo:
+#   config.json   the Anthropic and Wise Old Man API keys, the tracked account
+#                 names, per-player colours, and the dashboard's port and
+#                 network settings
+#   wom.db        every snapshot of every account, and the written summaries
+#   wom.log       run history, which names accounts as it updates them
+#   *_prompt.txt  your tuned prompts, which tend to mention accounts by name
+#
+# The app recreates this directory on first run, writing the defaults from
+# wom/config.py and wom/summaries.py.
+data/
+
+# Icons are fetched, not authored: `py fetch_icons.py` downloads all of them
+# from Wise Old Man and RuneLite. Delete this line if you would rather have
+# the repo be self-contained.
+assets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Stray databases and logs outside data/, in case anything is ever pointed
+# somewhere else - these must never be committed by accident.
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/

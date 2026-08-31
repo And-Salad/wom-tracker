@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}WOM Tracker{% endblock %}</title>
+<style>
+  /* Dark throughout, from one palette (wom/theme.py): the same variables
+     the D3 charts read for their axes, gridlines and tooltips. */
+  :root {
+{{ css_variables }}
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap;
+    padding: 14px 20px; background: var(--card); border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 17px; margin: 0; }
+  nav a {
+    color: var(--muted); text-decoration: none; margin-right: 14px; font-weight: 500;
+  }
+  nav a.on, nav a:hover { color: var(--accent); }
+  .status { margin-left: auto; color: var(--muted); font-size: 13px; }
+  main { display: flex; gap: 18px; padding: 18px 20px; align-items: flex-start; }
+  .side {
+    flex: 0 0 232px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px; position: sticky; top: 18px;
+  }
+  .side h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+             color: var(--muted); margin: 0 0 10px; }
+  .side label { display: flex; align-items: center; gap: 8px; padding: 3px 0;
+                cursor: pointer; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .content { flex: 1 1 auto; min-width: 0; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 16px;
+  }
+  .card h3 { margin: 0 0 2px; font-size: 15px; }
+  .card p.hint { margin: 0; color: var(--muted); font-size: 13px; }
+  .card-head { display: flex; align-items: flex-start; gap: 12px;
+               margin-bottom: 8px; }
+  .card-head .pick { margin-left: auto; color: var(--muted); font-size: 13px;
+                     white-space: nowrap; }
+  .card-head .pick select { margin-left: 6px; }
+
+  /* The charts themselves: an SVG D3 fills, sized by the card. */
+  .plot { position: relative; min-height: 120px; }
+  .plot svg { display: block; overflow: visible; }
+  .plot .empty { color: var(--muted); text-align: center; padding: 44px 12px; }
+  .plot.loading::after {
+    content: "drawing..."; display: block; color: var(--muted);
+    text-align: center; padding: 44px 12px; font-size: 13px;
+  }
+  .plot rect, .plot circle, .plot image { cursor: crosshair; }
+  .plot .coverage { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+  .plot .coverage .tip-dot { display: inline-block; width: 8px; height: 8px;
+                             border-radius: 2px; margin: 0 4px 0 8px; }
+
+  .tip {
+    position: absolute; z-index: 20; pointer-events: none; max-width: 320px;
+    background: var(--raised); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 10px; font-size: 13px; line-height: 1.4;
+    box-shadow: 0 6px 18px rgba(0,0,0,.45); transition: opacity .08s ease;
+  }
+  .tip .tip-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .tip .tip-dot { display: inline-block; width: 8px; height: 8px;
+                  border-radius: 2px; margin-right: 6px; }
+
+  /* The summaries tree. Plain <details>/<summary>, so expanding and
+     collapsing works with no JavaScript at all. */
+  .tree summary.node {
+    cursor: pointer; list-style: none; padding: 5px 4px; border-radius: 6px;
+    display: flex; align-items: center; gap: 8px; user-select: none;
+  }
+  .tree summary.node::-webkit-details-marker { display: none; }
+  /* Drawn with borders rather than a glyph, so it depends on no font. */
+  .tree summary.node::before {
+    content: ""; flex: none; width: 0; height: 0; margin: 0 2px;
+    border-left: 5px solid var(--muted);
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    transition: transform .12s ease;
+  }
+  .tree details[open] > summary.node::before { transform: rotate(90deg); }
+  .tree summary.node:hover { background: var(--raised); }
+  .tree summary.player { font-size: 15px; font-weight: 600; }
+  .tree .folder > summary.node { color: var(--ink); font-weight: 500; }
+  .tree .leaf > summary.node { color: var(--muted); font-weight: 400; }
+  .tree .folder { margin-left: 14px; }
+  .tree .leaf { margin-left: 14px; }
+  .tree .count {
+    margin-left: auto; color: var(--muted); font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .tree .body {
+    margin: 2px 0 10px 24px; padding-left: 12px;
+    border-left: 2px solid var(--line);
+  }
+  .tree .body p { margin: 0 0 9px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .row .grow { margin-left: auto; }
+  select, button {
+    font: inherit; padding: 5px 9px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--raised); color: var(--ink);
+  }
+  input[type=checkbox] { accent-color: var(--accent); }
+  button { cursor: pointer; background: var(--accent); color: #fff; border: none; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px;
+       text-transform: uppercase; letter-spacing: .03em; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.dim { color: var(--muted); }
+  .scroll { overflow-x: auto; }
+  .feed-icon { width: 20px; height: 20px; image-rendering: pixelated;
+               vertical-align: middle; }
+  footer { color: var(--muted); font-size: 12px; padding: 4px 20px 24px; }
+  .live-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>WOM Tracker</h1>
+  <nav>
+    <a href="/" class="{{ 'on' if page == 'dashboard' }}">Summary</a>
+    <a href="/milestones" class="{{ 'on' if page == 'milestones' }}">Milestones</a>
+    <a href="/summaries" class="{{ 'on' if page == 'summaries' }}">Summaries</a>
+    <a href="/players" class="{{ 'on' if page == 'players' }}">Players</a>
+  </nav>
+  <span class="status">
+    {{ status.players }} players &middot; updated {{ status.last }} &middot;
+    next {{ status.next }}
+  </span>
+</header>
+<main>
+  <form class="side" method="get" id="filters">
+    <h2>Players</h2>
+    {% for player in players %}
+      <label>
+        <input type="checkbox" name="player" value="{{ player['username'] }}"
+               {{ 'checked' if player['username'] in selected }}>
+        <span class="swatch" style="background: {{ colors[player['username']] }}"></span>
+        {{ player['display_name'] }}
+      </label>
+    {% endfor %}
+    {% block sidebar_extra %}{% endblock %}
+    {% if not live %}
+      <p style="margin:12px 0 0"><button type="submit">Apply</button></p>
+    {% else %}
+      <p class="live-note">Charts update as you tick.</p>
+    {% endif %}
+  </form>
+  <div class="content">
+    {% block content %}{% endblock %}
+  </div>
+</main>
+<footer>Read-only view &middot; the desktop app owns the data and the schedule.</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

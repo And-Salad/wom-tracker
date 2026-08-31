@@ -1,0 +1,90 @@
+"""Serve the tracked data as a read-only web dashboard.
+
+    py web_app.py                       http://localhost:8000, this machine only
+    py web_app.py --host 0.0.0.0        reachable from the rest of your network
+    py web_app.py --port 9000
+
+Read-only by design: the desktop app owns the config (including the Wise Old
+Man API key) and is the only thing that writes. Nothing here can change a
+setting, and the API key is never served.
+
+Most of the time you do not need this: the desktop app's Sharing tab runs the
+same dashboard inside its own process, with a button for the tunnel. This entry
+point is for running the dashboard on its own - a headless box, or a machine
+with no display.
+
+By default this does NOT run the update schedule - leave the desktop app or
+`py wom_tracker.py --update` doing that. Pass --with-scheduler to have the
+server keep the data fresh instead, when it is the only thing running. Never
+pass it alongside the desktop app, or two schedulers update the same database.
+"""
+
+import argparse
+import logging
+import sys
+
+from wom.config import Config
+from wom.sharing import local_addresses
+from wom.web import create_app
+from wom_tracker import setup_logging
+
+log = logging.getLogger("wom.web")
+
+
+def start_scheduler(app):
+    """Run the six-hourly update from inside the server process."""
+    from wom.api import WomClient
+    from wom.scheduler import SlotScheduler
+    from wom.updater import update_all
+
+    config = Config()
+
+    def job(trigger):
+        settings = Config()
+        client = WomClient(settings.get("api_key", ""),
+                           settings.get("user_agent_contact", ""))
+        update_all(client, app.config["DATABASE"],
+                   settings.get("usernames", []), trigger=trigger)
+
+    scheduler = SlotScheduler(config, job)
+    scheduler.start()
+    log.info("update scheduler running inside the web server")
+    return scheduler
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="0.0.0.0 to allow other machines on your network")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--with-scheduler", action="store_true",
+                        help="also run the six-hourly update from this process")
+    parser.add_argument("--debug", action="store_true",
+                        help="Flask's dev server with tracebacks, localhost only")
+    args = parser.parse_args(argv)
+
+    setup_logging()
+    app = create_app()
+    if args.with_scheduler:
+        start_scheduler(app)
+
+    print("WOM Tracker - read-only dashboard")
+    for url in local_addresses(args.port):
+        print("   ", url)
+    if args.host == "127.0.0.1":
+        print("    (this machine only; pass --host 0.0.0.0 to share on your network)")
+    print("Ctrl+C to stop.")
+
+    if args.debug:
+        # The reloader forks a second process, which would double any
+        # scheduler running here, so it stays off.
+        app.run(host="127.0.0.1", port=args.port, debug=True, use_reloader=False)
+    else:
+        from waitress import serve
+        serve(app, host=args.host, port=args.port, threads=8)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

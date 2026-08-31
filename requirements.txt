@@ -1,0 +1,12 @@
+requests>=2.31
+matplotlib>=3.7
+tzdata>=2024.1 ; platform_system == "Windows"
+pystray>=0.19
+Pillow>=10.0
+
+# web dashboard only (web_app.py); the desktop app does not need these
+flask>=3.0
+waitress>=3.0
+
+# written summaries only (the Summaries tab and --summarize)
+anthropic>=1.0

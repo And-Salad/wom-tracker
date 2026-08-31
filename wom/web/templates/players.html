@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% set page = 'players' %}
+{% block title %}Players - WOM Tracker{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <h3>Players</h3>
+    <p class="hint">Latest stored figures for every tracked account.</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Player</th><th>Type</th>
+            <th class="num">Combat</th><th class="num">Total level</th>
+            <th class="num">Total XP</th><th class="num">EHP</th><th class="num">EHB</th>
+            <th class="num">Snapshots</th><th>Last update</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>
+                <span class="swatch" style="background: {{ row.color }};
+                      display:inline-block; margin-right:6px"></span>{{ row.name }}
+              </td>
+              <td class="dim">{{ row.type }}</td>
+              <td class="num">{{ row.combat }}</td>
+              <td class="num">{{ row.total_level }}</td>
+              <td class="num">{{ row.exp }}</td>
+              <td class="num">{{ row.ehp }}</td>
+              <td class="num">{{ row.ehb }}</td>
+              <td class="num dim">{{ row.snapshots }}</td>
+              <td class="dim">{{ row.updated }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}

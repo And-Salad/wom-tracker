@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set page = 'summaries' %}
+{% block title %}Summaries - WOM Tracker{% endblock %}
+
+{% block content %}
+  {% for player in tree %}
+    <details class="card tree" {{ 'open' if loop.first }}>
+      <summary class="node player" style="color: {{ player.color }}">
+        {{ player.player }}
+        <span class="count">{{ player.total }}</span>
+      </summary>
+      {% for folder in player.folders %}
+        <details class="folder">
+          <summary class="node">
+            {{ folder.title }} <span class="count">{{ folder.count }}</span>
+          </summary>
+          {% for entry in folder.entries %}
+            <details class="leaf" {{ 'open' if loop.first and folder.period == 'day' }}>
+              <summary class="node">
+                {{ entry.label }} <span class="count">{{ entry.ago }}</span>
+              </summary>
+              <div class="body">
+                {% for paragraph in entry.paragraphs %}
+                  <p>{{ paragraph }}</p>
+                {% endfor %}
+              </div>
+            </details>
+          {% endfor %}
+        </details>
+      {% endfor %}
+    </details>
+  {% else %}
+    <div class="card">
+      <h3>No summaries yet</h3>
+      <p class="hint">
+        Nothing has been written for the included players. These come from the
+        6am update, or from <code>py wom_tracker.py --summarize --due</code>.
+      </p>
+    </div>
+  {% endfor %}
+{% endblock %}

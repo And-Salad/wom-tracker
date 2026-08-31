@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% set page = 'milestones' %}
+{% block title %}Milestones - WOM Tracker{% endblock %}
+
+{% block sidebar_extra %}
+  <h2 style="margin-top:16px">Since</h2>
+  <select name="period">
+    {% for label in periods %}
+      <option value="{{ label }}" {{ 'selected' if label == period }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <h3>Milestones</h3>
+    <p class="hint">
+      {{ feed | length }} achievement{{ '' if feed | length == 1 else 's' }},
+      newest first. A leading ~ means Wise Old Man only knows the date roughly.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th></th><th>Achieved</th><th></th><th>Player</th><th>Milestone</th></tr>
+        </thead>
+        <tbody>
+          {% for row in feed %}
+            <tr>
+              <td>
+                {% if row.kind %}
+                  <img class="feed-icon" src="/icon/{{ row.kind }}/{{ row.metric }}.png"
+                       alt="{{ row.metric }}" title="{{ row.metric }}">
+                {% endif %}
+              </td>
+              <td>{{ row.when }}</td>
+              <td class="dim">{{ row.ago }}</td>
+              <td style="color: {{ row.color }}">{{ row.player }}</td>
+              <td>{{ row.name }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="dim">Nothing recorded for this selection.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}
