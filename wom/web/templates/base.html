@@ -121,6 +121,34 @@
                vertical-align: middle; }
   footer { color: var(--muted); font-size: 12px; padding: 4px 20px 24px; }
   .live-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+
+  /* Admin. Deliberately plain: it is a form, not a dashboard. */
+  .flash { background: var(--raised); border: 1px solid var(--line);
+           border-left: 3px solid var(--accent); border-radius: 6px;
+           padding: 8px 12px; margin: 0 0 14px; }
+  .warn { color: #e5707e; margin: 0 0 12px; }
+  textarea { width: 100%; font: 13px/1.5 Consolas, ui-monospace, monospace;
+             background: var(--raised); color: var(--ink); padding: 10px;
+             border: 1px solid var(--line); border-radius: 8px; resize: vertical; }
+  .card h4 { margin: 18px 0 6px; font-size: 13px; color: var(--muted);
+             text-transform: uppercase; letter-spacing: .04em; }
+  .field { display: block; margin: 0 0 10px; }
+  .field > span { display: block; font-size: 13px; color: var(--muted);
+                  margin-bottom: 4px; }
+  .field > span em { color: var(--accent); font-style: normal; }
+  .field input, .field select { width: 100%; padding: 6px 9px; border-radius: 7px;
+                                border: 1px solid var(--line);
+                                background: var(--raised); color: var(--ink); }
+  .field input:disabled { color: var(--muted); }
+  .tick { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; }
+  input[type=color] { width: 44px; height: 28px; padding: 0; border-radius: 6px;
+                      border: 1px solid var(--line); background: var(--raised); }
+  .job { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .job-note { margin: 0; color: var(--muted); font-size: 13px; }
+  .job.busy .job-note { color: var(--accent); }
+  .job.failed .job-note { color: #e5707e; }
+  .job-log { margin: 6px 0 0; max-height: 200px; overflow: auto; color: var(--muted);
+             font: 12px/1.5 Consolas, ui-monospace, monospace; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -131,6 +159,9 @@
     <a href="/milestones" class="{{ 'on' if page == 'milestones' }}">Milestones</a>
     <a href="/summaries" class="{{ 'on' if page == 'summaries' }}">Summaries</a>
     <a href="/players" class="{{ 'on' if page == 'players' }}">Players</a>
+    {% if admin_enabled %}
+      <a href="/admin" class="{{ 'on' if page == 'admin' }}">{{ 'Admin' if signed_in else 'Sign in' }}</a>
+    {% endif %}
   </nav>
   <span class="status">
     {{ status.players }} players &middot; updated {{ status.last }} &middot;
@@ -138,6 +169,7 @@
   </span>
 </header>
 <main>
+  {% if not bare %}
   <form class="side" method="get" id="filters">
     <h2>Players</h2>
     {% for player in players %}
@@ -155,6 +187,7 @@
       <p class="live-note">Charts update as you tick.</p>
     {% endif %}
   </form>
+  {% endif %}
   <div class="content">
     {% block content %}{% endblock %}
   </div>

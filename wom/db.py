@@ -443,7 +443,7 @@ class Database:
         """Drop players no longer on the tracked list, and everything they own.
 
         Snapshots, metrics and achievements all cascade from `players`, so the
-        one delete is enough.
+        one delete is enough. Returns how many players went.
         """
         keep = [n.lower() for n in keep_usernames]
         # `x NOT IN (NULL)` is NULL, not true, so an empty keep list has to be
@@ -454,12 +454,14 @@ class Database:
             where = "1=1"
         conn = self.connect()
         with conn:
-            conn.execute("DELETE FROM players WHERE " + where, keep)
+            removed = conn.execute(
+                "DELETE FROM players WHERE " + where, keep).rowcount
             # Group round-ups belong to no player, so nothing cascades them.
             # They stay meaningful while anyone is still tracked; once the
             # roster is empty they describe nobody.
             if not conn.execute("SELECT 1 FROM players LIMIT 1").fetchone():
                 conn.execute("DELETE FROM group_summaries")
+        return max(0, removed)
 
     # -- reads used by the UI ---------------------------------------------
 

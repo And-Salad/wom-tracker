@@ -7,7 +7,7 @@ small fetch instead of a page load and a server-side render.
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import (Flask, abort, jsonify, render_template, request, send_file,
                    send_from_directory)
@@ -20,6 +20,8 @@ from ..icons import ASSET_DIR, icon_kind_for, icon_path
 from ..scheduler import next_slot, parse_last_run
 from ..util import fmt_ago, fmt_datetime, fmt_int, pretty_metric
 from . import data as web_data
+from .admin import PASSWORD_ENV, admin as admin_blueprint, admin_enabled
+from .jobs import JobRunner
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +34,17 @@ def _paragraphs(text):
 def create_app():
     app = Flask(__name__, static_folder="static", static_url_path="/static")
     app.config["DATABASE"] = Database(DB_PATH)
+    app.config["JOBS"] = JobRunner()
+
+    # Admin is registered only when a password exists. A deployment that
+    # forgets to set one has no admin routes at all, rather than open ones.
+    app.config["ADMIN"] = admin_enabled()
+    if app.config["ADMIN"]:
+        app.secret_key = _session_key()
+        app.permanent_session_lifetime = timedelta(days=14)
+        app.register_blueprint(admin_blueprint)
+    else:
+        log.warning("%s is not set: the admin pages are disabled", PASSWORD_ENV)
 
     def settings():
         # Re-read each request so a change made in the desktop app - a new
@@ -252,7 +265,29 @@ def create_app():
         # One palette for the page and the D3 charts alike.
         declarations = ["    {}: {};".format(name, value)
                         for name, value in theme.css_variables().items()]
+        from flask import session
         return {"now": datetime.now(timezone.utc),
-                "css_variables": "\n".join(declarations)}
+                "css_variables": "\n".join(declarations),
+                "admin_enabled": app.config["ADMIN"],
+                "signed_in": bool(session.get("wom_admin")),
+                # The header carries this on every page, admin included, so it
+                # is supplied here rather than by each view in turn.
+                "status": status(settings())}
 
     return app
+
+
+def _session_key():
+    """The key that signs the admin cookie.
+
+    Set WOM_SECRET_KEY to keep sessions alive across restarts. Without one a
+    fresh key is minted per process, which is safe but signs everyone out
+    whenever the server restarts.
+    """
+    from os import urandom
+    given = os.environ.get("WOM_SECRET_KEY", "").strip()
+    if given:
+        return given
+    log.info("WOM_SECRET_KEY is not set; admin sessions end when this "
+             "process does")
+    return urandom(32)

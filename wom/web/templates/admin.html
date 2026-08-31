@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% set page = 'admin' %}
+{% set bare = true %}
+{% block title %}Admin - WOM Tracker{% endblock %}
+
+{% block content %}
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for message in messages %}<p class="flash">{{ message }}</p>{% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h3>Run something</h3>
+        <p class="hint">The schedule runs on its own every six hours; these are
+          for when you do not want to wait.</p>
+      </div>
+      <form method="post" action="/admin/logout" class="pick">
+        <button type="submit">Sign out</button>
+      </form>
+    </div>
+    <div class="row">
+      <form method="post" action="/admin/run/update">
+        <button type="submit">Update now</button></form>
+      <form method="post" action="/admin/run/summarise">
+        <button type="submit">Write missing summaries</button></form>
+      <form method="post" action="/admin/run/backfill">
+        <button type="submit">Re-import all history</button></form>
+      <a href="/admin/prompts" class="grow" style="color: var(--accent)">Edit the summary prompts</a>
+    </div>
+    <div id="job" class="job">
+      <p class="job-note">{{ job.note }}</p>
+      <pre class="job-log">{{ job.lines | join("\n") }}</pre>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Tracked players</h3>
+    <p class="hint">One name per line, in the order you want them listed.</p>
+    <form method="post" action="/admin/settings">
+      <textarea name="usernames" rows="8" spellcheck="false"
+        >{{ config.get("usernames", []) | join("\n") }}</textarea>
+
+      <h4>Wise Old Man</h4>
+      <label class="field">
+        <span>Contact for the User-Agent header</span>
+        <input type="text" name="user_agent_contact"
+               value="{{ config.get('user_agent_contact', '') }}">
+      </label>
+      <label class="field">
+        <span>API key {% if config.is_from_env('api_key') %}
+          <em>set by the environment</em>{% endif %}</span>
+        {% if config.is_from_env('api_key') %}
+          <input type="text" value="(from {{ env_keys['api_key'] }})" disabled>
+        {% else %}
+          <input type="password" name="api_key" autocomplete="off"
+                 placeholder="{{ 'unchanged' if config.get('api_key') else 'optional' }}">
+        {% endif %}
+      </label>
+
+      <h4>Written summaries</h4>
+      <label class="tick">
+        <input type="checkbox" name="summaries_enabled"
+               {{ 'checked' if config.get('summaries_enabled') }}>
+        Write summaries with the Claude API (each one costs about half a cent)
+      </label>
+      <label class="field">
+        <span>Model</span>
+        <select name="summary_model">
+          {% for model in models %}
+            <option value="{{ model }}"
+              {{ 'selected' if model == config.get('summary_model') }}>{{ model }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Anthropic API key {% if config.is_from_env('anthropic_api_key') %}
+          <em>set by the environment</em>{% endif %}</span>
+        {% if config.is_from_env('anthropic_api_key') %}
+          <input type="text" value="(from {{ env_keys['anthropic_api_key'] }})" disabled>
+        {% else %}
+          <input type="password" name="anthropic_api_key" autocomplete="off"
+                 placeholder="{{ 'unchanged' if config.get('anthropic_api_key') else 'not set' }}">
+        {% endif %}
+      </label>
+
+      <p><button type="submit">Save settings</button></p>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Colours</h3>
+    <p class="hint">What each player is drawn in, everywhere.</p>
+    <div class="scroll">
+      <table>
+        <tr><th>Player</th><th>Colour</th><th class="num">Snapshots</th><th></th></tr>
+        {% for player in roster %}
+          <tr>
+            <td>{{ player.display_name }}</td>
+            <td>
+              <form method="post" action="/admin/colour" class="row">
+                <input type="hidden" name="username" value="{{ player.username }}">
+                <input type="color" name="colour" value="{{ player.color }}">
+                <button type="submit">Set</button>
+              </form>
+            </td>
+            <td class="num">{{ player.snapshots }}</td>
+            <td class="dim">{{ player.username }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </div>
+    <form method="post" action="/admin/prune" style="margin-top: 12px"
+          onsubmit="return confirm('Delete every stored snapshot for players no longer on the list?')">
+      <button type="submit">Delete data for players off the list</button>
+    </form>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Poll while something is running, so the page shows progress without a reload.
+  (function () {
+    var box = document.getElementById("job");
+    if (!box) { return; }
+    var note = box.querySelector(".job-note");
+    var out = box.querySelector(".job-log");
+    function tick() {
+      fetch("/admin/status").then(function (r) { return r.json(); }).then(function (job) {
+        note.textContent = job.note;
+        out.textContent = (job.lines || []).join("\n");
+        box.classList.toggle("busy", !!job.running);
+        box.classList.toggle("failed", !!job.failed);
+        if (job.running) { setTimeout(tick, 1200); }
+      }).catch(function () { /* the server will be back */ });
+    }
+    tick();
+  })();
+</script>
+{% endblock %}

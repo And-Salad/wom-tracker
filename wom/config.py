@@ -5,7 +5,9 @@ import os
 import threading
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(APP_DIR, "data")
+# A container mounts its volume somewhere other than the source tree, so the
+# whole data directory can be pointed elsewhere. Everything derives from it.
+DATA_DIR = os.environ.get("WOM_DATA_DIR") or os.path.join(APP_DIR, "data")
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 DB_PATH = os.path.join(DATA_DIR, "wom.db")
 LOG_PATH = os.path.join(DATA_DIR, "wom.log")
@@ -53,7 +55,22 @@ DEFAULTS = {
     "last_run": "",
 }
 
+# Settings a hosted deployment supplies as environment variables rather than
+# in config.json: on Fly these arrive from `fly secrets set`, which keeps them
+# out of the volume and out of the admin page's reach.
+ENV_KEYS = {
+    "api_key": "WOM_API_KEY",
+    "anthropic_api_key": "ANTHROPIC_API_KEY",
+}
+
 _lock = threading.Lock()
+
+
+def env_value(key):
+    """The environment's value for a setting, or None if it does not set it."""
+    name = ENV_KEYS.get(key)
+    value = os.environ.get(name) if name else None
+    return value.strip() if value and value.strip() else None
 
 
 class Config:
@@ -66,6 +83,7 @@ class Config:
         # only these, so a long-lived object cannot revert a key some other
         # process wrote in the meantime.
         self._dirty = set()
+        self._from_env = set()
         self.load()
 
     def load(self):
@@ -76,9 +94,21 @@ class Config:
             stored = {}
         merged = dict(DEFAULTS)
         merged.update({k: v for k, v in stored.items() if k in DEFAULTS})
+        # The environment wins, and never becomes dirty, so a save can never
+        # write a secret back out to the config file.
+        self._from_env = set()
+        for key in ENV_KEYS:
+            value = env_value(key)
+            if value is not None:
+                merged[key] = value
+                self._from_env.add(key)
         self._data = merged
         self._dirty.clear()
         return self
+
+    def is_from_env(self, key):
+        """True when this setting comes from the environment and is read-only."""
+        return key in getattr(self, "_from_env", ())
 
     def save(self):
         """Write our changes without discarding anyone else's.
@@ -102,7 +132,8 @@ class Config:
                 on_disk = {}
             merged = dict(DEFAULTS)
             merged.update({k: v for k, v in on_disk.items() if k in DEFAULTS})
-            merged.update({k: self._data[k] for k in self._dirty})
+            merged.update({k: self._data[k] for k in self._dirty
+                           if not self.is_from_env(k)})
             with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump(merged, fh, indent=2)
             os.replace(tmp, self.path)

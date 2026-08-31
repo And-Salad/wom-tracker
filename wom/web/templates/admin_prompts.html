@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% set page = 'admin' %}
+{% set bare = true %}
+{% block title %}Prompts - WOM Tracker{% endblock %}
+
+{% block content %}
+  {% with messages = get_flashed_messages() %}
+    {% for message in messages %}<p class="flash">{{ message }}</p>{% endfor %}
+  {% endwith %}
+
+  <p><a href="/admin" style="color: var(--accent)">&larr; back to admin</a></p>
+
+  {% for prompt in prompts %}
+    <div class="card">
+      <h3>{{ prompt.title }}</h3>
+      <p class="hint">
+        {% if prompt.kind == 'player' %}
+          Used for each player's own note. The digest it is given opens with a
+          "Data coverage" line, which this prompt tells it how to read.
+        {% else %}
+          Used for the group round-up, which is given every player's figures
+          side by side.
+        {% endif %}
+        Editing this does not rewrite anything already written - the next
+        scheduled run uses it.
+      </p>
+      <form method="post">
+        <input type="hidden" name="kind" value="{{ prompt.kind }}">
+        <textarea name="text" rows="20" spellcheck="false">{{ prompt.text }}</textarea>
+        <p><button type="submit">Save this prompt</button></p>
+      </form>
+    </div>
+  {% endfor %}
+{% endblock %}

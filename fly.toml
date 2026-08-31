@@ -1,0 +1,29 @@
+# Fly.io deployment for the WOM tracker.
+#
+# One machine, always on, with a volume for the database. Always on is
+# deliberate: the six-hourly update runs inside this process, and a machine
+# that Fly has stopped cannot wake itself to do it.
+
+app = "CHANGE-ME-wom-tracker"
+primary_region = "iad"
+
+[build]
+
+[env]
+  WOM_DATA_DIR = "/data"
+
+[[mounts]]
+  source = "wom_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Never stop the machine: stopping it stops the schedule.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

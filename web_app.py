@@ -35,6 +35,7 @@ def start_scheduler(app):
     """Run the six-hourly update from inside the server process."""
     from wom.api import WomClient
     from wom.scheduler import SlotScheduler
+    from wom.summaries import maybe_write_summaries
     from wom.updater import update_all
 
     config = Config()
@@ -43,8 +44,16 @@ def start_scheduler(app):
         settings = Config()
         client = WomClient(settings.get("api_key", ""),
                            settings.get("user_agent_contact", ""))
-        update_all(client, app.config["DATABASE"],
-                   settings.get("usernames", []), trigger=trigger)
+        database = app.config["DATABASE"]
+        update_all(client, database, settings.get("usernames", []),
+                   trigger=trigger)
+        # The desktop app writes the summaries the calendar owes on the back
+        # of each update. Hosted, this process is the only thing running, so
+        # it has to do the same or the summaries never get written at all.
+        try:
+            maybe_write_summaries(database, settings)
+        except Exception:
+            log.exception("writing the scheduled summaries failed")
 
     scheduler = SlotScheduler(config, job)
     scheduler.start()
