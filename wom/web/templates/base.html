@@ -191,9 +191,6 @@
     .detail-body { margin-left: 6px; }
     .detail-table { font-size: 12px; }
     th, td { padding: 5px 7px; }
-    .toolbar { gap: 8px; }
-    .toolbar .field { flex: 1 1 100%; }
-    .toolbar .count { margin-left: 0 !important; padding-bottom: 0 !important; }
     dialog { padding: 12px; }
     .dialog-actions button { flex: 1 1 auto; }
   }
@@ -284,6 +281,11 @@
   .grid td.gain { color: var(--accent); }
   .grid tbody tr:hover td { background: var(--raised); }
   @media (max-width: 820px) {
+    /* Three selects will not sit side by side in 325px, and a half-width one
+       cuts "Chambers Of Xeric Challenge Mode" to nothing. One per row. */
+    .toolbar { gap: 8px; }
+    .toolbar .field { flex: 1 1 100%; }
+    .toolbar .count { margin-left: 0 !important; padding-bottom: 0 !important; }
     /* Five columns in 325px: give back what the padding is taking, and let
        the metric wrap. A column is as wide as its widest cell, and
        "Chambers Of Xeric Challenge Mode" was pushing the figures off the

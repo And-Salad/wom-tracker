@@ -274,6 +274,19 @@ def test_the_table_carries_the_colour_the_charts_use(client, app):
     assert row["color"] == standing["color"]
 
 
+def test_the_table_filters_are_distinct_and_kind_is_always_one(client, app):
+    """Player, kind and metric each get their own control, and kind has no
+    "All": 666 rows of everything at once is not a view anybody asked for."""
+    seed(app)
+    body = client.get("/export").get_data(as_text=True)
+    for control in ('id="who-filter"', 'id="kind"', 'id="metric"'):
+        assert control in body, control
+    assert 'id="q"' not in body, "the free-text search is gone"
+    kind = body[body.index('id="kind"'):body.index("</select>", body.index('id="kind"'))]
+    assert 'value=""' not in kind, "kind must always name one kind"
+    assert kind.index('value="skill"') < kind.index('value="boss"'),         "skills first, so the page opens on them"
+
+
 def test_the_data_page_offers_the_export_behind_a_button(client, app):
     seed(app)
     body = client.get("/export").get_data(as_text=True)

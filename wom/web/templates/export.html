@@ -28,18 +28,20 @@
 
     <div class="toolbar">
       <label class="field">
-        <span>Search</span>
-        <input type="search" id="q" placeholder="metric or player"
-               autocomplete="off" spellcheck="false">
+        <span>Player</span>
+        <select id="who-filter"><option value="">All players</option></select>
       </label>
-      <label class="field" style="max-width: 160px">
+      <label class="field">
         <span>Kind</span>
         <select id="kind">
-          <option value="">All</option>
           {% for key, title in kinds %}
             <option value="{{ key }}">{{ title }}</option>
           {% endfor %}
         </select>
+      </label>
+      <label class="field">
+        <span>Metric</span>
+        <select id="metric"></select>
       </label>
       <label class="tick" style="align-self: end; padding-bottom: 7px">
         <input type="checkbox" id="moved"> Only what moved
@@ -54,7 +56,6 @@
           <tr>
             <th data-sort="player">Player</th>
             <th data-sort="label">Metric</th>
-            <th data-sort="kind_label" class="wide-only">Kind</th>
             <th data-sort="level" class="num wide-only">Level</th>
             <th data-sort="value" class="num">Value</th>
             <th data-sort="gained" class="num">Gained</th>

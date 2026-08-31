@@ -37,19 +37,82 @@
     return value == null || value === "" ? "" : full.format(value);
   }
 
-  // -- what is on screen ---------------------------------------------------
+  // -- the filters ---------------------------------------------------------
+
+  var whoBox = document.getElementById("who-filter");
+  var kindBox = document.getElementById("kind");
+  var metricBox = document.getElementById("metric");
 
   function matching() {
-    var q = document.getElementById("q").value.trim().toLowerCase();
-    var kind = document.getElementById("kind").value;
+    var who = whoBox.value;
+    var kind = kindBox.value;
+    var metric = metricBox.value;
     var movedOnly = document.getElementById("moved").checked;
     return rows.filter(function (row) {
-      if (kind && row.kind !== kind) { return false; }
+      if (row.kind !== kind) { return false; }
+      if (who && row.username !== who) { return false; }
+      if (metric && row.metric !== metric) { return false; }
       if (movedOnly && !row.gained) { return false; }
-      if (!q) { return true; }
-      return row.label.toLowerCase().indexOf(q) >= 0 ||
-             row.player.toLowerCase().indexOf(q) >= 0;
+      return true;
     });
+  }
+
+  function fill(select, options, keep) {
+    select.textContent = "";
+    var wanted = keep;
+    var has = options.some(function (o) { return o.value === wanted; });
+    options.forEach(function (option) {
+      var node = document.createElement("option");
+      node.value = option.value;
+      node.textContent = option.label;
+      select.appendChild(node);
+    });
+    select.value = has ? wanted : options[0].value;
+  }
+
+  /* The players actually in the data, not the roster: this list and the
+     sidebar can then never disagree about who is on the page. */
+  function playerOptions() {
+    var seen = {};
+    var out = [{value: "", label: "All players"}];
+    rows.forEach(function (row) {
+      if (!seen[row.username]) {
+        seen[row.username] = true;
+        out.push({value: row.username, label: row.player});
+      }
+    });
+    return out;
+  }
+
+  /* Metrics belong to a kind - there is no Zulrah among the skills - so the
+     list is rebuilt whenever the kind changes rather than offering names
+     that would match nothing. */
+  function metricOptions(kind) {
+    var seen = {};
+    var out = [];
+    rows.forEach(function (row) {
+      if (row.kind === kind && !seen[row.metric]) {
+        seen[row.metric] = true;
+        out.push({value: row.metric, label: row.label});
+      }
+    });
+    out.sort(function (a, b) { return a.label.localeCompare(b.label); });
+    return [{value: "", label: "All " + kindName(kind)}].concat(out);
+  }
+
+  function kindName(kind) {
+    var option = kindBox.querySelector('option[value="' + kind + '"]');
+    return option ? option.textContent.toLowerCase() : "metrics";
+  }
+
+  // Skills, and within them the one line that sums the rest: the page opens
+  // on six rows saying where each account stands, not 666 saying everything.
+  var firstMetric = "overall";
+
+  function refreshChoices() {
+    fill(whoBox, playerOptions(), whoBox.value);
+    fill(metricBox, metricOptions(kindBox.value), metricBox.value || firstMetric);
+    firstMetric = null;       // only the first load gets the opening default
   }
 
   /* Missing is not small. A blank rank sorts to the end either way round,
@@ -86,7 +149,6 @@
       name.insertBefore(dot, name.firstChild);
       name.appendChild(text(row.player));
       cell(tr, row.label, "metric");
-      cell(tr, row.kind_label, "dim wide-only");
       cell(tr, row.level == null ? "" : row.level, "num dim wide-only");
       cell(tr, num(row.value), "num");
       cell(tr, row.gained ? "+" + num(row.gained) : "", "num gain");
@@ -95,9 +157,13 @@
     });
     body.appendChild(frag);
 
-    count.textContent = shown.length === rows.length
-      ? full.format(rows.length) + " rows"
-      : full.format(shown.length) + " of " + full.format(rows.length) + " rows";
+    // Counted against the chosen kind, not the whole set: "6 of 666" when
+    // 522 of those are bosses you did not ask for is a misleading fraction.
+    var inKind = rows.filter(function (r) { return r.kind === kindBox.value; }).length;
+    count.textContent = shown.length === inKind
+      ? full.format(inKind) + " rows"
+      : full.format(shown.length) + " of " + full.format(inKind) + " " +
+        kindName(kindBox.value);
     state.textContent = shown.length ? "" :
       (rows.length ? "Nothing matches those filters."
                    : "No readings for the included players.");
@@ -149,6 +215,7 @@
           state.textContent = payload.empty;
           return;
         }
+        refreshChoices();
         render();
       }).catch(function (err) {
         if (mine !== seq) { return; }
@@ -243,9 +310,12 @@
       });
     });
 
-    ["q", "kind", "moved"].forEach(function (id) {
-      var node = document.getElementById(id);
-      node.addEventListener("input", render);
+    // A new kind means a new set of metric names to choose from.
+    kindBox.addEventListener("change", function () {
+      fill(metricBox, metricOptions(kindBox.value), metricBox.value);
+      render();
+    });
+    [whoBox, metricBox, document.getElementById("moved")].forEach(function (node) {
       node.addEventListener("change", render);
     });
 
