@@ -16,8 +16,16 @@
     panel: css.getPropertyValue("--card").trim() || "#1e2227"
   };
 
-  var MARGIN = { top: 34, right: 16, bottom: 46, left: 62 };
+  var WIDE = { top: 34, right: 16, bottom: 46, left: 62 };
+  var NARROW = { top: 30, right: 8, bottom: 38, left: 40 };
+  var PHONE = 560;                 // below this the desktop margins eat the plot
   var ICON_PX = 22;
+  var LEGEND_TOP = 14;             // where legend row 0 sits
+  var LEGEND_ROW = 16;
+
+  function marginsFor(width) {
+    return width < PHONE ? NARROW : WIDE;
+  }
   var full = new Intl.NumberFormat();
   var compact = d3.format("~s");
   var day = d3.timeFormat("%d %b %Y");
@@ -25,13 +33,23 @@
 
   var tip = d3.select("body").append("div").attr("class", "tip").style("opacity", 0);
 
+  /* A touch event carries its position on the touch, not the event. Without
+     this every tooltip on a phone would appear in the top-left corner. */
+  function pointOf(event) {
+    var touch = event.touches && event.touches[0];
+    return touch ? {x: touch.clientX, y: touch.clientY}
+                 : {x: event.clientX, y: event.clientY};
+  }
+
   function showTip(event, html) {
     tip.html(html).style("opacity", 1);
     var box = tip.node().getBoundingClientRect();
-    var x = event.clientX + 14;
-    var y = event.clientY + 16;
-    if (x + box.width > window.innerWidth - 8) { x = event.clientX - box.width - 14; }
-    if (y + box.height > window.innerHeight - 8) { y = event.clientY - box.height - 12; }
+    var at = pointOf(event);
+    var x = at.x + 14;
+    var y = at.y + 16;
+    if (x + box.width > window.innerWidth - 8) { x = at.x - box.width - 14; }
+    if (x < 8) { x = 8; }
+    if (y + box.height > window.innerHeight - 8) { y = at.y - box.height - 12; }
     tip.style("left", (x + window.scrollX) + "px").style("top", (y + window.scrollY) + "px");
   }
 
@@ -86,14 +104,18 @@
 
   Chart.prototype.frame = function (height) {
     var width = this.host.node().clientWidth || 900;
+    var m = marginsFor(width);
+    // A phone gets a shorter card too: the same 360px against a 340px width
+    // is a near-square chart, which reads worse than a wide short one.
+    if (width < PHONE) { height = Math.round(height * 0.8); }
     this.host.html("");
     var svg = this.host.append("svg")
       .attr("viewBox", "0 0 " + width + " " + height)
       .attr("width", "100%").attr("height", height);
-    return { svg: svg, width: width, height: height,
-             inner: width - MARGIN.left - MARGIN.right,
-             top: MARGIN.top,
-             tall: height - MARGIN.top - MARGIN.bottom };
+    return { svg: svg, width: width, height: height, m: m, narrow: width < PHONE,
+             inner: width - m.left - m.right,
+             top: m.top,
+             tall: height - m.top - m.bottom };
   };
 
   Chart.prototype.visible = function () {
@@ -109,8 +131,9 @@
 
   /* -- axes ------------------------------------------------------------ */
 
-  function valueAxis(g, scale, inner, label) {
-    var axis = d3.axisLeft(scale).ticks(6).tickFormat(function (v) {
+  function valueAxis(g, f, scale, label) {
+    var inner = f.inner;
+    var axis = d3.axisLeft(scale).ticks(f.narrow ? 4 : 6).tickFormat(function (v) {
       return Math.abs(v) >= 1000 ? compact(v) : full.format(v);
     });
     var drawn = g.append("g").call(axis);
@@ -118,46 +141,53 @@
     drawn.selectAll("text").attr("fill", COLOR.muted).style("font-size", "11px");
     drawn.selectAll("line").attr("stroke", COLOR.line);
     // Gridlines behind everything, drawn from the same ticks.
-    g.insert("g", ":first-child").selectAll("line").data(scale.ticks(6)).join("line")
+    g.insert("g", ":first-child").selectAll("line")
+      .data(scale.ticks(f.narrow ? 4 : 6)).join("line")
       .attr("x1", 0).attr("x2", inner)
       .attr("y1", scale).attr("y2", scale)
       .attr("stroke", COLOR.grid).attr("stroke-opacity", 0.55);
-    if (label) {
+    // The axis label costs horizontal room a phone has not got, and the tick
+    // numbers already say what the units are.
+    if (label && !f.narrow) {
       g.append("text").attr("transform", "rotate(-90)")
-        .attr("x", -(scale.range()[0] / 2)).attr("y", -MARGIN.left + 14)
+        .attr("x", -(scale.range()[0] / 2)).attr("y", -f.m.left + 14)
         .attr("fill", COLOR.muted).attr("text-anchor", "middle")
         .style("font-size", "11px").text(label);
     }
   }
 
-  Chart.prototype.legend = function (svg, width) {
+  Chart.prototype.legend = function (svg, f) {
     var self = this;
-    var row = svg.append("g").attr("transform", "translate(" + MARGIN.left + ",14)");
-    var limit = width - MARGIN.left - MARGIN.right;
+    var size = f.narrow ? 11 : 12;
+    var gap = f.narrow ? 12 : 18;
+    var row = svg.append("g")
+      .attr("transform", "translate(" + f.m.left + "," + LEGEND_TOP + ")");
+    var limit = f.inner;
     var x = 0;
     var line = 0;                    // which legend row we are filling
     this.data.series.forEach(function (s) {
       var off = !!self.muted[s.username];
-      var item = row.append("g").attr("transform", "translate(" + x + "," + (line * 16) + ")")
+      var item = row.append("g")
+        .attr("transform", "translate(" + x + "," + (line * LEGEND_ROW) + ")")
         .style("cursor", "pointer").attr("opacity", off ? 0.4 : 1);
       item.append("rect").attr("width", 10).attr("height", 10).attr("rx", 2)
         .attr("y", -8).attr("fill", off ? COLOR.muted : s.color);
       item.append("text").attr("x", 15).attr("fill", COLOR.ink)
-        .style("font-size", "12px").text(s.name);
-      var span = item.node().getBBox().width + 18;
+        .style("font-size", size + "px").text(s.name);
+      var span = item.node().getBBox().width + gap;
       // Wrap onto the next row rather than run off the card. `line` has to
       // carry: resetting only x would drop the entries after this one back
       // onto the row above, on top of the ones already there.
       if (x + span > limit && x > 0) {
         x = 0;
         line += 1;
-        item.attr("transform", "translate(0," + (line * 16) + ")");
+        item.attr("transform", "translate(0," + (line * LEGEND_ROW) + ")");
       }
       x += span;
       item.on("click", function () {
         self.muted[s.username] = !self.muted[s.username];
         self.draw();
-      }).on("mouseenter mousemove", function (event) {
+      }).on("mouseenter mousemove touchstart touchmove", function (event) {
         showTip(event, swatch(s.color, s.name) +
           '<div class="tip-sub">' + (off ? "click to show" : "click to hide") + "</div>");
       }).on("mouseleave", hideTip);
@@ -165,12 +195,13 @@
     return line + 1;
   };
 
-  /* Give the legend the vertical room it actually took. Two rows fit inside
-     the default top margin; a third would otherwise be drawn over the plot. */
+  /* Give the legend the vertical room it actually took, measured rather than
+     assumed: the narrow margins are tight enough that even a second row would
+     otherwise be drawn across the top of the plot. */
   function makeRoom(f, rows) {
-    var extra = Math.max(0, (rows - 2)) * 16;
-    f.top = MARGIN.top + extra;
-    f.tall = f.height - f.top - MARGIN.bottom;
+    var needed = LEGEND_TOP + rows * LEGEND_ROW + 4;
+    f.top = Math.max(f.m.top, needed);
+    f.tall = f.height - f.top - f.m.bottom;
     return f;
   }
 
@@ -181,7 +212,7 @@
     var shown = this.visible();
     var f = this.frame(360);
     var svg = f.svg;
-    makeRoom(f, this.legend(svg, f.width));
+    makeRoom(f, this.legend(svg, f));
     this.coverage(shown);
 
     var x = d3.scaleBand().domain(d3.range(data.metrics.length))
@@ -193,8 +224,8 @@
       .range([f.tall, 0]);
 
     var g = svg.append("g")
-      .attr("transform", "translate(" + MARGIN.left + "," + f.top + ")");
-    valueAxis(g, y, f.inner, data.ylabel);
+      .attr("transform", "translate(" + f.m.left + "," + f.top + ")");
+    valueAxis(g, f, y, data.ylabel);
 
     var bottoms = data.metrics.map(function () { return 0; });
     shown.forEach(function (s) {
@@ -211,7 +242,7 @@
         .attr("height", function (d) { return Math.max(1, y(d.base) - y(d.base + d.v)); })
         .attr("fill", s.color)
         .attr("stroke", COLOR.panel).attr("stroke-width", 0.5)
-        .on("mouseenter mousemove", function (event, d) {
+        .on("mouseenter mousemove touchstart touchmove", function (event, d) {
           showTip(event, swatch(s.color, s.name) + '<div class="tip-sub">' +
             data.metrics[d.i].label + ": " + full.format(Math.round(d.v)) +
             " " + data.unit + "</div>");
@@ -241,7 +272,7 @@
       cell.append("rect").attr("x", -x.bandwidth() / 2).attr("y", -6)
         .attr("width", x.bandwidth()).attr("height", slot + 12)
         .attr("fill", "transparent")
-        .on("mouseenter mousemove", function (event) {
+        .on("mouseenter mousemove touchstart touchmove", function (event) {
           var per = shown.map(function (s) { return { s: s, v: s.values[i] }; })
             .filter(function (d) { return d.v > 0; })
             .sort(function (a, b) { return b.v - a.v; });
@@ -283,7 +314,7 @@
     var shown = this.visible();
     var f = this.frame(330);
     var svg = f.svg;
-    makeRoom(f, this.legend(svg, f.width));
+    makeRoom(f, this.legend(svg, f));
 
     if (!shown.length) { return; }
     var x = d3.scaleUtc().domain([new Date(data.since), new Date()])
@@ -306,8 +337,8 @@
     var y = d3.scaleLinear().domain([lo, hi]).nice().range([f.tall, 0]);
 
     var g = svg.append("g")
-      .attr("transform", "translate(" + MARGIN.left + "," + f.top + ")");
-    valueAxis(g, y, f.inner, data.ylabel);
+      .attr("transform", "translate(" + f.m.left + "," + f.top + ")");
+    valueAxis(g, f, y, data.ylabel);
 
     var span = (Date.now() - data.since) / 86400000;
     var ticks = g.append("g").attr("transform", "translate(0," + f.tall + ")")
@@ -374,7 +405,7 @@
       .on("mouseleave", function () {
         rule.style("opacity", 0); dots.selectAll("*").remove(); hideTip();
       })
-      .on("mousemove", function (event) {
+      .on("mousemove touchstart touchmove", function (event) {
         var at = x.invert(d3.pointer(event, this)[0]).getTime();
         var picks = [];
         shown.forEach(function (s) {
@@ -438,6 +469,11 @@
       charts.forEach(function (chart) { chart.load(q); });
     }, 90);
   }
+
+  // A finger has no "mouseleave", so a tap anywhere else puts the tip away.
+  document.addEventListener("touchstart", function (event) {
+    if (!event.target.closest || !event.target.closest(".plot")) { hideTip(); }
+  }, {passive: true});
 
   document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll(".card.chart").forEach(function (node) {

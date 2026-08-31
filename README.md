@@ -353,6 +353,27 @@ points to 132 without moving the line. The rule lives on each `Period`
 (`bucket` in `wom/periods.py`), and `db.metric_history(..., bucket="day")`
 implements it.
 
+### Phones
+
+The dashboard is laid out for a desktop first - a fixed sidebar beside a wide
+chart column - which on a phone left the charts about two hundred pixels wide
+and pushed the page into a sideways scroll. Below 820px everything stacks: the
+player picker becomes a compact strip of chips above the cards, the header
+wraps, and the tree indents in smaller steps.
+
+The charts adapt too, in `charts.js` rather than CSS, because an SVG cannot
+reflow. Below 560px they switch to tighter margins, drop the rotated axis
+label (the tick numbers already carry the units), thin the legend, ask for
+fewer ticks, and shorten the card - the same 360px height against a 340px
+width reads worse than a wide short chart. The legend reports how many rows it
+used and the plot starts below it, so a wrapped legend never lands on the top
+of the plot.
+
+Touch is handled explicitly: a finger produces no hover, so every tooltip
+target also answers to `touchstart`/`touchmove`, the tooltip reads its position
+off `event.touches[0]` rather than the event, and a tap anywhere outside a
+chart dismisses it - a finger never fires `mouseleave`.
+
 ### Telling the summaries about the gaps
 
 The written summaries face the same problem the charts do, and worse: a month
