@@ -1,8 +1,8 @@
-"""A read-only web view of the tracked data.
+"""The web app: the dashboard people see, and the admin behind it.
 
-Deliberately read-only: the desktop app owns the config (including the API
-key) and is the only thing that writes. This server opens the same database,
-renders the same charts, and never exposes a way to change anything.
+The pages people are given are read-only. Everything that writes - the
+settings, the prompts, and the buttons that start an update or a round of
+summaries - sits under /admin behind a password.
 """
 
 from .app import create_app

@@ -1,7 +1,7 @@
 """What the Summary charts show, independent of how they are drawn.
 
-The desktop tab draws these with matplotlib and the web dashboard with D3, so
-the metric lists and dropdown choices live here rather than in either one.
+charts.js draws them; this is the half that has to agree with the server, so
+the metric lists and dropdown choices live here rather than in the drawing.
 """
 
 from .icons import SKILL_ORDER
@@ -37,27 +37,25 @@ LOG_METRICS = {
 class ChartSpec:
     """One chart on the Summary page, in whichever front end draws it."""
 
-    def __init__(self, key, title, kind, description="", height=4.2, options=None):
+    def __init__(self, key, title, kind, description="", options=None):
         self.key = key
         self.title = title
         self.kind = kind                  # stacked | trend
         self.description = description
-        self.height = height              # figure height in inches, desktop only
         self.options = list(options) if options else None
 
 
 SUMMARY_CHARTS = (
-    ChartSpec("skill_gains", "Experience gained by skill", "stacked", height=4.6,
+    ChartSpec("skill_gains", "Experience gained by skill", "stacked",
               description="Each column is a skill; each slice is one of the "
                           "included players."),
-    ChartSpec("boss_gains", "Top 20 boss kills", "stacked", height=4.6,
+    ChartSpec("boss_gains", "Top 20 boss kills", "stacked",
               description="The twenty bosses the included players killed most "
                           "this period."),
-    ChartSpec("level_trend", "Levels over time", "trend", height=4.2,
+    ChartSpec("level_trend", "Levels over time", "trend",
               description="One line per included player, over the chosen period.",
               options=LEVEL_CHOICES),
     ChartSpec("log_and_clues", "Collection log and clues over time", "trend",
-              height=4.2,
               description="One line per included player, over the chosen period.",
               options=LOG_CHOICES),
 )

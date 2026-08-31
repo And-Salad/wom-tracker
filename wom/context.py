@@ -1,7 +1,8 @@
-"""Shared plumbing for the pluggable chart and table views.
+"""What a chart is handed to build itself.
 
-Adding a new chart or table means writing one function and decorating it; the
-UI pickers, refresh logic and player-selection handling come for free.
+Both front ends used to share this; only the web one is left, but it stays
+its own module because the chart builders in wom/web/data.py and the metric
+helpers in wom/db.py both lean on it and neither owns it.
 """
 
 
@@ -69,51 +70,3 @@ class ViewContext:
         index = next((i for i, row in enumerate(self.players)
                       if row["username"] == username), 0)
         return player_color(self.config, username, index)
-
-
-class ViewSpec:
-    def __init__(self, key, title, func, needs_player=False, description="", height=4.2,
-                 options=None):
-        self.key = key
-        self.title = title
-        self.func = func
-        self.needs_player = needs_player
-        self.description = description
-        self.height = height        # figure height in inches, for stacked panels
-        # Choices for a per-chart dropdown; the selection arrives as ctx.choice.
-        self.options = list(options) if options else None
-
-
-class Registry:
-    """An ordered, keyed collection of ViewSpecs."""
-
-    def __init__(self, name):
-        self.name = name
-        self._specs = {}
-
-    def add(self, key, title, needs_player=False, description="", height=4.2,
-            options=None):
-        def decorator(func):
-            self._specs[key] = ViewSpec(
-                key, title, func, needs_player, description, height, options)
-            return func
-        return decorator
-
-    def get(self, key):
-        return self._specs.get(key)
-
-    def specs(self):
-        return list(self._specs.values())
-
-    def titles(self):
-        return [spec.title for spec in self._specs.values()]
-
-    def by_title(self, title):
-        for spec in self._specs.values():
-            if spec.title == title:
-                return spec
-        return None
-
-    def first(self):
-        specs = self.specs()
-        return specs[0] if specs else None

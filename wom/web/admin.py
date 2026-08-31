@@ -1,4 +1,4 @@
-"""The admin side of the dashboard: everything the desktop app used to own.
+"""The admin side of the dashboard: everything that changes state.
 
 The public pages stay read-only and unauthenticated - that is the whole point
 of the share link. Everything here changes state, so it all sits behind a

@@ -4,31 +4,36 @@
     py web_app.py --host 0.0.0.0        reachable from the rest of your network
     py web_app.py --port 9000
 
-Read-only by design: the desktop app owns the config (including the Wise Old
-Man API key) and is the only thing that writes. Nothing here can change a
-setting, and the API key is never served.
+The public pages are read-only; everything that changes anything lives under
+/admin behind WOM_ADMIN_PASSWORD, and is not registered at all without one.
 
-Most of the time you do not need this: the desktop app's Sharing tab runs the
-same dashboard inside its own process, with a button for the tunnel. This entry
-point is for running the dashboard on its own - a headless box, or a machine
-with no display.
-
-By default this does NOT run the update schedule - leave the desktop app or
-`py wom_tracker.py --update` doing that. Pass --with-scheduler to have the
-server keep the data fresh instead, when it is the only thing running. Never
-pass it alongside the desktop app, or two schedulers update the same database.
+Pass --with-scheduler to have this process run the six-hourly updates and the
+summaries as well as serve the pages. That is how it runs hosted, and it is
+the only thing that should be running the schedule - two of them would update
+the same database twice.
 """
 
 import argparse
 import logging
+import socket
 import sys
 
 from wom.config import Config
-from wom.sharing import local_addresses
+from wom.logs import setup_logging
 from wom.web import create_app
-from wom_tracker import setup_logging
 
 log = logging.getLogger("wom.web")
+
+
+def local_addresses(port):
+    """Addresses worth printing so people know where to point a browser."""
+    out = ["http://localhost:{}".format(port)]
+    try:
+        host = socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        host = []
+    return out + ["http://{}:{}".format(ip, port) for ip in host
+                  if not ip.startswith("127.")]
 
 
 def start_scheduler(app):
@@ -47,9 +52,8 @@ def start_scheduler(app):
         database = app.config["DATABASE"]
         update_all(client, database, settings.get("usernames", []),
                    trigger=trigger)
-        # The desktop app writes the summaries the calendar owes on the back
-        # of each update. Hosted, this process is the only thing running, so
-        # it has to do the same or the summaries never get written at all.
+        # The summaries the calendar owes ride on the back of an update, so
+        # this has to happen here or they never get written at all.
         try:
             maybe_write_summaries(database, settings)
         except Exception:

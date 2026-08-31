@@ -1,8 +1,7 @@
 """Turns the database into the JSON the browser draws with D3.
 
-The desktop app hands its chart functions a matplotlib axis; here the same
-figures are handed to the client instead, so panning, hovering and swapping a
-dropdown happen in the page rather than costing a round trip and a re-render.
+The figures go to the client rather than being rendered here, so hovering and
+swapping a dropdown happen in the page instead of costing a round trip.
 """
 
 import logging
@@ -11,7 +10,7 @@ from datetime import datetime, timezone
 from ..catalog import (BY_KEY, CHOICE_METRICS, COLLECTION_LOG, LOG_METRICS,
                        SUMMARY_CHARTS, TOP_BOSSES, TOTAL_LEVEL)
 from ..icons import SKILL_ORDER
-from ..ui.base import ViewContext
+from ..context import ViewContext
 from ..util import parse_api_time, pretty_metric
 
 log = logging.getLogger(__name__)

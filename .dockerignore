@@ -10,7 +10,4 @@ __pycache__/
 .venv/
 venv/
 README.md
-serve_web.ps1
-setup_autostart.ps1
-run_wom.pyw
 fetch_icons.py

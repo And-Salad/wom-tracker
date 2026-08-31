@@ -17,11 +17,11 @@ def log_path_for(role):
     """Where a given entry point writes its log.
 
     RotatingFileHandler rotates by renaming the open file, which Windows
-    refuses while another process holds it. The desktop app keeps its log open
-    all session, so a CLI run sharing that file fails to roll over and grows
-    past its cap. One file per role, and they never collide.
+    refuses while another process holds it. The server keeps its log open for
+    as long as it runs, so a CLI job sharing that file would fail to roll over
+    and grow past its cap. One file per role, and they never collide.
     """
-    if not role or role == "app":
+    if not role:
         return LOG_PATH
     return os.path.join(DATA_DIR, "wom-{}.log".format(role))
 

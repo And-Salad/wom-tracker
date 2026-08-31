@@ -1,11 +1,16 @@
-"""WOM Tracker - keeps a list of Wise Old Man players updated every six hours.
+"""Maintenance jobs for the tracker, for when the schedule is not what you want.
 
-    py wom_tracker.py              open the window (updates run in the background)
-    py wom_tracker.py --update     run one update pass with no window, then exit
+    py wom_tracker.py --update     run one update pass, then exit
     py wom_tracker.py --backfill   re-import every player's stored history
     py wom_tracker.py --summarize  write the Claude summaries for each player
     py wom_tracker.py --compact    thin old history to one snapshot a day
     py wom_tracker.py --list       print the tracked usernames
+
+The server (web_app.py --with-scheduler) does the updating and the summaries on
+its own; these are the same jobs run by hand. Against a hosted deployment, run
+them where the database is:
+
+    fly ssh console -a wom-tracker -C "python /app/wom_tracker.py --compact"
 
 History is imported automatically the first time a player is seen, so
 --backfill is only needed to pull it again after clearing the database.
@@ -15,10 +20,10 @@ import argparse
 import logging
 import os
 import sys
-from logging.handlers import RotatingFileHandler
 
 from wom.api import WomClient
-from wom.config import Config, DATA_DIR, DB_PATH, log_path_for
+from wom.logs import setup_logging
+from wom.config import Config, DB_PATH
 from wom.db import Database
 from wom.scheduler import stamp_now
 from wom.updater import backfill_player, update_all
@@ -26,30 +31,6 @@ from wom.updater import backfill_player, update_all
 log = logging.getLogger("wom")
 
 
-def setup_logging(verbose=False, role="app"):
-    """Start logging for one entry point.
-
-    `role` picks the file: the window writes wom.log, and the CLI and the
-    standalone server get their own. They can run at the same time, and on
-    Windows a rotation cannot rename a file another process is holding open.
-    """
-    os.makedirs(DATA_DIR, exist_ok=True)
-    handler = RotatingFileHandler(log_path_for(role), maxBytes=512_000,
-                                  backupCount=3, encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG if verbose else logging.INFO)
-    root.addHandler(handler)
-    if sys.stderr is not None:
-        console = logging.StreamHandler()
-        console.setFormatter(logging.Formatter("%(levelname)-7s %(message)s"))
-        root.addHandler(console)
-
-
-def _is_desktop_run(args):
-    """True when this invocation opens the window rather than doing one job."""
-    return not (args.list or args.summarize or args.show_prompt or args.compact
-                or args.backfill is not None or args.update)
 
 
 def run_headless_update():
@@ -244,9 +225,9 @@ def main(argv=None):
     parser.add_argument("--verbose", action="store_true", help="debug logging")
     args = parser.parse_args(argv)
 
-    # The window owns wom.log; everything else logs beside it.
-    setup_logging(args.verbose,
-                  role="app" if _is_desktop_run(args) else "cli")
+    # Its own file: the server holds wom-web.log open, and on Windows a
+    # rotation cannot rename a file another process has open.
+    setup_logging(args.verbose, role="cli")
 
     if args.list:
         for name in Config().get("usernames", []):
@@ -262,30 +243,7 @@ def main(argv=None):
     if args.update:
         return run_headless_update()
 
-    return run_desktop()
-
-
-def run_desktop():
-    """Open the window - or hand the running copy the focus and step aside.
-
-    The window hides to the tray rather than closing, so a second launch
-    otherwise looks like nothing happened while quietly starting a second
-    scheduler against the same database.
-    """
-    from wom.single_instance import InstanceLock
-    from wom.ui.app import App
-
-    lock = InstanceLock()
-    if not lock.acquire() and lock.taken:
-        print("WOM Tracker is already running - showing that window instead.")
-        return 0
-
-    app = App()
-    lock.on_show = app.raise_window
-    try:
-        app.mainloop()
-    finally:
-        lock.release()
+    parser.print_help()
     return 0
 
 

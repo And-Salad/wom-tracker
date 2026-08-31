@@ -57,12 +57,12 @@ def create_app():
         log.warning("%s is not set: the admin pages are disabled", PASSWORD_ENV)
 
     def settings():
-        # Re-read each request so a change made in the desktop app - a new
-        # colour, a new username - shows up without restarting the server.
+        # Re-read each request so a change made under /admin - a new colour,
+        # a new username - shows up without restarting the server.
         return Config()
 
     def roster(config):
-        """Every tracked player, ordered like the desktop sidebar."""
+        """Every tracked player, in the order the settings list them."""
         database = app.config["DATABASE"]
         stored = {row["username"]: row for row in database.players()}
         ordered = []

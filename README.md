@@ -1,36 +1,64 @@
 # WOM Tracker
 
-A small desktop app that keeps a list of Wise Old Man players updated every six
-hours and shows the results as charts and tables. It sits in the system tray
-between updates, so refreshes happen whether or not the window is open.
+A web app that keeps a list of Old School RuneScape accounts updated from Wise
+Old Man every six hours, charts what changed, and writes short summaries of
+each period with the Claude API. One process serves the pages and runs the
+schedule; the charts are drawn in the browser with D3.
 
 Built against the [Wise Old Man v2 API](https://docs.wiseoldman.net/api).
 
 ## Running it
 
 ```bash
-py wom_tracker.py
+py web_app.py --with-scheduler
 ```
 
-Double-clicking `run_wom.pyw` starts it with no console window. To have it
-start when you log in:
+That serves the dashboard on <http://localhost:8000> and runs the six-hourly
+updates and the summaries from the same process. Without `--with-scheduler` it
+only serves what is already stored, which is what you want if something else is
+doing the updating.
+
+The public pages are read-only. Everything that changes anything - the tracked
+player list, the API keys, the colours, the prompts, and buttons to run an
+update or a round of summaries now rather than on the schedule - lives under
+`/admin`, behind a password:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File setup_autostart.ps1
+WOM_ADMIN_PASSWORD=something-long py web_app.py --with-scheduler
 ```
 
-(`-Remove` undoes it.)
+Without that variable the admin routes are not registered at all, so a
+deployment that forgets to set one has no admin pages rather than open ones.
 
-Command-line extras:
+### Hosted
+
+`Dockerfile` and `fly.toml` deploy the same thing to [Fly.io](https://fly.io),
+which is where it is meant to live: a machine that is always on, so the
+schedule keeps running without a PC left awake. The volume mounts at `/data`
+and holds the database, the config and the prompts; the keys arrive as secrets
+(`WOM_ADMIN_PASSWORD`, `WOM_SECRET_KEY`, `ANTHROPIC_API_KEY`) and never touch
+the volume. `auto_stop_machines` is off on purpose - a stopped machine cannot
+wake itself to run an update.
 
 ```bash
-py wom_tracker.py --update
+fly deploy
 ```
 
-runs one update pass with no window and exits — handy if you would rather drive
-the schedule from Windows Task Scheduler than leave the app running.
-`--list` prints the tracked usernames, and `--backfill [name...]` re-imports
-stored history (see below — normally this happens on its own).
+### Maintenance jobs
+
+```bash
+py wom_tracker.py --update      # one update pass now
+py wom_tracker.py --summarize   # write whatever summaries are owed
+py wom_tracker.py --compact     # thin old history to one snapshot a day
+py wom_tracker.py --list        # print the tracked usernames
+```
+
+The server does the first two on its own; these are the same jobs by hand.
+Against a hosted deployment, run them where the database is:
+
+```bash
+fly ssh console -a wom-tracker -C "python /app/wom_tracker.py --compact"
+```
 
 ## Written summaries
 
@@ -122,93 +150,50 @@ player whose numbers have not moved is skipped rather than re-billed - `--force`
 overrides. And the calendar rules mean the six-hourly update pass writes nothing
 at all outside the morning slot.
 
-## Web dashboard
+## The pages
 
-A read-only view of the same data, for sharing with other people:
-
-```bash
-py web_app.py                    # http://localhost:8000, this machine only
-py web_app.py --host 0.0.0.0     # reachable from the rest of your network
-```
-
-It prints the URLs to hand out. Four pages — Summary (the same four charts),
-Milestones, Summaries and Players — with the player and period filters in the
-sidebar.
+Four public pages - **Summary** (the charts), **Milestones**, **Summaries** and
+**Players** - with the player and period filters in the sidebar, plus **Admin**
+behind the password.
 
 The charts are drawn in the browser with D3 (`wom/web/static/charts.js`). The
 server only answers with JSON from `/api/chart/<key>`, so ticking a player or
 changing a dropdown refetches a few kilobytes and redraws in place instead of
-reloading the page. What each chart shows — the metric lists and the dropdown
-choices — lives in `wom/catalog.py`, shared with the desktop tab, so the two
-front ends cannot drift apart. D3 itself is vendored under `wom/web/static/`,
-so the dashboard needs no CDN and works on a network with no internet at all.
+reloading the page. What each chart shows - the metric lists and the dropdown
+choices - lives in `wom/catalog.py`, which is the half the server has to agree
+with. D3 itself is vendored under `wom/web/static/`, so the dashboard needs no
+CDN and works on a network with no internet at all.
 
-Hovering does more than the desktop tooltip: a column slice gives the player,
-metric and amount; an axis icon gives every player's number for that skill or
-boss, ranked; and a line chart shows one crosshair that reads off all the
-players at once. Clicking a legend entry hides that player without a refetch.
+Hovering a column slice gives the player, metric and amount; an axis icon gives
+every player's number for that skill or boss, ranked; and a line chart shows
+one crosshair that reads off all the players at once. Clicking a legend entry
+hides that player without a refetch. All of it answers to touch as well - see
+**Phones** below.
 
-Read-only is a design constraint, not an omission: the desktop app owns the
-config and is the only writer, so nothing here can change a setting and the
-Wise Old Man API key is never served. By default the server does not run the
-update schedule either — leave that to the desktop app or a scheduled
-`--update`. Pass `--with-scheduler` when the server is the only thing running.
+Because the server renders no pictures, there is nothing to cache and
+invalidate: each request is one pass over the queries. The icon sprites, which
+never change, are served with a week-long cache header - a 24-column chart asks
+for 24 of them on every redraw.
 
-Because the server renders nothing, there is nothing to cache and invalidate:
-each request is one pass over the same queries the desktop tab runs. The icon
-sprites, which never change, are served with a week-long cache header - a
-24-column chart asks for 24 of them on every redraw.
+### What is public and what is not
 
-### Starting and stopping it
+The pages people are given are read-only, and the API keys are never served.
+Everything that writes is under `/admin`: the tracked player list, the keys,
+the summary settings, the colours, the prompts, and buttons to run an update,
+a round of summaries, or a history re-import. Those buttons run their work on a
+background thread and report progress to a page that polls, rather than holding
+a request open for a minute.
 
-Open the **Sharing** tab in the desktop app and press Start. The dashboard runs
-inside the app process - a waitress server on a background thread - so there is
-no console window to keep alive and nothing to clean up: closing the app stops
-the server with it. Tick "Start the dashboard when this app starts" and it
-comes back on its own.
+Admin exists only when `WOM_ADMIN_PASSWORD` is set - the routes are not
+registered otherwise. The session cookie is `Secure`, `HttpOnly` and
+`SameSite=Lax`; sign-in failures are counted per address and lock that address
+out for five minutes after six of them. Set `WOM_SECRET_KEY` too, or sessions
+end whenever the process restarts.
 
-The scheduler already lives in the desktop app, so the dashboard started this
-way never runs a second one. `py web_app.py` still exists for running the
-dashboard on its own (a headless box, say), and `--with-scheduler` is for when
-that is the only thing running - do not use it alongside the desktop app.
-
-### Sharing it with people elsewhere
-
-```bash
-winget install --id Cloudflare.cloudflared
-```
-
-Then press **Open link** on the Sharing tab. The app runs `cloudflared` as a
-child process, reads the `https://....trycloudflare.com` address out of its
-output, and shows it with Copy and Open buttons. Closing the link, stopping the
-dashboard, or quitting the app all shut the tunnel down - a tunnel pointing at
-a stopped server is a dead link, so stopping the dashboard closes it too.
-
-The connection is made outwards from this machine, so there is no firewall rule
-to add, no router to touch, and no admin prompt. Worth knowing: the link is
-unlisted but not password protected, so treat it as a secret; a new one is
-minted every time it starts; and it only works while the app is running and the
-machine is awake.
-
-`serve_web.ps1 -Tunnel` still does the same thing from a console if you prefer.
-
-### Sharing it on your own network instead
-
-```bash
-powershell -ExecutionPolicy Bypass -File serve_web.ps1 -Lan
-```
-
-This one does need the port opened, from an **Administrator** PowerShell, once:
-
-```bash
-New-NetFirewallRule -DisplayName 'WOM Tracker' -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow -Profile Private
-```
-
-Without elevation that command fails silently, which looks like the rule
-worked. Check it with `Get-NetFirewallRule -DisplayName 'WOM Tracker'`.
-
-Either way, there is no authentication built in. That is fine for a private
-link among people you trust; do not put it somewhere public.
+An admin job and the six-hourly schedule cannot overlap: both take the same
+flag on the scheduler, so pressing **Update now** a minute before the slot
+gets "the scheduled update is running" rather than a second pass over every
+player - which for summaries would be a second set of paid API calls.
 
 ## Schedule
 
@@ -224,66 +209,38 @@ disturbing the schedule.
 
 ## Two processes, one config file
 
-`Config.save()` does not write the object's whole in-memory snapshot. The app
-holds one `Config` for a session, and a `--update` run alongside it has its
-own; a blind write of either snapshot would silently revert whatever the other
-had written since. Reverting `last_run` is the one that bites - the scheduler
+`Config.save()` does not write the object's whole in-memory snapshot. The
+server holds one `Config` for as long as it runs, and a CLI job alongside it
+has its own; a blind write of either snapshot would silently revert whatever
+the other had written since. Reverting `last_run` is the one that bites - the scheduler
 would decide a run was overdue and fire a duplicate pass over every player. So
 `__setitem__` records which keys were touched, and `save()` re-reads the file
 under the lock and lays only those keys over it.
 
 Logging is split for the same reason: `RotatingFileHandler` rotates by renaming
-the open file, which Windows refuses while another process holds it. The window
-writes `data/wom.log`, CLI runs write `wom-cli.log`, and the standalone server
-writes `wom-web.log`, so no two processes ever share one.
+the open file, which Windows refuses while another process holds it. The server
+writes `data/wom-web.log` and CLI jobs write `wom-cli.log`, so the two never
+share one.
 
-## One copy at a time
+## The palette
 
-The window hides to the tray instead of closing, which makes launching the app
-again look like nothing happened - while quietly starting a second scheduler
-against the same database. `wom/single_instance.py` stops that: the first copy
-binds a loopback port and holds it, and a second launch finds it taken, asks
-the running copy to show its window, and exits.
+Dark throughout, from one definition. `wom/theme.py` holds the colours and
+emits them as CSS custom properties; the page styles itself from those and
+`charts.js` reads the same variables back for its axes, gridlines and tooltips,
+so a chart can never land on a background it does not match. There is no light
+mode or toggle - changing the constants in that module changes everything.
 
-A socket rather than a lock file, because the operating system releases it when
-the process dies - a stale lock file after a crash would leave the app refusing
-to start with no obvious fix. The two sides exchange a short greeting first, so
-an unrelated program sitting on that port is detected rather than mistaken for
-this app: the lock is skipped with a warning and the app still starts.
-
-## The window
-
-Dark throughout, in both the desktop app and the web dashboard. The palette
-lives in `wom/theme.py` and is the single source for all three surfaces: it
-styles ttk for the Tk window, sets matplotlib's rcParams so every desktop chart
-is drawn on the panel colour, and is emitted as CSS custom properties that the
-D3 charts read back for their axes, gridlines and tooltips. There is no light
-mode or toggle; changing the constants in that module changes everything at
-once.
-
-Five tabs share one sidebar of tracked players:
-
-- **Summary** (the landing tab) — a period dropdown over a scrolling column of
-  charts comparing the players you include. More charts get added below.
-- **Milestones** — a feed of the achievements Wise Old Man has recorded.
-- **Summaries** — optional written notes on each player, see below.
-- **Charts** — single-player and whole-roster charts, one at a time.
-- **Tables** — sortable tables of the latest snapshot.
-
-The sidebar does double duty. The swatch on each row is that player's chart
-colour: filled when they are included in the Summary tab, a grey outline when
-they are not. Click it to toggle (**All** / **None** above the list, or the
-space bar). Clicking the name selects the player the Charts and Tables tabs
-draw. New players arrive included.
+The dashboard has four pages: **Summary** (charts comparing the players you
+tick), **Milestones** (the achievements Wise Old Man has recorded),
+**Summaries** (the written notes) and **Players** (the latest stored figures).
+A fifth, **Admin**, appears when a password is configured.
 
 ### Player colours
 
 Every player gets a colour from the default palette by their position in the
-list, and that colour is used for them in every chart. **Right-click a player**
-to open a picker with a saturation/value gradient, a hue strip, hex and RGB
-fields, and the palette as one-click swatches; **Reset to default** puts them
-back on their palette slot. Choices are stored in `player_colors` in
-`data/config.json`, keyed by username, so they survive restarts.
+list, and that colour is used for them in every chart and every swatch. Pick a
+different one on the admin page. Choices are stored in `player_colors` in
+`data/config.json`, keyed by lowercase username.
 
 ### Summary period
 
@@ -298,10 +255,9 @@ would report four years of kills as "this month". So `baseline_snapshot` takes
 whichever snapshot sits **closer to the window edge**: the earlier one
 overstates by whatever happened before the window, a later one understates by
 whatever happened at the start of it, and the nearer of the two is wrong by
-less. Where the gap is large enough to matter, both front ends say so rather
-than let it pass unremarked - the web charts caption it ("Short history:
-someone from 06 Aug 2026 (25d)") and the desktop tab appends it to the
-line above the charts.
+less. Where the gap is large enough to matter the chart says so rather than
+letting it pass unremarked, captioned under the columns ("Short history:
+someone from 06 Aug 2026 (25d)").
 
 The other trap is the hiscores' unranked sentinel. The API sends `-1` for a
 metric the player is not ranked on, which `_num` stores as NULL. `metric_gains`
@@ -403,30 +359,10 @@ progress that may never have happened. On a real Year view here, six of one
 player's nineteen points sat 24 to 86 days apart, so most of that line was
 invented.
 
-Both front ends now dash those stretches. The ends of a dashed segment are real
-readings; the middle is interpolation. Anything closer together than 4% of the
-window (floored at a day and a half, so short windows never dash) is drawn
-solid as before. `_plot_with_gaps` in `wom/ui/summary.py` does it for the
-desktop, and the same rule lives in `Chart.prototype.trend` in `charts.js`.
-
-### Chart tooltips
-
-Hovering anything meaningful on a chart names it. On the stacked columns a
-slice gives the player, the skill or boss, and the amount; the axis icons give
-the skill or boss name, which matters because the icons are the only label that
-axis has; and a legend swatch gives the player, so a colour on its own is
-always identifiable. The Charts tab does the same for its bars, and its XP-over-
-time line names the individual snapshot nearest the cursor.
-
-That is the desktop tab; the web dashboard does its own hit-testing in D3,
-described under "Web dashboard" above.
-
-Charts register what each artist means with `add_hover(ax, artist, text)` from
-`wom/ui/tooltip.py`, and a `ChartTooltip` attached to the canvas does the
-hit-testing. The tooltip is a borderless Tk window rather than a matplotlib
-annotation, so following the cursor costs no figure redraws. Pass a callable
-instead of a string to label the individual point under the pointer, the way
-the line chart does.
+Those stretches are dashed. The ends of a dashed segment are real readings; the
+middle is interpolation. Anything closer together than 4% of the window
+(floored at a day and a half, so short windows never dash) is drawn solid, in
+`Chart.prototype.trend` in `charts.js`.
 
 ## Milestones
 
@@ -485,22 +421,6 @@ mush. When a chart gets too narrow for one icon per column they step down to
 
 If the icons are missing the charts fall back to text labels.
 
-## Options
-
-The **Options** button opens the settings dialog:
-
-- **Tracked usernames** — one RuneScape name per line, updated in that order.
-  Blanks and duplicates are dropped when you save.
-- **Keep running in the tray** — closing the window hides it instead of quitting.
-- **Delete stored history for removed names** — one-shot cleanup on save.
-- **API key** — optional. Anonymous callers get 20 requests a minute; a key
-  raises that to 100. The client throttles itself to stay under whichever
-  limit applies.
-- **Contact** — appended to the `User-Agent` header, as the API docs ask for.
-
-Settings live in `data/config.json`, alongside the `player_colors` overrides set
-by right-clicking a player.
-
 ## What gets stored
 
 `data/wom.db` (SQLite):
@@ -537,11 +457,6 @@ daily chart plots. Growth drops from ~265 MB a year to ~66 MB plus a rolling
 It is deliberately manual and never runs on its own: deleting snapshots cannot
 be undone, and the recent window has to stay raw for the day and week views to
 mean anything.
-
-Panels redraw lazily: only the visible tab is drawn, the rest are marked stale
-and catch up when their tab is selected, and nothing is drawn while the window
-is hidden in the tray. Selecting a player only invalidates Charts and Tables;
-the swatches only invalidate Summary and Milestones.
 
 Nothing is deleted unless you ask for it, so the metric history starts from the
 imported back-catalogue and grows by four snapshots a day from there.
@@ -583,133 +498,85 @@ py wom_tracker.py --backfill
 Name players after the flag to redo just those. Duplicate snapshots are ignored
 on insert, so re-running is harmless.
 
-## Adding charts and tables
+## Adding a chart
 
-All three tabs are registries, so a new view is one function.
-
-A Summary chart is stacked below the existing ones automatically — add it to
-`wom/ui/summary.py`:
+A Summary chart is described once and drawn once. Describe it in
+`wom/catalog.py`:
 
 ```python
-@SUMMARY_CHARTS.add("boss_gains", "Boss kills gained", height=4.0,
-                    description="Shown under the chart title.")
-def boss_gains(ax, ctx):
-    for index, player in enumerate(ctx.selected):
-        gains = ctx.db.metric_gains(player["id"], ctx.period.start_iso(), "boss")
-        ...
+ChartSpec("boss_gains", "Boss kills gained", "stacked",
+          description="Shown under the chart title.")
 ```
 
-`ctx.selected` is the included players and `ctx.period` the chosen window;
-`ctx.db.metric_gains(player_id, since, kind)` returns `{metric: gained}` for
-skills, bosses or activities, and `ctx.db.metric_history(player_id, metric,
-kind, since=...)` gives a time series with its baseline point. Pass
-`options=[...]` on the chart's entry in `wom/catalog.py` to get a dropdown of
-your own in the card header; the selection arrives as `ctx.choice`. `ctx.color_for(player)`
-gives that player's colour, and `_stacked_by_metric(ax, ctx, kind, metrics,
-ylabel, empty)` draws the whole stacked-column-with-icons shape, so a new
-comparison chart is usually just picking which metrics to pass it.
-
-A **Summary** chart takes two steps, because it is drawn twice. Describe it
-once in `wom/catalog.py` (key, title, description, dropdown choices), then write
-the matplotlib version in `wom/ui/summary.py` decorated with `@_chart("key")`,
-which pulls that description back out of the catalog. The web dashboard needs
-its data shape in `wom/web/data.py` and its drawing in `charts.js`; if it is a
-stacked or trend chart, both already exist and it is a few lines in `_BUILDERS`.
-
-A chart draws onto a matplotlib `Axes` — add it to `wom/ui/charts.py`:
+`kind` is `stacked` or `trend`, and `options=[...]` gives it a dropdown whose
+selection arrives as `ctx.choice`. Then build its data in `wom/web/data.py`:
 
 ```python
-@CHARTS.add("my_chart", "Title in the picker", needs_player=True,
-            description="Shown next to the picker.")
-def my_chart(ax, ctx):
-    rows = ctx.db.metric_history(ctx.player_id, "slayer", "skill")
-    if not rows:
-        raise NoData("Nothing stored yet.")
-    ax.plot([r["captured_at"] for r in rows], [r["value"] for r in rows])
+def _boss_gains(ctx, _choice):
+    return _stacked(ctx, "boss", ranked_metrics, "Kills gained", "kills gained",
+                    "No boss kills by the included players in the last {}.")
+
+_BUILDERS = {..., "boss_gains": _boss_gains}
 ```
 
-A table returns columns and formatted rows — add it to `wom/ui/tables.py`:
+`ctx` is a `ViewContext` (`wom/context.py`) carrying `db`, `config`, the
+included `selected` players and the `period`. `ctx.gains(player, kind)` returns
+`{metric: gained}` and memoises, so ask freely rather than repeating the
+snapshot lookups; `ctx.db.metric_history(player_id, metric, kind, since=...)`
+gives a time series with its baseline point.
 
-```python
-@TABLES.add("my_table", "Title in the picker")
-def my_table(ctx):
-    columns = [("Player", 160, tk.W, TXT), ("EHP", 80, tk.E, NUM)]
-    rows = [(p["display_name"], fmt_float(p["ehp"])) for p in ctx.players]
-    return columns, rows
-```
-
-`ctx` is a `ViewContext` (`wom/ui/base.py`) carrying `db`, `config`, the
-highlighted `player`, the full `players` list, the included `selected` players and
-the Summary `period`. A context is built fresh for every redraw, so
-`ctx.gains(player, kind)` memoises freely - use it rather than
-`db.metric_gains` so sibling charts share one pair of snapshot lookups. Raising `NoData` from a chart shows the message in place
-of the plot instead of an error. Columns marked `NUM` sort numerically when the
-header is clicked.
-
-Useful `Database` helpers for new views: `metric_history(player_id, metric,
-kind)`, `latest_snapshot_metrics(player_id, kind)`, `recent_runs(limit)`, and
-`query(sql, params)` for anything else.
+If it is a stacked or trend chart, that is all - `charts.js` already draws both
+shapes, icons, legend, tooltips and the responsive behaviour. A genuinely new
+shape needs a branch in `Chart.prototype.draw` and a drawing function beside
+`stacked` and `trend`.
 
 ## Layout
 
 ```
-wom_tracker.py       entry point and CLI
-run_wom.pyw          console-free launcher
-fetch_icons.py         downloads the skill and boss icons
-setup_autostart.ps1  optional login shortcut
-web_app.py           read-only web dashboard
-serve_web.ps1        starts it, optionally shared over a link or your LAN
+web_app.py           the server: pages, API, and the schedule
+wom_tracker.py       maintenance jobs (update, backfill, summarize, compact)
+fetch_icons.py       downloads the skill and boss icons
+Dockerfile           the container that runs on Fly
+fly.toml             one always-on machine and a volume at /data
 wom/
   api.py             Wise Old Man client, rate limiting and retries
-  config.py          settings file
+  config.py          settings file, with secrets overridable by environment
   db.py              SQLite schema and queries
   updater.py         one update pass over the username list
-  scheduler.py       the six-hourly Eastern timer
+  scheduler.py       the six-hourly Eastern timer and its busy flag
   periods.py         the day/week/month/quarter/year windows
-  icons.py           skill order and icon loading
-  catalog.py         what the Summary charts show, shared by both front ends
-  sharing.py         the dashboard and tunnel lifecycles, driven from the app
-  single_instance.py the loopback lock that keeps one copy running
+  icons.py           skill order, and where each sprite lives
+  catalog.py         what the Summary charts show
   colors.py          the palette and per-player colour overrides
+  context.py         ViewContext: what a chart builder is handed
   summaries.py       the digest, the Claude call and the once-a-day hook
+  logs.py            per-entry-point log files
+  theme.py           the palette, emitted as CSS variables
   util.py            formatting helpers
-  web/               Flask dashboard
+  web/
     app.py           routes: the pages and /api/chart/<key>
+    admin.py         the password-gated half
     data.py          the JSON behind each chart
+    jobs.py          background jobs the admin buttons start
     static/          D3 and charts.js, the browser-side drawing
     templates/       the pages themselves
-  ui/
-    app.py           main window and player sidebar
-    options.py       Options dialog
-    summary.py       Summary tab: period picker and stacked charts
-    summaries.py     Summaries tab: the written notes
-    milestones.py    Milestones tab: the achievement feed
-    sharing.py       Sharing tab: start/stop the dashboard and its link
-    colorpicker.py   the gradient/hex/RGB colour dialog
-    charts.py        chart registry and matplotlib panel
-    tables.py        table registry and Treeview panel
-    base.py          ViewContext and the registry type
-    tooltip.py       hover labels for chart artists
-    tray.py          system tray icon
 assets/skills/       skill icons (from RuneLite)
 assets/bosses/       boss and activity icons (hiscore sprites, via Wise Old Man)
-data/                config, database and log (created on first run)
+data/                config, database, prompts and logs (created on first run)
 ```
 
 ## Requirements
 
-The web dashboard adds `flask` and `waitress`, and the written summaries add
-`anthropic`; the desktop app runs without any of them.
-
-Python 3.10+ with `requests` and `matplotlib`, plus `tzdata` (Windows has no
-IANA time zone database of its own) and — for the tray icon — `pystray` and
-`Pillow`:
+Python 3.10+ with `requests`, `flask` and `waitress`, plus `tzdata` (Windows
+has no IANA time zone database of its own) and `anthropic` for the written
+summaries:
 
 ```bash
 py -m pip install -r requirements.txt
 ```
 
-Both extras degrade gracefully. Without `pystray`/`Pillow`, closing the window
-quits instead of hiding to the tray. Without `tzdata`, the scheduler falls back
-to a built-in US Eastern rule (`_UsEastern` in `wom/scheduler.py`), which
-matches the real zone for any year using the post-2007 daylight saving dates.
+Nothing needs a display: the charts are drawn in the browser, so there is no
+matplotlib and no image library on the server. Without `tzdata` the scheduler
+falls back to a built-in US Eastern rule (`_UsEastern` in `wom/scheduler.py`),
+which matches the real zone for any year using the post-2007 daylight saving
+dates. Without `anthropic` everything works except the written summaries.
