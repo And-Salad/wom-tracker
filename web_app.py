@@ -64,7 +64,7 @@ def main(argv=None):
                         help="Flask's dev server with tracebacks, localhost only")
     args = parser.parse_args(argv)
 
-    setup_logging()
+    setup_logging(role="web")
     app = create_app()
     if args.with_scheduler:
         start_scheduler(app)

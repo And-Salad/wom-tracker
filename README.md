@@ -222,6 +222,21 @@ last update ran and when the next slot is due, in your local time with the
 Eastern time alongside. **Update now** runs a pass immediately without
 disturbing the schedule.
 
+## Two processes, one config file
+
+`Config.save()` does not write the object's whole in-memory snapshot. The app
+holds one `Config` for a session, and a `--update` run alongside it has its
+own; a blind write of either snapshot would silently revert whatever the other
+had written since. Reverting `last_run` is the one that bites - the scheduler
+would decide a run was overdue and fire a duplicate pass over every player. So
+`__setitem__` records which keys were touched, and `save()` re-reads the file
+under the lock and lays only those keys over it.
+
+Logging is split for the same reason: `RotatingFileHandler` rotates by renaming
+the open file, which Windows refuses while another process holds it. The window
+writes `data/wom.log`, CLI runs write `wom-cli.log`, and the standalone server
+writes `wom-web.log`, so no two processes ever share one.
+
 ## One copy at a time
 
 The window hides to the tray instead of closing, which makes launching the app

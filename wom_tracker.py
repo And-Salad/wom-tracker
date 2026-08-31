@@ -18,7 +18,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 
 from wom.api import WomClient
-from wom.config import Config, DATA_DIR, DB_PATH, LOG_PATH
+from wom.config import Config, DATA_DIR, DB_PATH, log_path_for
 from wom.db import Database
 from wom.scheduler import stamp_now
 from wom.updater import backfill_player, update_all
@@ -26,9 +26,16 @@ from wom.updater import backfill_player, update_all
 log = logging.getLogger("wom")
 
 
-def setup_logging(verbose=False):
+def setup_logging(verbose=False, role="app"):
+    """Start logging for one entry point.
+
+    `role` picks the file: the window writes wom.log, and the CLI and the
+    standalone server get their own. They can run at the same time, and on
+    Windows a rotation cannot rename a file another process is holding open.
+    """
     os.makedirs(DATA_DIR, exist_ok=True)
-    handler = RotatingFileHandler(LOG_PATH, maxBytes=512_000, backupCount=3, encoding="utf-8")
+    handler = RotatingFileHandler(log_path_for(role), maxBytes=512_000,
+                                  backupCount=3, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if verbose else logging.INFO)
@@ -37,6 +44,12 @@ def setup_logging(verbose=False):
         console = logging.StreamHandler()
         console.setFormatter(logging.Formatter("%(levelname)-7s %(message)s"))
         root.addHandler(console)
+
+
+def _is_desktop_run(args):
+    """True when this invocation opens the window rather than doing one job."""
+    return not (args.list or args.summarize or args.show_prompt or args.compact
+                or args.backfill is not None or args.update)
 
 
 def run_headless_update():
@@ -231,7 +244,9 @@ def main(argv=None):
     parser.add_argument("--verbose", action="store_true", help="debug logging")
     args = parser.parse_args(argv)
 
-    setup_logging(args.verbose)
+    # The window owns wom.log; everything else logs beside it.
+    setup_logging(args.verbose,
+                  role="app" if _is_desktop_run(args) else "cli")
 
     if args.list:
         for name in Config().get("usernames", []):

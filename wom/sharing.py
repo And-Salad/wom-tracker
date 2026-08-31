@@ -191,20 +191,30 @@ class Tunnel:
         except Exception:                            # pragma: no cover
             log.exception("reading cloudflared output")
         finally:
-            if process.poll() is not None and process is self._process:
-                self.on_event("tunnel closed")
+            # The output ending means cloudflared has gone. If we did not ask
+            # it to (stop() clears _process first), the link is dead: drop the
+            # address rather than leave the tab offering a URL that no longer
+            # resolves. Do not test poll() here - it can still read None for a
+            # moment after the pipe closes, which used to swallow this event.
+            if process is self._process:
+                self._process = None
+                self.url = None
+                self.on_event("tunnel closed unexpectedly - the link is dead")
 
     def stop(self):
-        if self._process is None:
+        process, self._process = self._process, None
+        if process is None:
             return
+        # _process is cleared first, on purpose: that is how the watcher thread
+        # tells a deliberate stop from cloudflared dying on its own, and it is
+        # about to see the pipe close either way.
+        self.url = None
         try:
-            self._process.terminate()
-            self._process.wait(timeout=5)
+            process.terminate()
+            process.wait(timeout=5)
         except Exception:
             try:
-                self._process.kill()
+                process.kill()
             except Exception:
                 pass
-        self._process = None
-        self.url = None
         self.on_event("tunnel closed")

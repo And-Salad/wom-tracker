@@ -92,6 +92,7 @@
       .attr("width", "100%").attr("height", height);
     return { svg: svg, width: width, height: height,
              inner: width - MARGIN.left - MARGIN.right,
+             top: MARGIN.top,
              tall: height - MARGIN.top - MARGIN.bottom };
   };
 
@@ -132,21 +133,25 @@
   Chart.prototype.legend = function (svg, width) {
     var self = this;
     var row = svg.append("g").attr("transform", "translate(" + MARGIN.left + ",14)");
+    var limit = width - MARGIN.left - MARGIN.right;
     var x = 0;
+    var line = 0;                    // which legend row we are filling
     this.data.series.forEach(function (s) {
       var off = !!self.muted[s.username];
-      var item = row.append("g").attr("transform", "translate(" + x + ",0)")
+      var item = row.append("g").attr("transform", "translate(" + x + "," + (line * 16) + ")")
         .style("cursor", "pointer").attr("opacity", off ? 0.4 : 1);
       item.append("rect").attr("width", 10).attr("height", 10).attr("rx", 2)
         .attr("y", -8).attr("fill", off ? COLOR.muted : s.color);
       item.append("text").attr("x", 15).attr("fill", COLOR.ink)
         .style("font-size", "12px").text(s.name);
       var span = item.node().getBBox().width + 18;
-      // Wrap onto a second row rather than run off the card.
-      if (x + span > width - MARGIN.left - MARGIN.right && x > 0) {
+      // Wrap onto the next row rather than run off the card. `line` has to
+      // carry: resetting only x would drop the entries after this one back
+      // onto the row above, on top of the ones already there.
+      if (x + span > limit && x > 0) {
         x = 0;
-        item.attr("transform", "translate(0,16)");
-        span = item.node().getBBox().width + 18;
+        line += 1;
+        item.attr("transform", "translate(0," + (line * 16) + ")");
       }
       x += span;
       item.on("click", function () {
@@ -157,7 +162,17 @@
           '<div class="tip-sub">' + (off ? "click to show" : "click to hide") + "</div>");
       }).on("mouseleave", hideTip);
     });
+    return line + 1;
   };
+
+  /* Give the legend the vertical room it actually took. Two rows fit inside
+     the default top margin; a third would otherwise be drawn over the plot. */
+  function makeRoom(f, rows) {
+    var extra = Math.max(0, (rows - 2)) * 16;
+    f.top = MARGIN.top + extra;
+    f.tall = f.height - f.top - MARGIN.bottom;
+    return f;
+  }
 
   /* -- stacked columns ------------------------------------------------- */
 
@@ -166,7 +181,7 @@
     var shown = this.visible();
     var f = this.frame(360);
     var svg = f.svg;
-    this.legend(svg, f.width);
+    makeRoom(f, this.legend(svg, f.width));
     this.coverage(shown);
 
     var x = d3.scaleBand().domain(d3.range(data.metrics.length))
@@ -178,7 +193,7 @@
       .range([f.tall, 0]);
 
     var g = svg.append("g")
-      .attr("transform", "translate(" + MARGIN.left + "," + MARGIN.top + ")");
+      .attr("transform", "translate(" + MARGIN.left + "," + f.top + ")");
     valueAxis(g, y, f.inner, data.ylabel);
 
     var bottoms = data.metrics.map(function () { return 0; });
@@ -268,7 +283,7 @@
     var shown = this.visible();
     var f = this.frame(330);
     var svg = f.svg;
-    this.legend(svg, f.width);
+    makeRoom(f, this.legend(svg, f.width));
 
     if (!shown.length) { return; }
     var x = d3.scaleUtc().domain([new Date(data.since), new Date()])
@@ -291,7 +306,7 @@
     var y = d3.scaleLinear().domain([lo, hi]).nice().range([f.tall, 0]);
 
     var g = svg.append("g")
-      .attr("transform", "translate(" + MARGIN.left + "," + MARGIN.top + ")");
+      .attr("transform", "translate(" + MARGIN.left + "," + f.top + ")");
     valueAxis(g, y, f.inner, data.ylabel);
 
     var span = (Date.now() - data.since) / 86400000;

@@ -9,6 +9,7 @@ degrades to text labels when they are absent.
 
 import logging
 import os
+import re
 
 log = logging.getLogger(__name__)
 
@@ -53,8 +54,32 @@ ICON_CANVAS_PX = 28
 _cache = {}
 
 
+# Wise Old Man metric names are lowercase words joined by underscores. Anything
+# else is not a metric, and must never reach the filesystem: these names arrive
+# from a URL on the web dashboard, which is meant to be shared publicly.
+SAFE_METRIC = re.compile(r"\A[a-z0-9_]{1,64}\Z")
+
+
+def is_safe_metric(metric):
+    return bool(SAFE_METRIC.match(str(metric)))
+
+
 def icon_path(metric, kind="skill"):
-    return os.path.join(ICON_DIRS.get(kind, SKILL_ICON_DIR), "{}.png".format(metric))
+    """Where this metric's sprite lives, or None if the name is not one.
+
+    Rejecting the name outright is the guard that matters - on Windows a
+    backslash in a URL segment survives routing, so a name built from `..` and
+    backslashes would otherwise walk straight out of the asset directory.
+    """
+    if not is_safe_metric(metric):
+        return None
+    folder = ICON_DIRS.get(kind, SKILL_ICON_DIR)
+    path = os.path.join(folder, "{}.png".format(metric))
+    # Belt and braces: whatever the name did, the result has to stay inside.
+    if os.path.commonpath([os.path.realpath(folder),
+                           os.path.realpath(path)]) != os.path.realpath(folder):
+        return None
+    return path
 
 
 def load_icon(metric, kind="skill"):
@@ -70,7 +95,7 @@ def load_icon(metric, kind="skill"):
         return _cache[key]
     image = None
     path = icon_path(metric, kind)
-    if os.path.exists(path):
+    if path and os.path.exists(path):
         try:
             import numpy as np
             from PIL import Image
@@ -90,6 +115,7 @@ def load_icon(metric, kind="skill"):
 def icon_kind_for(metric):
     """Which asset folder holds this metric's icon, or None if neither does."""
     for kind in ("skill", "boss"):
-        if os.path.exists(icon_path(metric, kind)):
+        path = icon_path(metric, kind)
+        if path and os.path.exists(path):
             return kind
     return None

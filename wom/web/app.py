@@ -232,8 +232,10 @@ def create_app():
     def icon(kind, metric):
         if kind not in ("skill", "boss", "activity"):
             abort(404)
+        # icon_path returns None for anything that is not a metric name, which
+        # is what stops a crafted URL walking out of the asset directory.
         path = icon_path(metric, kind)
-        if not os.path.exists(path):
+        if path is None or not os.path.exists(path):
             abort(404)
         response = send_file(path, mimetype="image/png")
         # Sprites never change; the axis of a 24-column chart asks for 24 of
