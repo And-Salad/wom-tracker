@@ -1,6 +1,6 @@
 """What the Overview charts show, independent of how they are drawn.
 
-charts.js draws them; this is the half that has to agree with the server, so
+chartkit.js draws them; this is the half that has to agree with the server, so
 the metric lists and dropdown choices live here rather than in the drawing.
 """
 

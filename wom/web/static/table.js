@@ -57,15 +57,14 @@
 
   function fill(select, options, keep) {
     select.textContent = "";
-    var wanted = keep;
-    var has = options.some(function (o) { return o.value === wanted; });
+    var has = options.some(function (o) { return o.value === keep; });
     options.forEach(function (option) {
       var node = document.createElement("option");
       node.value = option.value;
       node.textContent = option.label;
       select.appendChild(node);
     });
-    select.value = has ? wanted : options[0].value;
+    select.value = has ? keep : options[0].value;
   }
 
   /* The players actually in the data, not the roster: this list and the
@@ -84,18 +83,37 @@
 
   /* Metrics belong to a kind - there is no Zulrah among the skills - so the
      list is rebuilt whenever the kind changes rather than offering names
-     that would match nothing. */
+     that would match nothing.
+
+     There is no "all metrics" here. One metric at a time is what makes the
+     table a row per player instead of a hundred, and it is what the chart
+     below it plots: a line per player of one thing is a chart, and a line
+     per player per metric is a mess. */
   function metricOptions(kind) {
     var seen = {};
     var out = [];
     rows.forEach(function (row) {
-      if (row.kind === kind && !seen[row.metric]) {
-        seen[row.metric] = true;
-        out.push({value: row.metric, label: row.label});
+      if (row.kind !== kind) { return; }
+      if (!seen[row.metric]) {
+        seen[row.metric] = {value: row.metric, label: row.label, moved: 0};
+        out.push(seen[row.metric]);
       }
+      seen[row.metric].moved += row.gained || 0;
     });
     out.sort(function (a, b) { return a.label.localeCompare(b.label); });
-    return [{value: "", label: "All " + kindName(kind)}].concat(out);
+    return out;
+  }
+
+  /* What to show for a kind nobody has chosen a metric in yet: whatever moved
+     most. Landing on "Abyssal Sire, all zeroes" because it sorts first tells
+     the viewer nothing about the accounts in front of them. */
+  function busiest(options) {
+    if (!options.length) { return ""; }
+    var best = options[0];
+    options.forEach(function (option) {
+      if (option.moved > best.moved) { best = option; }
+    });
+    return best.value;
   }
 
   function kindName(kind) {
@@ -109,8 +127,15 @@
 
   function refreshChoices() {
     fill(whoBox, playerOptions(), whoBox.value);
-    fill(metricBox, metricOptions(kindBox.value), metricBox.value || firstMetric);
+    setMetrics(metricBox.value || firstMetric);
     firstMetric = null;       // only the first load gets the opening default
+  }
+
+  function setMetrics(keep) {
+    var options = metricOptions(kindBox.value);
+    if (!options.length) { metricBox.textContent = ""; return; }
+    var has = options.some(function (o) { return o.value === keep; });
+    fill(metricBox, options, has ? keep : busiest(options));
   }
 
   /* Missing is not small. A blank rank sorts to the end either way round,
@@ -258,6 +283,7 @@
         snap(payload.window || {});
         refreshChoices();
         render();
+        drawHistory();
       }).catch(function (err) {
         if (mine !== seq) { return; }
         body.textContent = "";
@@ -265,6 +291,27 @@
         state.textContent = "Could not load the table: " + err.message;
       });
     }, 90);
+  }
+
+  // -- the chart below the table -------------------------------------------
+
+  /* The table says where each account ended the window; the chart says how
+     they got there. It is the same card machinery the Overview uses - only
+     the endpoint differs, because this one is asked for whichever metric the
+     filters are pointing at rather than for a fixed one. */
+  var trend = new window.WOM.Chart(document.getElementById("history"));
+  trend.endpoint = function (query) {
+    return "/api/history?" + query +
+      "&kind=" + encodeURIComponent(kindBox.value) +
+      "&metric=" + encodeURIComponent(metricBox.value);
+  };
+
+  function drawHistory() {
+    var option = metricBox.options[metricBox.selectedIndex];
+    document.getElementById("history-title").textContent =
+      (option ? option.textContent : "That metric") + " over the window";
+    if (!metricBox.value) { return; }
+    trend.load(query());
   }
 
   // -- the export dialog ---------------------------------------------------
@@ -353,12 +400,17 @@
 
     // A new kind means a new set of metric names to choose from.
     kindBox.addEventListener("change", function () {
-      fill(metricBox, metricOptions(kindBox.value), metricBox.value);
+      setMetrics(metricBox.value);
       render();
+      drawHistory();
     });
-    [whoBox, metricBox].forEach(function (node) {
-      node.addEventListener("change", render);
+    metricBox.addEventListener("change", function () {
+      render();
+      drawHistory();
     });
+    // The chart plots every included player whatever the table is narrowed
+    // to, so one player's line can be read against the others.
+    whoBox.addEventListener("change", render);
 
     // Typing in either date locks both; the x hands them back to the period.
     [fromBox, toBox].forEach(function (box) {

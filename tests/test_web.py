@@ -319,6 +319,35 @@ def test_the_table_filters_are_distinct_and_kind_is_always_one(client, app):
     assert kind.index('value="skill"') < kind.index('value="boss"'),         "skills first, so the page opens on them"
 
 
+def test_history_plots_one_line_per_player_for_one_metric(client, app):
+    seed(app)
+    body = client.get("/api/history?period=Week&kind=skill&metric=attack").get_json()
+    assert body["type"] == "trend"
+    assert [s["name"] for s in body["series"]] == ["Zezima"]
+    assert len(body["series"][0]["points"]) >= 2
+
+
+def test_history_follows_the_window_it_is_given(client, app):
+    seed(app)
+    body = client.get("/api/history?kind=skill&metric=attack"
+                      "&from=2026-08-24&to=2026-08-26&tzoffset=0").get_json()
+    assert body["until"] is not None, "a closed window has to stop the axis"
+    assert body["until"] > body["since"]
+
+
+def test_history_refuses_a_metric_name_it_could_not_have_stored(client, app):
+    """The name reaches an icon lookup on the page; nothing else may."""
+    seed(app)
+    assert client.get("/api/history?kind=skill&metric=../../etc").status_code == 404
+    assert client.get("/api/history?kind=nonsense&metric=attack").status_code == 404
+
+
+def test_history_says_so_rather_than_drawing_nothing(client, app):
+    seed(app)
+    body = client.get("/api/history?kind=boss&metric=vorkath").get_json()
+    assert "empty" in body
+
+
 def test_the_data_page_offers_the_export_behind_a_button(client, app):
     seed(app)
     body = client.get("/export").get_data(as_text=True)

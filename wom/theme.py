@@ -1,7 +1,7 @@
 """The dark palette.
 
 One definition, emitted as CSS custom properties, which the page styles itself
-from and charts.js reads back for its axes, gridlines and tooltips.
+from and chartkit.js reads back for its axes, gridlines and tooltips.
 """
 
 # Surfaces, from furthest back to nearest front.

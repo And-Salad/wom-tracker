@@ -84,6 +84,17 @@
       watched for.</p>
   </div>
 
+  <div class="card chart" id="history" data-key="history">
+    <div class="card-head">
+      <div>
+        <h3 id="history-title">Over the window</h3>
+        <p class="hint">The same metric the table is showing, read across the
+          window rather than at the end of it.</p>
+      </div>
+    </div>
+    <div class="plot loading"></div>
+  </div>
+
   <dialog id="export-dialog">
     <form method="get" id="export" action="/export.csv">
       <h3>Export the stored readings</h3>
@@ -149,5 +160,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/d3.v7.min.js"></script>
+<script src="/static/chartkit.js"></script>
 <script src="/static/table.js"></script>
 {% endblock %}

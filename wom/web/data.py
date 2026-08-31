@@ -190,13 +190,18 @@ def _coverage(ctx, series):
     return notes
 
 
-def _trend(ctx, kind, metric, field, ylabel, tooltip, empty):
-    """One line per player, sampled at whatever cadence the period wants."""
-    since = ctx.period.start_iso()
+def trend_series(database, players, color_for, kind, metric, field,
+                 since, until=None, bucket=None):
+    """One line per player for one metric, oldest point first.
+
+    Shared by the Overview's fixed trends and the Data page's chart, which
+    plots whichever metric the table is filtered to. Players with nothing to
+    plot are left out rather than drawn as an empty legend entry.
+    """
     series = []
-    for player in ctx.selected:
-        rows = ctx.db.metric_history(player["id"], metric, kind, since=since,
-                                     bucket=ctx.period.bucket)
+    for player in players:
+        rows = database.metric_history(player["id"], metric, kind, since=since,
+                                       until=until, bucket=bucket)
         points = []
         for row in rows:
             when = parse_api_time(row["captured_at"])
@@ -209,8 +214,16 @@ def _trend(ctx, kind, metric, field, ylabel, tooltip, empty):
             continue
         series.append({"username": player["username"],
                        "name": player["display_name"],
-                       "color": ctx.color_for(player),
+                       "color": color_for(player),
                        "points": points})
+    return series
+
+
+def _trend(ctx, kind, metric, field, ylabel, tooltip, empty):
+    """One line per player, sampled at whatever cadence the period wants."""
+    since = ctx.period.start_iso()
+    series = trend_series(ctx.db, ctx.selected, ctx.color_for, kind, metric,
+                          field, since, bucket=ctx.period.bucket)
     if not series:
         return _empty(empty.format(ctx.period.label.lower()))
     start = parse_api_time(since)

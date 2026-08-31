@@ -463,7 +463,7 @@ class Database:
         return self.query_one("SELECT * FROM players WHERE username=?", (username.lower(),))
 
     def metric_history(self, player_id, metric, kind="skill", limit=None, since=None,
-                       bucket=None):
+                       bucket=None, until=None):
         """Time series of one metric for one player, oldest first.
 
         Unbounded by default: at four snapshots a day a row cap silently drops
@@ -477,13 +477,17 @@ class Database:
 
         With `since`, the snapshot just before the window is included as well,
         so a line drawn over that window starts at its left edge instead of
-        wherever the first snapshot inside it happens to fall.
+        wherever the first snapshot inside it happens to fall. `until` closes
+        the window at the other end.
         """
         where = " WHERE player_id=? AND metric=? AND kind=?"
         params = [player_id, metric, kind]
         if since:
             where += " AND captured_at>=?"
             params.append(since)
+        if until:
+            where += " AND captured_at<?"
+            params.append(until)
         if bucket == "day":
             # MAX() picks each day's last reading, and SQLite fills the bare
             # columns from that same row.

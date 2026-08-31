@@ -1,8 +1,12 @@
-/* The Overview charts, drawn in the browser with D3.
+/* The chart machinery: one Chart per card, drawn in the browser with D3.
  *
- * Each card owns one chart. Changing a dropdown or a player tick refetches
- * only the JSON behind the affected cards and redraws in place - the page
- * never reloads, and neither does anything else on it.
+ * A card owns one chart. Changing a control refetches only the JSON behind
+ * the affected cards and redraws in place - the page never reloads, and
+ * neither does anything else on it.
+ *
+ * This file knows nothing about any particular page. The Overview drives it
+ * from overview.js and the Data page from table.js; both reach it through
+ * the window.WOM handle at the bottom.
  */
 (function () {
   "use strict";
@@ -87,11 +91,18 @@
     });
   }
 
+  /* Where this card's JSON comes from. The default is the Overview's chart
+     endpoint keyed by the card; a page with one chart of its own overrides
+     it rather than pretending to be a catalogue entry. */
+  Chart.prototype.endpoint = function (query) {
+    var choice = this.node.querySelector("select.choice");
+    return "/api/chart/" + this.key + "?" + query +
+      (choice ? "&choice=" + encodeURIComponent(choice.value) : "");
+  };
+
   Chart.prototype.load = function (query) {
     var self = this;
-    var choice = this.node.querySelector("select.choice");
-    var url = "/api/chart/" + this.key + "?" + query +
-      (choice ? "&choice=" + encodeURIComponent(choice.value) : "");
+    var url = this.endpoint(query);
     var mine = ++this.seq;
     this.host.classed("loading", true);
     return fetch(url).then(function (r) { return r.json(); }).then(function (payload) {
@@ -360,7 +371,10 @@
     makeRoom(f, this.legend(svg, f));
 
     if (!shown.length) { return; }
-    var x = d3.scaleUtc().domain([new Date(data.since), new Date()])
+    // A window with a chosen end date stops there; one that is still running
+    // stops now.
+    var ends = data.until || Date.now();
+    var x = d3.scaleUtc().domain([new Date(data.since), new Date(ends)])
       .range([0, f.inner]);
     // Scale to what the window actually shows: an old baseline reading can
     // sit far below the window and would otherwise flatten the whole line.
@@ -383,7 +397,7 @@
       .attr("transform", "translate(" + f.m.left + "," + f.top + ")");
     valueAxis(g, f, y, data.ylabel);
 
-    var span = (Date.now() - data.since) / 86400000;
+    var span = (ends - data.since) / 86400000;
     var ticks = g.append("g").attr("transform", "translate(0," + f.tall + ")")
       .call(d3.axisBottom(x).ticks(Math.min(8, Math.max(3, Math.round(f.inner / 110))))
         .tickFormat(span <= 2 ? d3.utcFormat("%H:%M") : d3.utcFormat("%d %b")));
@@ -405,7 +419,7 @@
     // all. Joining across one draws a straight line through time nobody
     // measured, which reads as steady progress that may never have happened.
     // Those stretches are dashed: the two ends are real, the middle is a guess.
-    var gapLimit = Math.max(1.5 * 86400000, (Date.now() - data.since) * 0.04);
+    var gapLimit = Math.max(1.5 * 86400000, (ends - data.since) * 0.04);
     shown.forEach(function (s) {
       var run = [s.points[0]];
       for (var i = 1; i < s.points.length; i++) {
@@ -483,56 +497,16 @@
       });
   };
 
-  /* -- the page -------------------------------------------------------- */
+  /* -- what a page may use --------------------------------------------- */
 
-  var charts = [];
-
-  function query() {
-    var params = new URLSearchParams();
-    params.set("period", document.getElementById("period").value);
-    // Says the ticks below are a real choice, so unticking everyone means
-    // nobody rather than a bare link's "show me all of them".
-    params.set("picked", "1");
-    document.querySelectorAll("input[name=player]:checked").forEach(function (box) {
-      params.append("player", box.value);
-    });
-    return params.toString();
-  }
-
-  var queued = null;
-
-  function loadAll() {
-    // Ticking a run of boxes should cost one round of requests, not one per
-    // box, so let the clicks settle first.
-    clearTimeout(queued);
-    queued = setTimeout(function () {
-      var q = query();
-      // Keep the address bar in step, so a view can be linked or reloaded.
-      history.replaceState(null, "", "/?" + q);
-      charts.forEach(function (chart) { chart.load(q); });
-    }, 90);
-  }
+  window.WOM = {
+    Chart: Chart,
+    hideTip: hideTip,
+    escapeHtml: escapeHtml
+  };
 
   // A finger has no "mouseleave", so a tap anywhere else puts the tip away.
   document.addEventListener("touchstart", function (event) {
     if (!event.target.closest || !event.target.closest(".plot")) { hideTip(); }
   }, {passive: true});
-
-  document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll(".card.chart").forEach(function (node) {
-      charts.push(new Chart(node));
-    });
-    document.getElementById("period").addEventListener("change", loadAll);
-    document.querySelectorAll("input[name=player]").forEach(function (box) {
-      box.addEventListener("change", loadAll);
-    });
-    document.querySelectorAll("select.choice").forEach(function (select) {
-      select.addEventListener("change", function () {
-        var card = select.closest(".card.chart");
-        charts.filter(function (c) { return c.node === card; })
-          .forEach(function (c) { c.load(query()); });
-      });
-    });
-    loadAll();
-  });
 })();
