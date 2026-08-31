@@ -637,9 +637,15 @@ commands when it finishes.
 
 ## Layout
 
+There are two entry points and they do different jobs. `web_app.py` is the
+server - it serves the pages and, with `--with-scheduler`, runs the six-hourly
+updates and the summaries; it is what the container starts.
+`wom_tracker.py` runs those same jobs once, by hand, plus `--compact`, which
+nothing runs automatically because deleting snapshots cannot be undone.
+
 ```
 web_app.py           the server: pages, API, and the schedule
-wom_tracker.py       maintenance jobs (update, backfill, summarize, compact)
+wom_tracker.py       the same jobs run by hand, plus --compact
 fetch_icons.py       downloads the skill and boss icons
 backup.py            pulls a verified copy of the hosted database down here
 backup_schedule.ps1  registers that as a daily task

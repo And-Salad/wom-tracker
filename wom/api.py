@@ -113,12 +113,6 @@ class WomClient:
         """GET /players/{username} - details plus the latest snapshot."""
         return self._request("GET", "/players/" + _quote(username))
 
-    def get_gains(self, username, period="week"):
-        """GET /players/{username}/gained - deltas over a named period."""
-        return self._request(
-            "GET", "/players/{}/gained".format(_quote(username)), params={"period": period}
-        )
-
     def get_achievements(self, username):
         """GET /players/{username}/achievements - every milestone, with dates."""
         return self._request(

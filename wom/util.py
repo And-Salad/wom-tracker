@@ -1,4 +1,4 @@
-"""Small formatting and parsing helpers shared by the UI."""
+"""Small formatting and parsing helpers."""
 
 from datetime import datetime, timezone
 
@@ -20,7 +20,8 @@ def parse_api_time(text):
 
 
 def to_local(dt):
-    return dt.astimezone() if dt is not None else None
+    """An aware timestamp in this machine's zone, for display."""
+    return dt.astimezone() if dt else None
 
 
 def fmt_datetime(text, fmt="%Y-%m-%d %H:%M"):
@@ -53,35 +54,10 @@ def fmt_int(value, dash="-"):
         return dash
 
 
-def fmt_float(value, places=1, dash="-"):
-    if value is None:
-        return dash
-    try:
-        return "{:,.{}f}".format(float(value), places)
-    except (TypeError, ValueError):
-        return dash
 
 
-def fmt_short(value):
-    """Compact number for chart axes: 12.3M, 450k, 87."""
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return "-"
-    for limit, divisor, suffix in ((1e9, 1e9, "B"), (1e6, 1e6, "M"), (1e3, 1e3, "k")):
-        if abs(value) >= limit:
-            return "{:.4g}{}".format(value / divisor, suffix)
-    return "{:.0f}".format(value)
 
 
-def fmt_signed(value):
-    if value is None:
-        return "-"
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return "-"
-    return ("+" if value > 0 else "") + fmt_int(value)
 
 
 def pretty_metric(metric):

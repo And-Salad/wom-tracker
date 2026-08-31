@@ -41,3 +41,7 @@ $RECYCLE.BIN/
 # Database copies pulled down by backup.py - the whole point is that they are
 # not in the repo.
 backups/
+
+# Test artefacts
+.coverage
+.pytest_cache/

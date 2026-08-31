@@ -120,10 +120,6 @@ def latest_window(period, now=None, offset=0):
 SUMMARY_PERIODS = ("day", "week", "month")
 
 
-def window_from_row(period, start_iso, end_iso, label):
-    """Rebuild a Window from stored columns."""
-    from .util import parse_api_time
-    return Window(period, parse_api_time(start_iso), parse_api_time(end_iso), label)
 
 
 def get(key):

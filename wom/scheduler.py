@@ -107,22 +107,7 @@ class SlotScheduler:
         self._stop.set()
         self._wake.set()
 
-    def poke(self):
-        """Wake the thread early, e.g. after the username list changed."""
-        self._wake.set()
-
-    @property
-    def busy(self):
-        return self._busy
-
     # -- scheduling -------------------------------------------------------
-
-    def next_run_at(self, now=None):
-        """When the next run is owed, in Eastern time. The past means overdue."""
-        now = now or datetime.now(timezone.utc)
-        if self.due(now):
-            return previous_slot(now)
-        return next_slot(now)
 
     def due(self, now=None):
         now = now or datetime.now(timezone.utc)
@@ -214,7 +199,3 @@ def parse_last_run(text):
     if parsed.tzinfo is None:
         parsed = parsed.astimezone()  # timestamps written before offsets were stored
     return parsed
-
-
-def describe_schedule():
-    return "Updates run every 6 hours, at 12am / 6am / 12pm / 6pm Eastern."

@@ -55,13 +55,4 @@ def to_rgb(color):
     return tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
 
 
-def from_rgb(rgb):
-    """(r, g, b) -> '#rrggbb', clamping anything out of range."""
-    return "#" + "".join("{:02x}".format(max(0, min(255, int(round(c))))) for c in rgb)
 
-
-def is_dark(color):
-    """True when white text reads better than black on this colour."""
-    red, green, blue = to_rgb(color)
-    # Rec. 601 luma, the usual quick contrast check.
-    return (0.299 * red + 0.587 * green + 0.114 * blue) < 140
