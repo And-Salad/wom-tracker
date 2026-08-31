@@ -124,9 +124,16 @@
     this.host.select("p.empty").text(text);
   };
 
-  Chart.prototype.frame = function (height) {
+  Chart.prototype.frame = function (height, extra) {
     var width = this.host.node().clientWidth || 900;
     var m = marginsFor(width);
+    if (extra) {
+      // Copied, not edited: marginsFor hands back the one shared WIDE/NARROW
+      // object, and a chart that needed more room would take it from all of them.
+      var copy = {top: m.top, right: m.right, bottom: m.bottom, left: m.left};
+      for (var side in extra) { copy[side] = extra[side]; }
+      m = copy;
+    }
     // A phone gets a shorter card too: the same 360px against a 340px width
     // is a near-square chart, which reads worse than a wide short one.
     if (width < PHONE) { height = Math.round(height * 0.8); }
@@ -183,6 +190,90 @@
   };
 
   /* -- axes ------------------------------------------------------------ */
+
+  /* The Old School experience curve: LEVEL_XP[n] is the experience a skill
+     needs for level n. A level is a fixed function of experience, the same
+     for every account, so an axis of levels beside one of experience is exact
+     rather than an approximation. It stops at 99, which is where the game
+     stops counting and where the levels this app stores stop too. */
+  var LEVEL_XP = (function () {
+    var table = [null, 0];
+    var points = 0;
+    for (var lvl = 1; lvl < 99; lvl++) {
+      points += Math.floor(lvl + 300 * Math.pow(2, lvl / 7));
+      table.push(Math.floor(points / 4));
+    }
+    return table;
+  })();
+
+  /* Which levels to rule the plot at. Every fifth, as the coarse reading;
+     but a week of one skill can span less than five levels, so fall back to
+     every level rather than draw a chart with one line across it. A window
+     living entirely above 99 has no level boundaries in it at all, and gets
+     the plain experience axis instead. */
+  function levelTicks(domain) {
+    var steps = [5, 1];
+    for (var i = 0; i < steps.length; i++) {
+      var found = [];
+      for (var lvl = 1; lvl <= 99; lvl++) {
+        if (lvl % steps[i]) { continue; }
+        if (LEVEL_XP[lvl] >= domain[0] && LEVEL_XP[lvl] <= domain[1]) {
+          found.push(lvl);
+        }
+      }
+      if (found.length >= 2) { return found; }
+    }
+    return null;
+  }
+
+  /* Levels on the left with the gridlines, experience on the right with
+     none: two rulings over one plot is a grid nobody can read a value off. */
+  function levelAxis(g, f, scale, levels) {
+    // Experience per level grows exponentially, so on a plot that reaches
+    // down to a low level the bottom ten of them share a few pixels and the
+    // numbers print over each other. Thin them by distance on screen: every
+    // line that survives is still exactly a level boundary.
+    var kept = [];
+    var at = [];
+    var last = null;
+    levels.forEach(function (lvl) {
+      var y = scale(LEVEL_XP[lvl]);
+      if (last !== null && Math.abs(last - y) < 14) { return; }
+      last = y;
+      kept.push(lvl);
+      at.push(LEVEL_XP[lvl]);
+    });
+    var left = g.append("g").call(
+      d3.axisLeft(scale).tickValues(at).tickFormat(function (_v, i) {
+        return kept[i];
+      }));
+    left.select(".domain").remove();
+    left.selectAll("text").attr("fill", COLOR.muted).style("font-size", "11px");
+    left.selectAll("line").attr("stroke", COLOR.line);
+    g.insert("g", ":first-child").selectAll("line").data(at).join("line")
+      .attr("x1", 0).attr("x2", f.inner)
+      .attr("y1", scale).attr("y2", scale)
+      .attr("stroke", COLOR.grid).attr("stroke-opacity", 0.55);
+
+    var right = g.append("g")
+      .attr("transform", "translate(" + f.inner + ",0)")
+      .call(d3.axisRight(scale).ticks(f.narrow ? 4 : 6).tickFormat(compact));
+    right.select(".domain").remove();
+    right.selectAll("text").attr("fill", COLOR.muted).style("font-size", "11px");
+    right.selectAll("line").attr("stroke", COLOR.line);
+
+    if (!f.narrow) {
+      sideLabel(g, f, scale, "Level", -f.m.left + 14);
+      sideLabel(g, f, scale, "Experience", f.inner + f.m.right - 6);
+    }
+  }
+
+  function sideLabel(g, f, scale, text, y) {
+    g.append("text").attr("transform", "rotate(-90)")
+      .attr("x", -(scale.range()[0] / 2)).attr("y", y)
+      .attr("fill", COLOR.muted).attr("text-anchor", "middle")
+      .style("font-size", "11px").text(text);
+  }
 
   function valueAxis(g, f, scale, label) {
     var inner = f.inner;
@@ -366,7 +457,8 @@
   Chart.prototype.trend = function () {
     var data = this.data;
     var shown = this.visible();
-    var f = this.frame(330);
+    // A second axis on the right needs room the default margin has not got.
+    var f = this.frame(330, data.levelAxis ? {right: 52} : null);
     var svg = f.svg;
     makeRoom(f, this.legend(svg, f));
 
@@ -395,7 +487,13 @@
 
     var g = svg.append("g")
       .attr("transform", "translate(" + f.m.left + "," + f.top + ")");
-    valueAxis(g, f, y, data.ylabel);
+    // For a single skill the left axis reads in levels and the right in
+    // experience. The line is still drawn on experience: it is what moves
+    // continuously, and a line of levels is a staircase that hides a week's
+    // work inside one step.
+    var levels = data.levelAxis ? levelTicks(y.domain()) : null;
+    if (levels) { levelAxis(g, f, y, levels); }
+    else { valueAxis(g, f, y, data.ylabel); }
 
     var span = (ends - data.since) / 86400000;
     var ticks = g.append("g").attr("transform", "translate(0," + f.tall + ")")

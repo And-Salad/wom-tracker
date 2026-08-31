@@ -173,6 +173,12 @@ def metric_history():
         "type": "trend",
         "ylabel": "{} {}".format(pretty_metric(metric), UNITS[kind]),
         "tooltip": {"style": "count", "unit": UNITS[kind]},
+        # A skill's level is a fixed function of its experience, so the chart
+        # can rule the plot in levels. "overall" is the exception: total level
+        # is the sum of 23 separate curves, and two accounts on the same total
+        # experience need not be on the same total level - there is no shared
+        # axis to draw.
+        "levelAxis": kind == "skill" and metric != "overall",
         "since": _epoch_ms(window["since"]),
         "until": _epoch_ms(window["until"]) if window["until"] else None,
         "series": series,
