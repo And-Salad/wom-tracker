@@ -305,15 +305,19 @@ def test_a_typo_in_a_table_date_is_refused_not_ignored(client, app):
 
 
 def test_the_table_filters_are_distinct_and_kind_is_always_one(client, app):
-    """Player, kind and metric each get their own control, and kind has no
+    """Kind, metric and the dates each get their own control, and kind has no
     "All": 666 rows of everything at once is not a view anybody asked for."""
     seed(app)
     body = client.get("/export").get_data(as_text=True)
-    for control in ('id="who-filter"', 'id="kind"', 'id="metric"',
+    for control in ('id="kind"', 'id="metric"',
                     'id="from"', 'id="to"', 'id="unlock"'):
         assert control in body, control
     assert 'id="q"' not in body, "the free-text search is gone"
     assert 'id="moved"' not in body, "the moved-only tick is gone"
+    # Who is on the page is the sidebar's job on every other page too, and a
+    # second control here could disagree with the chart below the table.
+    assert 'id="who-filter"' not in body, "the player dropdown is gone"
+    assert 'name="player"' in body, "the sidebar ticks are the player control"
     kind = body[body.index('id="kind"'):body.index("</select>", body.index('id="kind"'))]
     assert 'value=""' not in kind, "kind must always name one kind"
     assert kind.index('value="skill"') < kind.index('value="boss"'),         "skills first, so the page opens on them"

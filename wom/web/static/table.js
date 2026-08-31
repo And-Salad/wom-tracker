@@ -39,19 +39,18 @@
 
   // -- the filters ---------------------------------------------------------
 
-  var whoBox = document.getElementById("who-filter");
   var kindBox = document.getElementById("kind");
   var metricBox = document.getElementById("metric");
 
+  /* Who is on the page is the sidebar's business, not this toolbar's. It is
+     already a checkbox per player, it already decides which lines the chart
+     draws, and a second control that could disagree with it only made it
+     possible to filter the table to one player while the chart showed six. */
   function matching() {
-    var who = whoBox.value;
     var kind = kindBox.value;
     var metric = metricBox.value;
     return rows.filter(function (row) {
-      if (row.kind !== kind) { return false; }
-      if (who && row.username !== who) { return false; }
-      if (metric && row.metric !== metric) { return false; }
-      return true;
+      return row.kind === kind && (!metric || row.metric === metric);
     });
   }
 
@@ -65,20 +64,6 @@
       select.appendChild(node);
     });
     select.value = has ? keep : options[0].value;
-  }
-
-  /* The players actually in the data, not the roster: this list and the
-     sidebar can then never disagree about who is on the page. */
-  function playerOptions() {
-    var seen = {};
-    var out = [{value: "", label: "All players"}];
-    rows.forEach(function (row) {
-      if (!seen[row.username]) {
-        seen[row.username] = true;
-        out.push({value: row.username, label: row.player});
-      }
-    });
-    return out;
   }
 
   /* Metrics belong to a kind - there is no Zulrah among the skills - so the
@@ -126,7 +111,6 @@
   var firstMetric = "overall";
 
   function refreshChoices() {
-    fill(whoBox, playerOptions(), whoBox.value);
     setMetrics(metricBox.value || firstMetric);
     firstMetric = null;       // only the first load gets the opening default
   }
@@ -408,9 +392,6 @@
       render();
       drawHistory();
     });
-    // The chart plots every included player whatever the table is narrowed
-    // to, so one player's line can be read against the others.
-    whoBox.addEventListener("change", render);
 
     // Typing in either date locks both; the x hands them back to the period.
     [fromBox, toBox].forEach(function (box) {
