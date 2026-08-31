@@ -4,13 +4,16 @@
 # deliberate: the six-hourly update runs inside this process, and a machine
 # that Fly has stopped cannot wake itself to do it.
 
-app = "CHANGE-ME-wom-tracker"
+app = "wom-tracker"
 primary_region = "iad"
 
 [build]
 
 [env]
   WOM_DATA_DIR = "/data"
+  # The update schedule is anchored to Eastern midnight regardless, but the
+  # container would otherwise print "next run" times in UTC.
+  TZ = "America/New_York"
 
 [[mounts]]
   source = "wom_data"
