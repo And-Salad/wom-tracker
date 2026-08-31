@@ -88,7 +88,8 @@ def requires_login(view):
 def login():
     error = None
     if request.method == "POST":
-        address = request.remote_addr or "?"
+        from .app import client_address
+        address, source = client_address()
         waiting = _locked_out(address)
         if waiting:
             error = "Too many attempts. Try again in {} seconds.".format(waiting)
@@ -102,7 +103,8 @@ def login():
             # A wrong guess should cost real time even before the lockout.
             time.sleep(0.5)
             error = "That is not the password."
-            log.warning("failed admin sign-in from %s (%d)", address, failures)
+            log.warning("failed admin sign-in from %s via %s (%d)",
+                        address, source, failures)
     return render_template("admin_login.html", error=error, page="admin")
 
 

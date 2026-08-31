@@ -186,6 +186,33 @@ def _json_stream(rows):
     yield "]"
 
 
+# Set by the proxy in front of us, and not passed through from the client, so
+# these can be believed where a bare X-Forwarded-For cannot.
+CLIENT_IP_HEADERS = ("Fly-Client-IP", "CF-Connecting-IP", "True-Client-IP")
+
+
+def client_address():
+    """The caller's address as well as we can know it, and where it came from.
+
+    Behind a proxy `remote_addr` is the proxy, which would put every visitor
+    in one throttling bucket: six bad sign-ins from anyone would lock out
+    everyone. Returns (address, source) so a log line can say which header
+    answered.
+    """
+    for header in CLIENT_IP_HEADERS:
+        value = (request.headers.get(header) or "").strip()
+        if value:
+            return value, header
+    # Leftmost is the original client. Note that waitress strips X-Forwarded-*
+    # unless it is told to trust a proxy, so on Fly this is a fallback for
+    # other deployments rather than the path normally taken - Fly-Client-IP is
+    # not a forwarded header and comes through untouched.
+    forwarded = (request.headers.get("X-Forwarded-For") or "").strip()
+    if forwarded:
+        return forwarded.split(",")[0].strip(), "X-Forwarded-For"
+    return request.remote_addr or "?", "remote_addr"
+
+
 def _coverage_note(baseline, since):
     """How much of the window the figures actually cover, when it is not all.
 
@@ -218,13 +245,11 @@ def _paragraphs(text):
 
 def create_app():
     app = Flask(__name__, static_folder="static", static_url_path="/static")
-    # Behind Fly's proxy every request arrives from an internal address, so
-    # remote_addr was the same value for everybody: the per-address budgets
-    # below were really one shared bucket, and six bad sign-ins from anyone
-    # locked out everyone. Trusting one hop of X-Forwarded-For is safe here
-    # because the app is only reachable through that proxy; run it exposed
-    # directly and this would be spoofable.
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+    # Only for the scheme: Fly terminates TLS, so without this every request
+    # looks like plain HTTP and the HSTS header never goes out. The client
+    # address is resolved by client_address() instead - ProxyFix reads the
+    # rightmost X-Forwarded-For entry, which behind Fly is Fly's own hop.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=0, x_proto=1)
     app.config["DATABASE"] = Database(DB_PATH)
     app.config["JOBS"] = JobRunner()
     # Set by web_app.py when it starts the scheduler; None when the dashboard
@@ -496,7 +521,8 @@ def create_app():
         # A full export walks every stored reading, and the scheduler and the
         # summary writer are threads in this same process on one shared vCPU.
         from flask import session as _session
-        waiting, which = _export_allowed(request.remote_addr or "?",
+        address, _source = client_address()
+        waiting, which = _export_allowed(address,
                                          bool(_session.get("wom_admin")))
         if waiting:
             hours = max(1, waiting // 3600)
