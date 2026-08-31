@@ -57,6 +57,14 @@
     text-align: center; padding: 44px 12px; font-size: 13px;
   }
   .plot rect, .plot circle, .plot image { cursor: crosshair; }
+  .player-note {
+    border-left: 2px solid var(--line); padding: 2px 0 2px 12px;
+    margin: 0 0 14px; max-width: 70ch;
+  }
+  .player-note h4 { margin: 0 0 6px; font-size: 13px; color: var(--muted);
+                    text-transform: uppercase; letter-spacing: .04em; }
+  .player-note p { margin: 0 0 8px; }
+
   /* The roster table doubles as the control for its own detail. */
   tr.player-row { cursor: pointer; }
   tr.player-row:hover td, tr.player-row:focus td { background: var(--raised); }

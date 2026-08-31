@@ -85,8 +85,24 @@
     return box;
   }
 
+  function noteNode(note) {
+    /* The note is headed by the window it covers, not by the period the page
+       is set to. Those are different spans - the page's "Day" is the last
+       twenty four hours, the note's is yesterday midnight to midnight - and
+       prose next to numbers invites the reader to assume otherwise. */
+    var box = el("div", "player-note");
+    box.appendChild(el("h4", null, "Note for " + note.label));
+    note.paragraphs.forEach(function (text) {
+      box.appendChild(el("p", null, text));
+    });
+    box.appendChild(el("p", "hint", "Written " + note.ago +
+      ". The figures below are measured over the period in the sidebar."));
+    return box;
+  }
+
   function render(host, data) {
     host.textContent = "";
+    if (data.note) { host.appendChild(noteNode(data.note)); }
     var moved = data.groups.reduce(function (n, g) { return n + g.moved; }, 0);
     host.appendChild(el("p", "hint",
       data.period + " · " + moved + " metric" + (moved === 1 ? "" : "s") + " moved"));

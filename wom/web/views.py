@@ -7,11 +7,12 @@ plain functions of (database, ...) so a test can call them without a request.
 
 from datetime import datetime, timezone
 
-from .. import theme
+from .. import periods, theme
 from ..util import fmt_ago, fmt_datetime, fmt_int, parse_api_time, pretty_metric
 
 # The written summaries come in three flavours, named the same way everywhere.
-SUMMARY_FOLDERS = (("day", "Daily"), ("week", "Weekly"), ("month", "Monthly"))
+SUMMARY_FOLDERS = (("day", "Daily"), ("week", "Weekly"), ("month", "Monthly"),
+                   ("quarter", "Quarterly"), ("year", "Yearly"))
 
 METRIC_GROUPS = (("skill", "Skills"), ("boss", "Bosses"),
                  ("activity", "Activities"))
@@ -61,24 +62,37 @@ def summary_tree(database, selected, palette):
     return tree
 
 
-def latest_round_up(database):
-    """The newest group summary, ready to read without opening anything.
+def latest_round_ups(database):
+    """The newest round-up of each length, longest span last.
 
-    This is the thing the Claude spend buys, and it was two clicks down a tree
-    whose folders stay shut - the template even marked the first leaf open,
-    inside a folder that was not, so the intent never took effect.
+    They read as five different things rather than five versions of one: the
+    daily and the weekly nearest it share only a few percent of their wording,
+    because each picks out what stands out at its own scale.
     """
-    newest = None
+    out = []
     for period, title in SUMMARY_FOLDERS:
         rows = database.group_summaries(period=period, limit=1)
-        if rows and (newest is None or rows[0]["window_key"] > newest[0]["window_key"]):
-            newest = (rows[0], title)
-    if newest is None:
+        if rows:
+            out.append({"period": period, "title": title,
+                        "label": rows[0]["label"],
+                        "ago": fmt_ago(rows[0]["generated_at"]),
+                        "paragraphs": paragraphs(rows[0]["text"])})
+    return out
+
+
+def player_note(database, player, period_key):
+    """This player's newest note for one length of window, if there is one.
+
+    The note is named by the window it covers, not by the period the page is
+    set to. Those are different spans - the page's "Day" is the last twenty
+    four hours, the note's is yesterday, midnight to midnight - and putting
+    prose beside numbers invites the reader to assume otherwise.
+    """
+    rows = database.summaries(player_id=player["id"], period=period_key, limit=1)
+    if not rows:
         return None
-    row, title = newest
-    return {"title": title, "label": row["label"],
-            "ago": fmt_ago(row["generated_at"]),
-            "paragraphs": paragraphs(row["text"])}
+    return {"label": rows[0]["label"], "ago": fmt_ago(rows[0]["generated_at"]),
+            "paragraphs": paragraphs(rows[0]["text"])}
 
 
 def milestone_feed(database, selected, palette, since=None, limit=300):
@@ -130,7 +144,7 @@ def player_rows(database, players, palette):
 
 
 def player_detail(database, player, period):
-    """One player's current figures and what moved, grouped by kind."""
+    """One player's note, current figures, and what moved, grouped by kind."""
     since = period.start_iso()
     bounds = database.snapshot_bounds(player["id"], since)
 
@@ -156,6 +170,8 @@ def player_detail(database, player, period):
                        "moved": sum(1 for r in rows if r["gained"])})
 
     return {"player": player["display_name"], "period": period.label,
+            "note": player_note(database, player, period.key),
+            "writes_notes": period.key in periods.SUMMARY_PERIODS,
             "coverage": coverage_note(bounds[0], since), "groups": groups}
 
 

@@ -217,3 +217,31 @@ def test_the_player_ticks_filter_the_players_page(client, app):
     one = client.get("/players?player=zezima").get_data(as_text=True)
     assert both.count('class="player-row"') == 2
     assert one.count('class="player-row"') == 1
+
+
+def test_round_ups_lead_with_one_of_each_length(client, app):
+    from wom import periods
+    database = seed(app)
+    for key in periods.SUMMARY_PERIODS:
+        database.save_group_summary(periods.latest_window(key),
+                                    "A {} round-up.".format(key), "hash")
+    body = client.get("/summaries").get_data(as_text=True)
+    for key in periods.SUMMARY_PERIODS:
+        assert "A {} round-up.".format(key) in body, key
+
+
+def test_a_player_note_is_named_by_its_own_window(client, app):
+    """The page's period and the note's window are different spans."""
+    from wom import periods
+    database = seed(app)
+    window = periods.latest_window("day")
+    database.save_summary(1, window, "A note about yesterday.", "hash")
+    body = client.get("/api/player/zezima?period=Day").get_json()
+    assert body["period"] == "Day", "the figures are the rolling last 24 hours"
+    assert body["note"]["label"] == window.label, "the note names its own window"
+    assert body["note"]["label"] != body["period"]
+
+
+def test_a_player_with_no_note_for_that_period_says_nothing(client, app):
+    seed(app)
+    assert client.get("/api/player/zezima?period=Year").get_json()["note"] is None

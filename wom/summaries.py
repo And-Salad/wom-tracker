@@ -271,9 +271,13 @@ def _coverage(database, player, window):
     inside = counted["n"] if counted else 0
 
     if start is None or end is None or start["id"] == end["id"]:
-        return ["Data coverage: no pair of readings covers this period. Every"
-                " figure below is zero because nothing was measured, not"
-                " because nothing was done."]
+        lines = ["Data coverage: no pair of readings covers this period. Every"
+                 " figure below is zero because nothing was measured, not"
+                 " because nothing was done."]
+        anchor = _nearest_reading(database, player, window)
+        if anchor:
+            lines.append("  " + anchor)
+        return lines
 
     opened = parse_api_time(since)
     measured = parse_api_time(start["captured_at"])
@@ -295,6 +299,46 @@ def _coverage(database, player, window):
             " is {} into it, so anything done before that is missing from the"
             " figures below.".format(_duration(-behind)))
     return lines
+
+
+def _nearest_reading(database, player, window):
+    """Where this account stood at the reading closest to an unmeasured window.
+
+    A window that predates tracking has nothing to report, and saying only
+    "nothing was measured" leaves the reader with no idea who this person is.
+    The nearest reading either side is not a measurement of the period, and the
+    prompts are told to present it as the landmark it is rather than as a
+    figure for the window.
+    """
+    opened, closed = window.start_iso(), window.end_iso()
+    before = database.query_one(
+        "SELECT id, captured_at FROM snapshots WHERE player_id=? AND captured_at<?"
+        " ORDER BY captured_at DESC LIMIT 1", (player["id"], opened))
+    after = database.query_one(
+        "SELECT id, captured_at FROM snapshots WHERE player_id=? AND captured_at>=?"
+        " ORDER BY captured_at ASC LIMIT 1", (player["id"], closed))
+    if before is None and after is None:
+        return "  Nothing is stored for this account from any date."
+    if before is None:
+        chosen, side = after, "after"
+    elif after is None:
+        chosen, side = before, "before"
+    else:
+        edge = parse_api_time(opened)
+        chosen, side = (
+            (before, "before")
+            if abs((edge - parse_api_time(before["captured_at"])).total_seconds())
+            <= abs((parse_api_time(after["captured_at"]) - edge).total_seconds())
+            else (after, "after"))
+    overall = database.query_one(
+        "SELECT level, value FROM metrics WHERE snapshot_id=? AND kind='skill'"
+        " AND metric='overall'", (chosen["id"],))
+    if overall is None:
+        return None
+    return ("Nearest reading {} this period: {} - total level {}, {} XP."
+            " That is a landmark, not a figure for the period.".format(
+                side, fmt_datetime(chosen["captured_at"], "%d %b %Y"),
+                fmt_int(overall["level"]), fmt_int(overall["value"])))
 
 
 def _duration(seconds):

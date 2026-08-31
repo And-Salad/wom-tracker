@@ -114,10 +114,41 @@ def latest_window(period, now=None, offset=0):
         start = (end - timedelta(days=1)).replace(day=1)
         return Window(period, start, end, start.strftime("%B %Y"))
 
+    if period == "quarter":
+        # Quarters start in January, April, July and October.
+        first_this = midnight.replace(month=(midnight.month - 1) // 3 * 3 + 1,
+                                      day=1)
+        end = first_this
+        for _ in range(offset):
+            end = _quarter_before(end)
+        start = _quarter_before(end)
+        return Window(period, start, end, "Q{} {}".format(
+            (start.month - 1) // 3 + 1, start.year))
+
+    if period == "year":
+        end = midnight.replace(month=1, day=1)
+        end = end.replace(year=end.year - offset)
+        start = end.replace(year=end.year - 1)
+        return Window(period, start, end, str(start.year))
+
     raise ValueError("no calendar window for period {!r}".format(period))
 
 
-SUMMARY_PERIODS = ("day", "week", "month")
+def _quarter_before(start_of_quarter):
+    """The first day of the quarter before this one."""
+    month = start_of_quarter.month - 3
+    year = start_of_quarter.year
+    if month < 1:
+        month += 12
+        year -= 1
+    return start_of_quarter.replace(year=year, month=month, day=1)
+
+
+# Written notes are produced for each of these, newest complete window first.
+# Quarter and year join the list before either has ever been due, so the first
+# of each is written from whatever history exists rather than from nothing -
+# see the per-period prompts in data/.
+SUMMARY_PERIODS = ("day", "week", "month", "quarter", "year")
 
 
 

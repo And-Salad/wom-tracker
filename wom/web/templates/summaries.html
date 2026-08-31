@@ -3,14 +3,20 @@
 {% block title %}Round-ups - WOM Tracker{% endblock %}
 
 {% block content %}
-  {% if latest %}
+  {% for round_up in latest %}
     <div class="card latest">
-      <h3>{{ latest.title }} round-up &middot; {{ latest.label }}</h3>
-      <p class="hint">Written {{ latest.ago }}. Everything else is below.</p>
-      {% for paragraph in latest.paragraphs %}
+      <h3>{{ round_up.title }} &middot; {{ round_up.label }}</h3>
+      <p class="hint">Written {{ round_up.ago }}.</p>
+      {% for paragraph in round_up.paragraphs %}
         <p>{{ paragraph }}</p>
       {% endfor %}
     </div>
+  {% endfor %}
+
+  {% if tree %}
+    <p class="hint" style="margin: 18px 0 8px">
+      Earlier round-ups, and each player's own notes:
+    </p>
   {% endif %}
 
   {% for player in tree %}

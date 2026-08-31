@@ -49,7 +49,7 @@ def summaries_page():
         "summaries.html", players=scope["players"],
         selected={p["username"] for p in scope["selected"]},
         colors=scope["palette"],
-        latest=views.latest_round_up(database()),
+        latest=views.latest_round_ups(database()),
         tree=views.summary_tree(database(), scope["selected"], scope["palette"]),
         status=status(scope["config"]))
 

@@ -160,7 +160,12 @@ plus **Admin** behind the password.
 the charts. The stacked columns answer "what did they train"; nobody could read
 "who won" off twenty slices without adding them up.
 
-**Round-ups** shows the newest group round-up in full at the top. It used to be
+**Round-ups** shows the newest group round-up of every length - daily,
+weekly, monthly, quarterly, yearly - in full at the top, with the archive
+collapsed below. They are not five versions of one thing: the latest daily and
+weekly share about 3% of their wording, because each picks out what stands out
+at its own scale. Each player's own note now sits on **Players** instead,
+above their detail when a row is open. It used to be
 two clicks down a tree whose folders stay shut, which meant the one thing the
 Claude spend buys was the most buried thing in the app.
 
@@ -412,6 +417,25 @@ instructions, including telling the round-up not to rank a player on a total
 that covers a longer stretch than everyone else's. The coverage line is part of
 the digest, so it is part of the digest hash: adding it re-dated every stored
 summary, which is what forced the last regeneration.
+
+### Windows longer than the tracking
+
+Quarterly and yearly notes were added before either had ever been due, so the
+first of each was written from whatever history existed - which for 2025 is
+nothing at all for four of the six accounts. Two things make that honest
+rather than misleading.
+
+The digest gains a **nearest reading** line for a window it cannot measure:
+where that account stood at the closest date either side, explicitly labelled
+a landmark rather than a figure for the period. And `summary_prompt_year.txt`,
+`summary_prompt_quarter.txt` and their group counterparts - the per-period
+prompt files, which needed no new code - tell the model to use that landmark
+to place a player and never to interpolate between two dates and present the
+result as measured.
+
+It works: the 2025 note for an untracked account opens "runninr wasn't tracked
+at all during 2025", quotes the July 2026 landmark, and says in as many words
+that it "is just a reference point, not a measure of what happened in 2025".
 
 ### Missing history
 
