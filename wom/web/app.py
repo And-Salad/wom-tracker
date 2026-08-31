@@ -191,6 +191,11 @@ def _json_stream(rows):
 CLIENT_IP_HEADERS = ("Fly-Client-IP", "CF-Connecting-IP", "True-Client-IP")
 
 
+def _is_local(host):
+    name = (host or "").split(":")[0].lower()
+    return name in ("localhost", "127.0.0.1", "::1", "") or name.endswith(".local")
+
+
 def client_address():
     """The caller's address as well as we can know it, and where it came from.
 
@@ -613,7 +618,12 @@ def create_app():
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
-        if request.is_secure:
+        # request.is_secure cannot be trusted here: Fly terminates TLS and
+        # waitress strips X-Forwarded-Proto along with the other forwarded
+        # headers, so every request looks like plain HTTP from inside. Anything
+        # that is not a local address is reached over HTTPS in practice, and
+        # pinning HSTS on localhost would only make development painful.
+        if request.is_secure or not _is_local(request.host):
             response.headers.setdefault(
                 "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
