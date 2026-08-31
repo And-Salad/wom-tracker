@@ -37,3 +37,7 @@ env/
 Thumbs.db
 desktop.ini
 $RECYCLE.BIN/
+
+# Database copies pulled down by backup.py - the whole point is that they are
+# not in the repo.
+backups/

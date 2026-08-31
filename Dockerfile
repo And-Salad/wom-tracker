@@ -1,9 +1,9 @@
 # The dashboard, the six-hourly scheduler and the summaries, in one container.
+# The charts are drawn in the browser, so nothing here needs a display.
 #
-# Only the web half of the app is installed: no tkinter, no matplotlib, no
-# pystray. The charts are drawn in the browser with D3, so the server needs
-# nothing more than Flask, waitress, requests and the Anthropic SDK.
-FROM python:3.12-slim
+# Pinned rather than floating: an unpinned tag means the runtime can change
+# under a test suite that never ran on it.
+FROM python:3.12.14-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -11,8 +11,8 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Just the web dependencies. requirements.txt also lists the desktop ones,
-# which would drag in a compiler and 200 MB of image for nothing.
+# Spelled out rather than -r requirements.txt so a rebuild cannot pick up
+# something the tests never saw.
 RUN pip install --no-cache-dir \
         "flask>=3.0" "waitress>=3.0" "requests>=2.31" "anthropic>=1.0" "tzdata>=2024.1"
 

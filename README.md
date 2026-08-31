@@ -589,6 +589,11 @@ shape needs a branch in `Chart.prototype.draw` and a drawing function beside
 py -m pytest
 ```
 
+The container runs the version pinned in the `Dockerfile` (3.12.14). If the
+Python here is older, the suite is passing on a runtime production does not
+use - install a matching one before trusting a green run for anything more
+than a local change.
+
 Sixty-seven of them, and most encode a bug this app has already shipped: the
 unranked metric that counted as no movement, the baseline that measured a month
 from four years earlier, compaction keeping the wrong reading of the day, an
@@ -602,12 +607,42 @@ entered.
 What is deliberately not covered is I/O: `wom/api.py`'s retry loop, the
 Anthropic call, and the scheduler thread. Everything else sits at 84-90%.
 
+## Backups
+
+```bash
+py backup.py
+```
+
+The Fly volume keeps five days of snapshots and nothing exists anywhere else,
+which is thin for a year of history Wise Old Man will not hand back and
+summaries that cost money to write. This pulls a copy into `./backups`,
+keeping the newest fourteen.
+
+The copy is taken with SQLite's backup API *inside the container* rather than
+by reading the file, because the app is writing to it and a plain copy would
+leave recent writes stranded in the write-ahead log. Every step is judged by
+what it produced - flyctl exits non-zero on Windows after commands that
+plainly worked - and the result is opened, integrity-checked and counted
+before it is called a backup. A file that restores but is empty is worse than
+no file, because it looks like one.
+
+```bash
+powershell -ExecutionPolicy Bypass -File backup_schedule.ps1
+```
+
+registers it daily at 07:00, an hour after the morning update lands, and will
+catch up if the machine was asleep. To restore, put a copy back over
+`/data/wom.db` over sftp and restart the app; `backup.py` prints the two
+commands when it finishes.
+
 ## Layout
 
 ```
 web_app.py           the server: pages, API, and the schedule
 wom_tracker.py       maintenance jobs (update, backfill, summarize, compact)
 fetch_icons.py       downloads the skill and boss icons
+backup.py            pulls a verified copy of the hosted database down here
+backup_schedule.ps1  registers that as a daily task
 Dockerfile           the container that runs on Fly
 fly.toml             one always-on machine and a volume at /data
 wom/
