@@ -17,6 +17,7 @@
       {% if not calendar.whole_group %}Measured across the players ticked
       beside it.{% endif %}</p>
 
+    <div class="calendar">
     <div class="months">
       {% for month in calendar.months %}
         <div class="month">
@@ -36,6 +37,25 @@
           </div>
         </div>
       {% endfor %}
+    </div>
+
+    {# The grid is finished days; this is the one still running. #}
+    <div class="standing">
+      <h4>Today so far</h4>
+      <table>
+        <tr><th>Player</th><th class="num">To 99</th>
+            <th class="num" title="Days won in {{ calendar.today.month }}">Won</th></tr>
+        {% for row in calendar.today.rows %}
+          <tr class="{{ 'moved' if row.moved }}">
+            <td class="name"><span class="swatch" style="background: {{ row.color }};
+                  display:inline-block; margin-right:6px"></span>{{ row.name }}</td>
+            <td class="num">{{ row.capped if row.moved else '-' }}{% if row.nines %}
+              <span class="nines" title="{{ row.nines }} new 99 today">+{{ row.nines }}&#9733;</span>{% endif %}</td>
+            <td class="num dim">{{ row.won or '' }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </div>
     </div>
   </div>
 

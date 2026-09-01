@@ -780,3 +780,47 @@ def test_the_tab_icon_is_linked_and_survives_its_file_being_absent(client, app):
     from wom.web.pages import FAVICON
     expected = 200 if os.path.exists(FAVICON) else 404
     assert client.get("/favicon.ico").status_code == expected
+
+
+def test_today_stands_beside_the_grid_in_the_same_card(app, client):
+    """The squares are finished days; the table is the one still running."""
+    _calendar_seed(app)
+    body = client.get("/summaries").get_data(as_text=True)
+    calendar = body[body.index('class="calendar"'):body.index("Maxing", body.index('class="calendar"') + 10)] \
+        if "Maxing" in body[body.index('class="calendar"'):] else body[body.index('class="calendar"'):]
+    assert 'class="months"' in calendar
+    assert "Today so far" in calendar
+    # Both live inside the one card, which is what puts them side by side.
+    assert calendar.index('class="months"') < calendar.index("Today so far")
+
+
+def test_today_is_ordered_by_the_same_rule_as_the_squares(app):
+    from wom import winners
+    from wom.web.views import winner_calendar
+    from datetime import datetime, timedelta
+    database = app.config["DATABASE"]
+    for pid, name in ((1, "Climber"), (2, "Maxed")):
+        database.save_player_details({"id": pid, "username": name.lower(),
+                                      "displayName": name, "type": "regular"})
+    edge = winners.NINETY_NINE
+    today = winners.today_key()
+    # Inside the lookback the states query uses, or neither has a baseline
+    # to be measured from and both score nothing.
+    yesterday = (datetime.strptime(today, "%Y-%m-%d")
+                 - timedelta(days=1)).strftime("%Y-%m-%d")
+    database.save_snapshot(1, snapshot(yesterday + "T12:00:00.000Z",
+                                       skills={"attack": (edge - 1, 98)}))
+    database.save_snapshot(2, snapshot(yesterday + "T12:00:00.000Z",
+                                       skills={"attack": (edge * 2, 99)}))
+    database.save_snapshot(1, snapshot(today + "T23:59:00.000Z",
+                                       skills={"attack": (edge, 99)}))
+    database.save_snapshot(2, snapshot(today + "T23:59:00.000Z",
+                                       skills={"attack": (edge * 2 + 9000000, 99)}))
+
+    players = database.players()
+    palette = {p["username"]: "#fff" for p in players}
+    rows = winner_calendar(database, players, palette)["today"]["rows"]
+    # One experience point and a 99 outranks nine million spent past one.
+    assert [row["name"] for row in rows] == ["Climber", "Maxed"]
+    assert rows[0]["nines"] == 1
+    assert rows[1]["moved"] is False, "all of it above 99 counts for nothing"

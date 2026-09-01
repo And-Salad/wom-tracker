@@ -104,7 +104,16 @@
   /* Says there is more to read without shouting about it. */
   .rules { cursor: help; border-bottom: 1px dotted var(--line);
            display: inline-block; }
+  /* The finished days and the running one, side by side in one card. */
+  .calendar { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; }
   .months { display: flex; gap: 28px; flex-wrap: wrap; margin: 12px 0 4px; }
+  .standing { margin: 12px 0 4px; min-width: 240px; flex: 1 1 240px; }
+  .standing h4 { margin: 0 0 8px; font-size: 13px; color: var(--muted);
+                 text-transform: uppercase; letter-spacing: .04em; }
+  .standing table { font-size: 13px; }
+  .standing td { padding: 4px 8px; }
+  .standing tr:not(.moved) td { color: var(--muted); }
+  .standing .nines { color: var(--accent); margin-left: 4px; font-size: 11px; }
   .month h4 { margin: 0 0 8px; font-size: 14px; }
   /* Inherits the heading's colour, which is the month winner's own: the name
      and the month are saying the same thing, so they say it in one colour.
@@ -232,8 +241,11 @@
        screen, so tighten every step. */
     .tree .folder, .tree .leaf { margin-left: 8px; }
     .tree .body { margin-left: 12px; padding-left: 8px; }
-    /* Two months will not sit side by side on a phone; they stack. */
+    /* Two months will not sit side by side on a phone; they stack, and the
+       standings drop below them rather than squeezing in beside. */
+    .calendar { gap: 14px; }
     .months { gap: 18px; }
+    .standing { min-width: 0; flex: 1 1 100%; margin-top: 0; }
     .grid-days { grid-template-columns: repeat(7, 1fr); }
     .grid-days .day, .grid-days .pad { height: 34px; }
     .tip { max-width: calc(100vw - 24px); }

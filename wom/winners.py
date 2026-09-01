@@ -35,6 +35,12 @@ def month_range(when=None, back=0):
     return start, end
 
 
+def today_key(when=None):
+    """Which Eastern day is currently in progress."""
+    now = (when or datetime.now(timezone.utc)).astimezone(EASTERN)
+    return now.strftime("%Y-%m-%d")
+
+
 def days_in(start, end):
     """Every Eastern midnight from start up to end, as (day, next) pairs."""
     out = []

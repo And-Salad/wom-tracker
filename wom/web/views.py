@@ -280,7 +280,45 @@ def winner_calendar(database, players, palette, when=None):
         })
     # No legend: the sidebar beside this lists every player against the same
     # swatch, and each square names its winner on hover.
-    return {"months": months, "whole_group": whole_group, "rule": WINNER_RULE}
+    return {"months": months, "whole_group": whole_group, "rule": WINNER_RULE,
+            "today": _today_rows(database, players, palette, when)}
+
+
+def _today_rows(database, players, palette, when=None):
+    """Where everyone stands in the day now in progress, and this month.
+
+    The grid is finished days; this is the one still running. It is deliberately
+    not a verdict - today has not been polled to its end and cannot qualify yet -
+    so it shows the running figures and lets the squares do the awarding.
+    """
+    from .. import winners
+
+    start, end = winners.month_range(when, back=0)
+    days = winners.gains_by_day(database, players, start, end)
+    won = winners.daily_winners(database, players, start, end)
+    tally = {}
+    for found in won.values():
+        if found["winner"]:
+            tally[found["winner"]] = tally.get(found["winner"], 0) + 1
+
+    scores = days.get(winners.today_key(when), {}).get("scores", {})
+    nothing = {"nines": 0, "raw": 0.0, "capped": 0.0}
+    rows = []
+    for player in players:
+        shown = scores.get(player["username"], nothing)
+        rows.append({
+            "name": player["display_name"],
+            "color": palette.get(player["username"], theme.MUTED),
+            "nines": shown["nines"],
+            "capped": fmt_int(round(shown["capped"])),
+            "moved": winners.moved(shown),
+            "won": tally.get(player["username"], 0),
+            # Ordered by the same rule the squares are, so the table reads as
+            # the day's standings rather than as a second opinion.
+            "rank": winners.key(shown),
+        })
+    rows.sort(key=lambda row: (row["rank"], row["name"]), reverse=True)
+    return {"rows": rows, "month": start.strftime("%B")}
 
 
 WINNER_RULE = (
