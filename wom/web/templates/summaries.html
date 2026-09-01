@@ -30,7 +30,7 @@
             {% endfor %}
             {% for _ in range(month.lead) %}<span class="pad"></span>{% endfor %}
             {% for day in month.days %}
-              <span class="day{{ ' ahead' if day.ahead }}"
+              <span class="day{{ ' won' if day.color }}{{ ' ahead' if day.ahead }}"
                     {% if day.color %}style="background: {{ day.color }}"{% endif %}
                     title="{{ day.date }} - {{ day.note }}">{{ day.day }}</span>
             {% endfor %}

@@ -113,6 +113,10 @@
     /* The number has to stay readable on six different player colours. */
     text-shadow: 0 1px 2px rgba(0,0,0,.65);
   }
+  /* A hairline on the days that were won, so a player whose colour is dark -
+     black is a colour someone picked - still reads as a filled square rather
+     than as one nobody won. box-sizing keeps it the same size as the rest. */
+  .grid-days .day.won { border: 1px solid rgba(255, 255, 255, .28); }
   /* A day that has not happened is not a day nobody won. */
   .grid-days .day.ahead { background: none; border: 1px dashed var(--line);
                           color: var(--muted); text-shadow: none; }
