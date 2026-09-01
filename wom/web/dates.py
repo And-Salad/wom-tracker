@@ -45,6 +45,25 @@ def offset_minutes(value):
     return minutes if -14 * 60 <= minutes <= 14 * 60 else 0
 
 
+OFFSET_COOKIE = "wom_tz"
+
+
+def viewer_offset():
+    """The viewer's offset from the request, falling back to their cookie.
+
+    A page is rendered before any script on it has run, so the first paint
+    has no query string to read the offset from. Without the cookie the dates
+    in the sidebar are computed in UTC, and an Eastern viewer after 20:00
+    sees a "To" of tomorrow until they touch something. The cookie is written
+    by sidebar.js and holds nothing but a number of minutes.
+    """
+    from flask import request
+    given = request.args.get("tzoffset")
+    if given is not None:
+        return offset_minutes(given)
+    return offset_minutes(request.cookies.get(OFFSET_COOKIE))
+
+
 def local_day(iso, offset_minutes=0):
     """The other direction: which of the viewer's days a UTC stamp falls on.
 

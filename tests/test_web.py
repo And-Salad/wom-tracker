@@ -507,3 +507,24 @@ def test_every_data_endpoint_refuses_to_be_cached(client, app):
                  "/api/milestones", "/api/history?kind=skill&metric=attack"):
         response = client.get(path)
         assert response.headers.get("Cache-Control") == "no-cache", path
+
+
+def test_the_sidebar_dates_follow_the_viewers_cookie_on_a_first_paint(client, app):
+    """A page is rendered before any script on it runs, so without the cookie
+    the dates are worked out in UTC and can read a day ahead."""
+    seed(app)
+
+    def to_date(body):
+        at = body.index('id="to"')
+        return body[at:body.index(">", at)].split('value="')[1].rstrip('"')
+
+    # Twelve hours west and thirteen east: twenty-five apart, so the two
+    # cannot land on the same local day whatever the clock says right now.
+    client.set_cookie("wom_tz", "-720")
+    west = to_date(client.get("/").get_data(as_text=True))
+    client.set_cookie("wom_tz", "780")
+    east = to_date(client.get("/").get_data(as_text=True))
+    assert west != east, "the cookie has to decide which day it is"
+
+    # An explicit tzoffset still wins: the cookie is only the fallback.
+    assert to_date(client.get("/?tzoffset=-720").get_data(as_text=True)) == west

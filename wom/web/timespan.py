@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from flask import request
 
 from .. import periods
-from .dates import BadRequest, day_bound, local_day, offset_minutes
+from .dates import BadRequest, day_bound, local_day, viewer_offset
 
 CUSTOM = "Custom"
 ALL_TIME = "All time"
@@ -73,7 +73,7 @@ def labels():
 
 def current_timespan(database=None, players=None):
     """Resolve the request's window. Raises BadRequest on an unusable date."""
-    offset = offset_minutes(request.args.get("tzoffset"))
+    offset = viewer_offset()
     # .title() would make "All time" into "All Time", so the two named
     # windows are matched on their own terms and only a period label is
     # title-cased, which is how periods.by_label wants it.

@@ -35,7 +35,18 @@
 
   // Readings are stored in UTC; say which day the viewer means, or a "to" of
   // 30 August would stop at 20:00 for anyone west of Greenwich.
-  if (offsetBox) { offsetBox.value = String(-new Date().getTimezoneOffset()); }
+  var offset = String(-new Date().getTimezoneOffset());
+  if (offsetBox) { offsetBox.value = offset; }
+  /* Also left where the server can find it. A page is rendered before this
+     script runs, so the first paint has no query string to read - and the
+     dates in the sidebar would be worked out in UTC, showing an Eastern
+     reader a "To" of tomorrow every evening. Nothing but a number of
+     minutes, and it only has to survive to the next request. */
+  try {
+    document.cookie = "wom_tz=" + encodeURIComponent(offset) +
+      ";path=/;max-age=31536000;samesite=lax" +
+      (window.location.protocol === "https:" ? ";secure" : "");
+  } catch (e) { /* cookies refused: the query string still carries it */ }
 
   function custom() {
     return !!periodBox && periodBox.value === CUSTOM;
