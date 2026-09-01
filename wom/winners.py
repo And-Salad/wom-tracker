@@ -175,6 +175,35 @@ def _gap(a, b):
     return abs((parse_api_time(a) - parse_api_time(b)).total_seconds())
 
 
+def polled_days(database, players, start, end):
+    """The Eastern days on which the tracker actually looked at everyone.
+
+    Without this a day only has to have every account *on file* to count,
+    which is true of every day since each account's first reading - and a day
+    nobody was polled then reads as a day nobody played. It is not: Wise Old
+    Man records a snapshot when the hiscores move, so silence means "no
+    change" only if somebody asked. Where nobody asked, silence means nothing
+    at all, and the one account that submits its own readings takes the day
+    against five accounts that were never looked at.
+
+    A run that came back with a result for every tracked player is that
+    evidence. Runs are stamped UTC and days are Eastern, so they are moved
+    before they are counted.
+    """
+    rows = database.query(
+        "SELECT started_at, ok_count FROM runs WHERE started_at>=? AND started_at<?",
+        (_stamp(start), _stamp(end)))
+    enough = len(players)
+    days = set()
+    for row in rows:
+        if (row["ok_count"] or 0) < enough:
+            continue
+        when = parse_api_time(row["started_at"])
+        if when is not None:
+            days.add(when.astimezone(EASTERN).strftime("%Y-%m-%d"))
+    return days
+
+
 def gains_by_day(database, players, start, end):
     """{date: {"scores": {username: measure}, "measured": [], "short": []}}."""
     boundaries = [day for day, _ in days_in(start, end)] + [end]
@@ -227,6 +256,7 @@ def daily_winners(database, players, start, end, whole_group=False):
     blank too: nothing happened, and a colour would say something did.
     """
     days = gains_by_day(database, players, start, end)
+    polled = polled_days(database, players, start, end)
     known = {p["username"] for p in players}
     written = _written_winners(database, "day") if whole_group else {}
     of = len(players)
@@ -238,6 +268,10 @@ def daily_winners(database, players, start, end, whole_group=False):
         if measured < of:
             entry["reason"] = "{} of {} accounts were being tracked".format(
                 measured, of)
+            out[day] = entry
+            continue
+        if day not in polled:
+            entry["reason"] = "the tracker was not watching that day"
             out[day] = entry
             continue
         named = written.get(day)
@@ -270,12 +304,14 @@ def month_points(database, players, start, end):
     one good day, which is what it was.
     """
     days = gains_by_day(database, players, start, end)
+    polled = polled_days(database, players, start, end)
     of = len(players)
     points = {p["username"]: 0.0 for p in players}
     counted = 0
-    for found in days.values():
-        if len(found["measured"]) < of:
-            continue          # the same rule the squares follow
+    for day, found in days.items():
+        # The same two tests the squares pass.
+        if len(found["measured"]) < of or day not in polled:
+            continue
         counted += 1
         for username, scored in placings(found, of).items():
             points[username] += scored

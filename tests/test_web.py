@@ -532,8 +532,13 @@ def test_the_sidebar_dates_follow_the_viewers_cookie_on_a_first_paint(client, ap
 
 # -- the winner calendar --------------------------------------------------
 
-def _calendar_seed(app):
-    """Two accounts, one of which is only ever seen mid-afternoon."""
+def _calendar_seed(app, polled=True):
+    """Two accounts, one of which is only ever seen mid-afternoon.
+
+    `polled` records an update run for each day, which is the evidence that
+    an account with no reading that day played nothing rather than going
+    unwatched. Tests about that rule itself pass False.
+    """
     database = app.config["DATABASE"]
     for pid, name in ((1, "Zezima"), (2, "Other")):
         database.save_player_details({"id": pid, "username": name.lower(),
@@ -551,7 +556,20 @@ def _calendar_seed(app):
     for hour, xp in (("21", 9000), ("23", 9500)):
         database.save_snapshot(2, snapshot("2026-08-30T" + hour + ":00:00.000Z",
                                            skills={"attack": (xp, 60)}))
+    if polled:
+        _polled(database, 2, ["2026-08-{:02d}".format(day) for day in range(1, 32)])
     return database
+
+
+def _polled(database, players, days):
+    """Say the tracker looked at everyone on each of these days."""
+    for day in days:
+        run = database.start_run("test")
+        database.finish_run(run, ok_count=players, fail_count=0)
+        database.connect().execute(
+            "UPDATE runs SET started_at=? WHERE id=?",
+            (day + "T12:00:00.000Z", run))
+    database.connect().commit()
 
 
 def test_a_long_gap_is_not_counted_as_one_days_work(app):
@@ -691,6 +709,7 @@ def test_a_ninety_nine_takes_the_day_off_a_bigger_number(app):
                                        skills={"attack": (edge * 2, 99)}))
     database.save_snapshot(2, snapshot("2026-08-20T23:00:00.000Z",
                                        skills={"attack": (edge * 2 + 10000000, 99)}))
+    _polled(database, 2, ["2026-08-20"])
 
     players = database.players()
     start, end = winners.month_range(
@@ -718,9 +737,34 @@ def test_a_day_spent_entirely_past_99_has_no_winner(app):
                                        skills={"attack": (edge * 2, 99)}))
     database.save_snapshot(1, snapshot("2026-08-20T23:00:00.000Z",
                                        skills={"attack": (edge * 3, 99)}))
+    _polled(database, 1, ["2026-08-20"])
     players = database.players()
     start, end = winners.month_range(
         datetime(2026, 8, 25, tzinfo=timezone.utc), back=0)
     day = winners.daily_winners(database, players, start, end)["2026-08-20"]
     assert day["winner"] is None
     assert day["reason"] == "nobody gained anything"
+
+
+def test_a_day_nobody_was_polled_on_is_blank(app):
+    """Wise Old Man records a reading when the hiscores move, so no reading
+    means "played nothing" only if somebody asked. Where nobody asked, the one
+    account that submits its own readings would take the day unopposed."""
+    from wom import winners
+    from datetime import datetime, timezone
+    database = _calendar_seed(app, polled=False)
+    players = database.players()
+    start, end = winners.month_range(
+        datetime(2026, 8, 15, tzinfo=timezone.utc), back=0)
+
+    unwatched = winners.daily_winners(database, players, start, end)
+    assert unwatched["2026-08-28"]["winner"] is None
+    assert unwatched["2026-08-28"]["reason"] == "the tracker was not watching that day"
+    assert winners.month_winner(database, players, start, end) is None
+
+    # A run that came back with a result for every player is the evidence.
+    _polled(database, len(players), ["2026-08-28"])
+    watched = winners.daily_winners(database, players, start, end)
+    assert watched["2026-08-28"]["winner"] == "zezima"
+    # And only that day: the others still have nobody vouching for them.
+    assert watched["2026-08-29"]["reason"] == "the tracker was not watching that day"
