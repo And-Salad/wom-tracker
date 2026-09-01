@@ -278,10 +278,9 @@ def winner_calendar(database, players, palette, when=None):
             "days": [_day_cell(day, won, by_name, palette, len(players))
                      for day, _ in winners.days_in(start, end)],
         })
-    return {"months": months, "whole_group": whole_group,
-            "legend": [{"name": p["display_name"],
-                        "color": palette.get(p["username"], theme.MUTED)}
-                       for p in players]}
+    # No legend: the sidebar beside this lists every player against the same
+    # swatch, and each square names its winner on hover.
+    return {"months": months, "whole_group": whole_group}
 
 
 def _day_cell(day, won, by_name, palette, included):

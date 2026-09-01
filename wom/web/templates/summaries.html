@@ -38,12 +38,6 @@
         </div>
       {% endfor %}
     </div>
-
-    <p class="hint key">
-      {% for entry in calendar.legend %}
-        <span class="tip-dot" style="background: {{ entry.color }}"></span>{{ entry.name }}
-      {% endfor %}
-    </p>
   </div>
 
   {% for round_up in latest %}
