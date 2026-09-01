@@ -215,7 +215,12 @@ class Database:
                     SELECT id FROM snapshots s WHERE captured_at = (
                         SELECT MAX(captured_at) FROM snapshots x
                         WHERE x.player_id = s.player_id))""")
+        # VACUUM cannot run inside a transaction, and in WAL mode its result
+        # lands in the log rather than the file: without the checkpoint the
+        # database still measures its old size, with twenty megabytes of it
+        # sitting in a .db-wal beside it.
         conn.execute("VACUUM")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         log.info("metrics table rewritten")
 
     def connect(self):
@@ -542,8 +547,10 @@ class Database:
                 "      AND x.metric=metrics.metric AND x.captured_at < ?"
                 "    GROUP BY substr(x.captured_at, 1, 10))",
                 (cutoff, cutoff))
-        # VACUUM cannot run inside a transaction, and reclaims the file space.
+        # VACUUM cannot run inside a transaction, and in WAL mode its result
+        # has to be checkpointed or the file never actually shrinks.
         conn.execute("VACUUM")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         return summary
 
     def prune_players(self, keep_usernames):
