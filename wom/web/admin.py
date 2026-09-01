@@ -20,19 +20,13 @@ from .. import periods, scheduler, summaries as core
 from ..colors import normalise, player_color, set_player_color
 from ..config import Config, ENV_KEYS, normalise_usernames
 from ..summaries import SUMMARY_MODELS
-from .limits import Budget, client_address
+from .limits import client_address
 
 log = logging.getLogger(__name__)
 
 admin = Blueprint("admin", __name__)
 
 PASSWORD_ENV = "WOM_ADMIN_PASSWORD"
-
-# This login is on the public internet, so an unlimited guess rate is the whole
-# attack. Six tries buys a five minute wait, counted per address.
-SIGN_IN_ATTEMPTS = 6
-SIGN_IN_WINDOW = 300
-_sign_in = Budget(SIGN_IN_ATTEMPTS, SIGN_IN_WINDOW)
 
 
 # Enough to cover a group without making the box a menu: anything else can be
@@ -86,7 +80,8 @@ def login():
     error = None
     if request.method == "POST":
         address, source = client_address()
-        waiting = _sign_in.check(address)
+        sign_in = current_app.config["LIMITS"].sign_in
+        waiting = sign_in.check(address)
         if waiting:
             error = "Too many attempts. Try again in {} seconds.".format(waiting)
         elif hmac.compare_digest(request.form.get("password", ""), admin_password()):
@@ -94,7 +89,7 @@ def login():
             session.permanent = True
             return redirect(request.args.get("next") or url_for("admin.settings"))
         else:
-            _sign_in.record(address)
+            sign_in.record(address)
             # A wrong guess should cost real time even before the lockout.
             time.sleep(0.5)
             error = "That is not the password."

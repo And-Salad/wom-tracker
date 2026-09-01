@@ -179,6 +179,11 @@ API_ADDRESS_WINDOW = 300
 API_TRIP_TOTAL = 3000
 API_TRIP_WINDOW = 300
 
+# The admin login is on the public internet, so an unlimited guess rate is the
+# whole attack. Six tries buys a five minute wait, counted per address.
+SIGN_IN_ATTEMPTS = 6
+SIGN_IN_WINDOW = 300
+
 _EVERYONE = "*"
 
 
@@ -219,6 +224,13 @@ class Limits:
     An instance per app rather than module-level state: two apps in a process
     (which is every test run) would otherwise share one another's counters,
     and the factory had to reset globals on the way past.
+
+    The sign-in lockout belongs here for that reason and no other. It lived
+    in admin.py as a module global long after the rest moved, which is to say
+    the one budget guarding a password was the one budget every app in the
+    process shared - so a test that exhausted it locked out the next test's
+    app, and two apps served from one process would have shared a lockout
+    that has nothing to do with either.
     """
 
     def __init__(self,
@@ -226,6 +238,7 @@ class Limits:
                  exports_per_day=EXPORTS_PER_DAY,
                  api_per_address=API_PER_ADDRESS,
                  api_trip_total=API_TRIP_TOTAL,
+                 sign_in_attempts=SIGN_IN_ATTEMPTS,
                  latch=None):
         self.exports_per_address = exports_per_address
         self.exports_per_day = exports_per_day
@@ -233,6 +246,8 @@ class Limits:
         self.export_overall = Budget(exports_per_day, EXPORT_DAY_WINDOW)
         self.api_per_address = Budget(api_per_address, API_ADDRESS_WINDOW)
         self.api_tripwire = Tripwire(api_trip_total, API_TRIP_WINDOW, store=latch)
+        self.sign_in_attempts = sign_in_attempts
+        self.sign_in = Budget(sign_in_attempts, SIGN_IN_WINDOW)
 
     address = staticmethod(client_address)
 

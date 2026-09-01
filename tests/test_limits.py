@@ -77,22 +77,43 @@ def test_the_sign_in_lockout_cannot_be_shaken_off_with_a_header(client, app,
                                                                 monkeypatch):
     """The bug this replaced: ten guesses, ten claimed addresses, no lockout."""
     monkeypatch.delenv(TRUSTED_HEADER_ENV, raising=False)
-    from wom.web import admin as admin_module
-    # The lockout is one budget for the whole process, so this test borrows it
-    # and puts it back rather than leaving everyone else locked out.
-    admin_module._sign_in.reset()
-    try:
-        refused = False
-        for attempt in range(admin_module.SIGN_IN_ATTEMPTS + 2):
-            page = client.post(
-                "/admin/login", data={"password": "wrong"},
-                headers={"Fly-Client-IP": "203.0.113.{}".format(attempt)})
-            if "Too many attempts" in page.get_data(as_text=True):
-                refused = True
-                break
-        assert refused, "a header nobody vouches for must not buy a fresh allowance"
-    finally:
-        admin_module._sign_in.reset()
+    # The lockout belongs to this app's Limits, so exhausting it here cannot
+    # reach any other test's app - which it could when it was a module global.
+    limits = app.config["LIMITS"]
+    refused = False
+    for attempt in range(limits.sign_in_attempts + 2):
+        page = client.post(
+            "/admin/login", data={"password": "wrong"},
+            headers={"Fly-Client-IP": "203.0.113.{}".format(attempt)})
+        if "Too many attempts" in page.get_data(as_text=True):
+            refused = True
+            break
+    assert refused, "a header nobody vouches for must not buy a fresh allowance"
+
+
+def test_one_app_locking_out_cannot_lock_out_another(app, tmp_path, monkeypatch):
+    """The lockout is per app, like every other budget.
+
+    As a module global it was shared by every app in the process, so one
+    exhausting it took the next one's login with it - which is a test-suite
+    nuisance, and would be a real one for anything serving two apps at once.
+    """
+    monkeypatch.delenv(TRUSTED_HEADER_ENV, raising=False)
+    first = app.test_client()
+    for _ in range(app.config["LIMITS"].sign_in_attempts + 1):
+        first.post("/admin/login", data={"password": "wrong"})
+    assert "Too many attempts" in first.post(
+        "/admin/login", data={"password": "wrong"}).get_data(as_text=True)
+
+    from wom.db import Database
+    from wom.web import app as web_app
+    database = Database(str(tmp_path / "second.db"))
+    monkeypatch.setattr(web_app, "Database", lambda _path: database)
+    second = web_app.create_app()
+    second.config["TESTING"] = True
+    page = second.test_client().post("/admin/login", data={"password": "wrong"})
+    assert "Too many attempts" not in page.get_data(as_text=True), (
+        "a second app must start with its own allowance")
 
 
 def test_a_latched_tripwire_is_still_latched_after_a_restart(tmp_path):
