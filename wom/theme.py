@@ -14,13 +14,20 @@ INK = "#e6e9ed"          # primary text
 MUTED = "#99a2ad"        # captions, secondary text
 ACCENT = "#6fa8d6"       # links and buttons
 
-GRID = "#39414a"         # chart gridlines
-EXCLUDED = "#6d7681"     # a player left out of the comparison
+GRID = "#39414a"         # chart gridlines, read back by chartkit.js
 
 
 def css_variables():
-    """The same palette as CSS custom properties for the web dashboard."""
+    """The whole palette as CSS custom properties.
+
+    Every colour defined above appears here, and must: a constant that is
+    not emitted is one nothing can reach. --grid was missing from this dict
+    for exactly that reason, so chartkit.js had been drawing its gridlines
+    from the hardcoded fallback beside the lookup and editing GRID here did
+    nothing at all.
+    """
     return {
         "--bg": BACKGROUND, "--card": PANEL, "--raised": RAISED,
         "--ink": INK, "--muted": MUTED, "--line": LINE, "--accent": ACCENT,
+        "--grid": GRID,
     }

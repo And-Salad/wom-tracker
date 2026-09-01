@@ -13,9 +13,6 @@ from ..config import Config
 from ..scheduler import next_slot, parse_last_run
 from ..util import fmt_ago
 
-DEFAULT_PERIOD = "Week"
-
-
 def database():
     return current_app.config["DATABASE"]
 
@@ -61,16 +58,6 @@ def chosen(players):
 def colors(config, players):
     return {p["username"]: player_color(config, p["username"], index)
             for index, p in enumerate(players)}
-
-
-def current_period():
-    """The rolling period named in the request, ignoring any dates.
-
-    Still the right question for the one thing a date range cannot answer:
-    which calendar window a written note is stored under.
-    """
-    from .. import periods
-    return periods.by_label(request.args.get("period", "").title() or DEFAULT_PERIOD)
 
 
 def current_span(players=None):

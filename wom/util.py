@@ -54,12 +54,6 @@ def fmt_int(value, dash="-"):
         return dash
 
 
-
-
-
-
-
-
 def pretty_metric(metric):
     """'chambers_of_xeric' -> 'Chambers of Xeric'."""
     words = str(metric).replace("-", "_").split("_")

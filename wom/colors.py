@@ -49,10 +49,3 @@ def normalise(value):
     return "#" + text.lower()
 
 
-def to_rgb(color):
-    """'#rrggbb' -> (r, g, b) as 0-255 ints."""
-    color = normalise(color) or "#000000"
-    return tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
-
-
-
