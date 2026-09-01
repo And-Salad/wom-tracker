@@ -30,7 +30,10 @@ env/
 *.sqlite3
 *.log
 
-# Editors and operating systems
+# Editors and operating systems, and the local dev-server config that goes
+# with them: which port to preview on is a property of a machine, not of the
+# project.
+.claude/
 .vscode/
 .idea/
 *.swp

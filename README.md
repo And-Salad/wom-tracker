@@ -164,8 +164,8 @@ That is 430 windows a year - so 430 group round-ups plus 430 per player, about
 
 Two things keep the bill down. Each summary stores a hash of its digest, so a
 player whose numbers have not moved is skipped rather than re-billed - `--force`
-overrides. And the calendar rules mean the six-hourly update pass writes nothing
-at all outside the morning slot.
+overrides. And the calendar rules mean the update pass writes nothing at all
+outside the first clear slot of the day.
 
 ## The pages
 
@@ -233,7 +233,9 @@ here, 5 MB) neither builds a list in memory nor times out. A metric the account
 is unranked on exports as blank rather than the API's `-1`, so an empty cell
 means "not on the hiscores" and not "zero".
 
-The charts are drawn in the browser with D3 (`wom/web/static/charts.js`). The
+The charts are drawn in the browser with D3. `wom/web/static/chartkit.js` is
+the machinery - scales, axes, tooltips, the responsive behaviour - and each
+page has a small file beside it that wires its own charts up. The
 server only answers with JSON from `/api/chart/<key>`, so ticking a player or
 changing a dropdown refetches a few kilobytes and redraws in place instead of
 reloading the page. What each chart shows - the metric lists and the dropdown
@@ -352,7 +354,8 @@ share one.
 
 Dark throughout, from one definition. `wom/theme.py` holds the colours and
 emits them as CSS custom properties; the page styles itself from those and
-`charts.js` reads the same variables back for its axes, gridlines and tooltips,
+`chartkit.js` reads the same variables back for its axes, gridlines and
+tooltips,
 so a chart can never land on a background it does not match. There is no light
 mode or toggle - changing the constants in that module changes everything.
 
@@ -444,7 +447,7 @@ and pushed the page into a sideways scroll. Below 820px everything stacks: the
 player picker becomes a compact strip of chips above the cards, the header
 wraps, and the tree indents in smaller steps.
 
-The charts adapt too, in `charts.js` rather than CSS, because an SVG cannot
+The charts adapt too, in `chartkit.js` rather than CSS, because an SVG cannot
 reflow. Below 560px they switch to tighter margins, drop the rotated axis
 label (the tick numbers already carry the units), thin the legend, ask for
 fewer ticks, and shorten the card - the same 360px height against a 340px
@@ -509,7 +512,7 @@ invented.
 Those stretches are dashed. The ends of a dashed segment are real readings; the
 middle is interpolation. Anything closer together than 4% of the window
 (floored at a day and a half, so short windows never dash) is drawn solid, in
-`Chart.prototype.trend` in `charts.js`.
+`Chart.prototype.trend` in `chartkit.js`.
 
 ## Milestones
 
@@ -672,7 +675,7 @@ included `selected` players and the `period`. `ctx.gains(player, kind)` returns
 snapshot lookups; `ctx.db.metric_history(player_id, metric, kind, since=...)`
 gives a time series with its baseline point.
 
-If it is a stacked or trend chart, that is all - `charts.js` already draws both
+If it is a stacked or trend chart, that is all - `chartkit.js` already draws both
 shapes, icons, legend, tooltips and the responsive behaviour. A genuinely new
 shape needs a branch in `Chart.prototype.draw` and a drawing function beside
 `stacked` and `trend`.
@@ -732,8 +735,8 @@ commands when it finishes.
 ## Layout
 
 There are two entry points and they do different jobs. `web_app.py` is the
-server - it serves the pages and, with `--with-scheduler`, runs the six-hourly
-updates and the summaries; it is what the container starts.
+server - it serves the pages and, with `--with-scheduler`, runs the ten-minute
+updates and the round-ups; it is what the container starts.
 `wom_tracker.py` runs those same jobs once, by hand, plus `--compact`, which
 nothing runs automatically because deleting snapshots cannot be undone.
 
@@ -743,6 +746,7 @@ wom_tracker.py       the same jobs run by hand, plus --compact
 fetch_icons.py       downloads the skill and boss icons
 backup.py            pulls a verified copy of the hosted database down here
 backup_schedule.ps1  registers that as a daily task
+LICENSE              MIT
 Dockerfile           the container that runs on Fly
 fly.toml             one always-on machine and a volume at /data
 wom/
@@ -750,13 +754,14 @@ wom/
   config.py          settings file, with secrets overridable by environment
   db.py              SQLite schema and queries
   updater.py         one update pass over the username list
-  scheduler.py       the six-hourly Eastern timer and its busy flag
+  scheduler.py       the ten-minute Eastern timer and its busy flag
   periods.py         the day/week/month/quarter/year windows
   icons.py           skill order, and where each sprite lives
   catalog.py         what the Overview charts show
   colors.py          the palette and per-player colour overrides
   context.py         ViewContext: what a chart builder is handed
   summaries.py       the digest, the Claude call and the once-a-day hook
+  winners.py         who took each day and month, by the group's rule
   logs.py            per-entry-point log files
   theme.py           the palette, emitted as CSS variables
   util.py            formatting helpers
@@ -769,9 +774,11 @@ wom/
     views.py         rows into view models, so routes stay thin
     selection.py     who the request is about: roster, ticks, colours
     limits.py        budgets, the tripwire, and the caller's address
+    dates.py         a picker's date into the stamp rows are keyed by
+    timespan.py      the window every page is answering over
     data.py          the JSON behind each chart
     jobs.py          background jobs the admin buttons start
-    static/          D3 and charts.js, the browser-side drawing
+    static/          app.css, D3, chartkit.js and a file per page
     templates/       the pages themselves
 tests/               pytest, against a throwaway data directory
 assets/skills/       skill icons (from RuneLite)
