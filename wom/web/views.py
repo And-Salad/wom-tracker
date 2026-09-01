@@ -281,21 +281,27 @@ def winner_calendar(database, players, palette, when=None):
     # No legend: the sidebar beside this lists every player against the same
     # swatch, and each square names its winner on hover.
     return {"months": months, "whole_group": whole_group, "rule": WINNER_RULE,
-            "today": _today_rows(database, players, palette, when)}
+            "today": _today_rows(database, players, palette, when, whole_group)}
 
 
-def _today_rows(database, players, palette, when=None):
+def _today_rows(database, players, palette, when=None, whole_group=False):
     """Where everyone stands in the day now in progress, and this month.
 
     The grid is finished days; this is the one still running. It is deliberately
     not a verdict - today has not been polled to its end and cannot qualify yet -
     so it shows the running figures and lets the squares do the awarding.
+
+    It counts the month's wins the same way the squares are coloured, down to
+    whether a written round-up overruled the figures. Asked differently, the
+    two halves of one card disagreed: a square in somebody's colour, and a
+    tally beside it crediting the day to whoever the figures alone preferred.
     """
     from .. import winners
 
     start, end = winners.month_range(when, back=0)
     days = winners.gains_by_day(database, players, start, end)
-    won = winners.daily_winners(database, players, start, end)
+    won = winners.daily_winners(database, players, start, end,
+                                whole_group=whole_group)
     # A day is taken either by reaching a ninety-nine or, where nobody did, on
     # experience - so the days somebody won are worth splitting the same way.
     by_nine, by_xp = {}, {}

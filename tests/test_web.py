@@ -699,6 +699,35 @@ def test_adding_a_player_does_not_blank_the_days_before_they_arrived(app):
     assert after == before
 
 
+def test_the_standings_count_the_days_the_squares_colour(app):
+    """One card, one answer. The squares honour a written round-up over the
+    figures; the tally beside them was counting the figures regardless."""
+    from datetime import datetime, timezone
+
+    from wom import periods
+    from wom.web.views import winner_calendar
+
+    database = _calendar_seed(app)
+    players = database.players()
+    palette = {p["username"]: "#123456" for p in players}
+    when = datetime(2026, 8, 31, 18, tzinfo=timezone.utc)
+
+    # The figures give the 30th to Other; the round-up for it says Zezima.
+    window = periods.latest_window("day", datetime(2026, 8, 31, 12,
+                                                   tzinfo=timezone.utc))
+    assert window.key == "2026-08-30"
+    database.save_group_summary(window, "A day.", "hash", winner="zezima")
+
+    shown = winner_calendar(database, players, palette, when)
+    august = shown["months"][1]           # last month beside this one
+    square = [day for day in august["days"] if day["date"] == "30 Aug 2026"][0]
+    credited = {row["name"]: row["xp_wins"] + row["nine_wins"]
+                for row in shown["today"]["rows"]}
+    assert square["winner"] == "Zezima", "the square went to the round-up's pick"
+    assert credited["Zezima"] >= 1, "and so must the tally beside it"
+    assert credited.get("Other", 0) == 0, "not to whoever the figures preferred"
+
+
 def test_a_month_watched_for_less_than_a_fortnight_is_not_awarded(app):
     """Four days at the end of August is not a month anybody competed over,
     and the winner it would name is really the winner of those four days."""
