@@ -7,6 +7,44 @@
 {% block title %}Round-ups - WOM Tracker{% endblock %}
 
 {% block content %}
+  <div class="card">
+    <h3>Who won each day</h3>
+    <p class="hint">Every day of last month and this one, in the colour of
+      whoever gained the most experience. The month's own name is in the
+      colour of whoever took the month.
+      {% if not calendar.whole_group %}Measured across the players ticked
+      beside it.{% endif %}
+      A hatched square is a day some of the accounts were not being tracked
+      yet, so its winner is the best of those there were.</p>
+
+    <div class="months">
+      {% for month in calendar.months %}
+        <div class="month">
+          <h4 style="color: {{ month.color }}">{{ month.label }}
+            {% if month.winner %}<span class="won">{{ month.winner }}</span>{% endif %}
+          </h4>
+          <div class="grid-days">
+            {% for name in ['M', 'T', 'W', 'T', 'F', 'S', 'S'] %}
+              <span class="dow">{{ name }}</span>
+            {% endfor %}
+            {% for _ in range(month.lead) %}<span class="pad"></span>{% endfor %}
+            {% for day in month.days %}
+              <span class="day{{ ' ahead' if day.ahead }}{{ ' partial' if day.partial }}"
+                    {% if day.color %}style="background: {{ day.color }}"{% endif %}
+                    title="{{ day.date }} - {{ day.note }}">{{ day.day }}</span>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <p class="hint key">
+      {% for entry in calendar.legend %}
+        <span class="tip-dot" style="background: {{ entry.color }}"></span>{{ entry.name }}
+      {% endfor %}
+    </p>
+  </div>
+
   {% for round_up in latest %}
     <div class="card latest">
       <h3>{{ round_up.title }} &middot; {{ round_up.label }}</h3>

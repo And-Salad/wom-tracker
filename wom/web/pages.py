@@ -44,6 +44,8 @@ def summaries_page():
     scope = page_context()
     return render_template(
         "summaries.html",
+        calendar=views.winner_calendar(database(), scope["selected"],
+                                       scope["palette"]),
         latest=views.latest_round_ups(database()),
         tree=views.summary_tree(database(), scope["selected"], scope["palette"]),
         **_shell(scope))

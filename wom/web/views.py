@@ -243,3 +243,64 @@ def metric_table(database, players, since, until, palette):
                     "gained": round(gains.get(row["metric"], 0.0), 2),
                 })
     return rows
+
+
+def winner_calendar(database, players, palette, when=None):
+    """Two months of squares, each one the colour of who won that day.
+
+    Last month beside this one, which is as much as fits side by side and as
+    far back as anyone asks. Each month is headed in the colour of whoever
+    took it, so the two answers - the day and the month - read together.
+
+    The round-up's own pick is honoured only when every tracked player is
+    included: it judged the whole group, and against three of six it is
+    answering a different question from the one on screen.
+    """
+    from .. import winners
+
+    everyone = database.players()
+    whole_group = len(players) >= len(everyone) > 0
+    by_name = {p["username"]: p["display_name"] for p in players}
+
+    months = []
+    for back in (1, 0):
+        start, end = winners.month_range(when, back=back)
+        won = winners.daily_winners(database, players, start, end,
+                                    whole_group=whole_group)
+        took = winners.month_winner(database, players, start, end,
+                                    whole_group=whole_group)
+        months.append({
+            "label": start.strftime("%B %Y"),
+            "color": palette.get(took, theme.MUTED),
+            "winner": by_name.get(took),
+            # Monday-first, so the columns line up with the weekly round-ups.
+            "lead": start.weekday(),
+            "days": [_day_cell(day, won, by_name, palette, len(players))
+                     for day, _ in winners.days_in(start, end)],
+        })
+    return {"months": months, "whole_group": whole_group,
+            "legend": [{"name": p["display_name"],
+                        "color": palette.get(p["username"], theme.MUTED)}
+                       for p in players]}
+
+
+def _day_cell(day, won, by_name, palette, included):
+    """One square: who took the day, and how much of the group it could see."""
+    found = won.get(day.strftime("%Y-%m-%d"))
+    ahead = day > datetime.now(day.tzinfo)
+    if found is None or ahead:
+        return {"day": day.day, "date": day.strftime("%d %b %Y"),
+                "winner": None, "color": None, "ahead": ahead, "partial": False,
+                "note": "not yet" if ahead else "nobody gained anything"}
+    name = by_name.get(found["winner"], found["winner"])
+    # A day that could only see three accounts named a winner among three.
+    partial = found["measured"] < found["of"]
+    note = name
+    if found["written"]:
+        note += " - named by the round-up"
+    elif partial:
+        note += " - {} of {} accounts were being tracked".format(
+            found["measured"], found["of"])
+    return {"day": day.day, "date": day.strftime("%d %b %Y"), "winner": name,
+            "color": palette.get(found["winner"]), "ahead": False,
+            "partial": partial, "note": note}

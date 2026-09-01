@@ -12,6 +12,7 @@ hash of its digest, and an unchanged digest is skipped rather than re-billed.
 import hashlib
 import logging
 import os
+import re
 
 from . import periods
 from .icons import SKILL_ORDER
@@ -529,9 +530,43 @@ def summarise_group(database, config, players, window, force=False):
 
     system = load_prompt(config, window.period, kind="group")
     text, usage = generate(config, system, digest)
-    database.save_group_summary(window, text, fingerprint, usage)
+    winner, text = split_winner(text, players)
+    database.save_group_summary(window, text, fingerprint, usage, winner=winner)
     return text, "generated ({} in, {} out)".format(
         usage["input_tokens"], usage["output_tokens"])
+
+
+WINNER_LINE = re.compile(r"^\s*WINNER:\s*(.+?)\s*$", re.IGNORECASE)
+
+
+def split_winner(text, players):
+    """Pull the named winner off the front of a round-up, if it named one.
+
+    The prompt asks for one line before the prose so the calendar on the
+    Round-ups page has something to colour a day by. It is taken off the text
+    rather than left in it: the line is for the machine, and a reader should
+    see the paragraphs the round-up has always been.
+
+    A name that matches no tracked account is dropped rather than stored. The
+    model is asked for an exact display name and usually gives one, but a
+    calendar keyed on a name nothing can look up would just be blank squares
+    that look like a bug.
+    """
+    lines = (text or "").lstrip().splitlines()
+    if not lines:
+        return None, text
+    match = WINNER_LINE.match(lines[0])
+    if match is None:
+        return None, text
+    rest = "\n".join(lines[1:]).lstrip("\n")
+    named = match.group(1).strip().strip(".").lower()
+    for player in players:
+        if named in (player["username"], (player["display_name"] or "").lower()):
+            return player["username"], rest
+    if named in ("none", "nobody", "no one", "-"):
+        return None, rest
+    log.warning("round-up named a winner nothing matches: %r", match.group(1))
+    return None, rest
 
 
 def summarise_all(database, config, players, period_keys=None, force=False,

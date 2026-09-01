@@ -528,3 +528,99 @@ def test_the_sidebar_dates_follow_the_viewers_cookie_on_a_first_paint(client, ap
 
     # An explicit tzoffset still wins: the cookie is only the fallback.
     assert to_date(client.get("/?tzoffset=-720").get_data(as_text=True)) == west
+
+
+# -- the winner calendar --------------------------------------------------
+
+def _calendar_seed(app):
+    """Two accounts, one of which is only ever seen mid-afternoon."""
+    database = app.config["DATABASE"]
+    for pid, name in ((1, "Zezima"), (2, "Other")):
+        database.save_player_details({"id": pid, "username": name.lower(),
+                                      "displayName": name, "type": "regular"})
+    # Zezima is read four times a day, every day.
+    for day, xp in (("2026-08-28", 1000), ("2026-08-29", 2000),
+                    ("2026-08-30", 3000), ("2026-08-31", 3100)):
+        for hour in ("02", "23"):
+            database.save_snapshot(1, snapshot(
+                day + "T" + hour + ":00:00.000Z",
+                skills={"overall": (xp + (50 if hour == "23" else 0), 50)}))
+    # Other is seen once in July and then not again until the 30th.
+    database.save_snapshot(2, snapshot("2026-07-02T12:00:00.000Z",
+                                       skills={"overall": (500, 40)}))
+    for hour, xp in (("21", 9000), ("23", 9500)):
+        database.save_snapshot(2, snapshot("2026-08-30T" + hour + ":00:00.000Z",
+                                           skills={"overall": (xp, 60)}))
+    return database
+
+
+def test_a_long_gap_is_not_counted_as_one_days_work(app):
+    """Measured from the far side of a seven-week gap, an account that came
+    back on the 30th would have all seven weeks folded into that day."""
+    from wom import winners
+    from datetime import datetime, timezone
+    database = _calendar_seed(app)
+    players = database.players()
+    start, end = winners.month_range(
+        datetime(2026, 8, 15, tzinfo=timezone.utc), back=0)
+    gains = winners.gains_by_day(database, players, start, end)
+    on_the_day = gains["2026-08-30"]["gains"]
+    # 9500 - 9000, not 9500 - 500: the nearer bracketing reading wins, which
+    # is the rule baseline_snapshot follows everywhere else.
+    assert on_the_day["other"] == 500
+    assert "other" in gains["2026-08-30"]["short"], "and it says it saw half a day"
+
+
+def test_a_day_without_a_reading_is_a_quiet_day_not_an_unknown_one(app):
+    """Wise Old Man records a snapshot when the hiscores move, so no reading
+    means the account did not play - it must not drop out of the day."""
+    from wom import winners
+    from datetime import datetime, timezone
+    database = _calendar_seed(app)
+    players = database.players()
+    start, end = winners.month_range(
+        datetime(2026, 8, 15, tzinfo=timezone.utc), back=0)
+    gains = winners.gains_by_day(database, players, start, end)
+    # Other has no reading at all on the 29th, but was being tracked by then.
+    assert "other" in gains["2026-08-29"]["measured"]
+    assert "other" not in gains["2026-08-29"]["gains"], "tracked, and gained nothing"
+
+
+def test_the_round_up_overrules_the_figures_only_for_the_whole_group(app):
+    from wom import periods, winners
+    from datetime import datetime, timezone
+    database = _calendar_seed(app)
+    players = database.players()
+    window = periods.latest_window("day", datetime(2026, 8, 31, 12,
+                                                   tzinfo=timezone.utc))
+    database.save_group_summary(window, "A day.", "hash", winner="other")
+    start, end = winners.month_range(
+        datetime(2026, 8, 15, tzinfo=timezone.utc), back=0)
+
+    whole = winners.daily_winners(database, players, start, end, whole_group=True)
+    assert whole[window.key]["winner"] == "other"
+    assert whole[window.key]["written"] is True
+
+    # Narrowed to one account, the round-up is answering a different question.
+    one = [p for p in players if p["username"] == "zezima"]
+    narrowed = winners.daily_winners(database, one, start, end, whole_group=False)
+    assert narrowed[window.key]["winner"] == "zezima"
+
+
+def test_the_calendar_names_a_winner_for_the_month_too(app, client):
+    _calendar_seed(app)
+    body = client.get("/summaries").get_data(as_text=True)
+    assert "Who won each day" in body
+    assert body.count('class="month"') == 2, "last month and this one"
+
+
+def test_a_round_up_that_named_a_winner_stores_it_apart_from_its_prose(app):
+    from wom.summaries import split_winner
+    players = [{"username": "zezima", "display_name": "Zezima"}]
+    assert split_winner("WINNER: Zezima\n\nThe prose.", players) == \
+        ("zezima", "The prose.")
+    # A name nothing matches is dropped rather than stored as a colour key.
+    assert split_winner("WINNER: nobody at all\n\nQuiet.", players) == \
+        (None, "Quiet.")
+    # An older round-up with no line keeps every word of its text.
+    assert split_winner("Just prose.", players) == (None, "Just prose.")

@@ -95,6 +95,38 @@
   .standings td.name { white-space: nowrap; }
   .standings tr.leader td { color: var(--ink); font-weight: 600; }
   .standings tr.leader td.rank { color: var(--accent); }
+  /* -- the winner calendar on Round-ups -------------------------------
+     Two months of squares, each the colour of whoever took that day. */
+  .months { display: flex; gap: 28px; flex-wrap: wrap; margin: 12px 0 4px; }
+  .month h4 { margin: 0 0 8px; font-size: 14px; }
+  .month h4 .won { color: var(--muted); font-weight: 400; font-size: 12px;
+                   margin-left: 6px; }
+  .grid-days { display: grid; grid-template-columns: repeat(7, 30px);
+               gap: 4px; }
+  .grid-days .dow { font-size: 11px; color: var(--muted); text-align: center;
+                    padding-bottom: 2px; }
+  .grid-days .pad { height: 30px; }
+  .grid-days .day {
+    height: 30px; border-radius: 5px; background: var(--raised);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--ink); cursor: default;
+    /* The number has to stay readable on six different player colours. */
+    text-shadow: 0 1px 2px rgba(0,0,0,.65);
+  }
+  /* Hatched: Wise Old Man had readings for only some of the accounts that
+     day, so the winner is the best of those it could see rather than the best
+     of the group. Without this the most closely watched account collects
+     every thinly covered day by default. */
+  .grid-days .day.partial {
+    background-image: repeating-linear-gradient(45deg,
+      rgba(0,0,0,.38) 0 3px, transparent 3px 6px);
+  }
+  /* A day that has not happened is not a day nobody won. */
+  .grid-days .day.ahead { background: none; border: 1px dashed var(--line);
+                          color: var(--muted); text-shadow: none; }
+  .key .tip-dot { margin: 0 5px 0 0; }
+  .key { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center;
+         margin-top: 10px; }
   .plot .coverage { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
   .plot .coverage .tip-dot { display: inline-block; width: 8px; height: 8px;
                              border-radius: 2px; margin: 0 4px 0 8px; }
@@ -196,6 +228,10 @@
        screen, so tighten every step. */
     .tree .folder, .tree .leaf { margin-left: 8px; }
     .tree .body { margin-left: 12px; padding-left: 8px; }
+    /* Two months will not sit side by side on a phone; they stack. */
+    .months { gap: 18px; }
+    .grid-days { grid-template-columns: repeat(7, 1fr); }
+    .grid-days .day, .grid-days .pad { height: 34px; }
     .tip { max-width: calc(100vw - 24px); }
     /* Five columns do not fit 375px; keep the name, the measure and the gain. */
     .wide-only { display: none; }

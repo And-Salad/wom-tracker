@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS summaries (
 CREATE TABLE IF NOT EXISTS group_summaries (
     period        TEXT NOT NULL,
     window_key    TEXT NOT NULL,
+    winner        TEXT,                           -- username the round-up named
     period_start  TEXT NOT NULL,
     period_end    TEXT NOT NULL,
     label         TEXT NOT NULL,
@@ -143,6 +144,14 @@ class Database:
         # with no start or end. There is no honest way to relabel those as
         # calendar windows, and they are cheap to write again, so the old table
         # is dropped rather than converted.
+        # The round-ups started naming a winner in a column rather than only
+        # in their prose, so the calendar on /summaries can colour by it.
+        group_columns = {row["name"]
+                         for row in conn.execute("PRAGMA table_info(group_summaries)")}
+        if group_columns and "winner" not in group_columns:
+            with conn:
+                conn.execute("ALTER TABLE group_summaries ADD COLUMN winner TEXT")
+
         summary_columns = {row["name"]
                            for row in conn.execute("PRAGMA table_info(summaries)")}
         if summary_columns and "window_key" not in summary_columns:
@@ -341,24 +350,28 @@ class Database:
         params.append(limit)
         return self.query(sql, params)
 
-    def save_group_summary(self, window, text, digest_hash, usage=None):
+    def save_group_summary(self, window, text, digest_hash, usage=None,
+                           winner=None):
         usage = usage or {}
         conn = self.connect()
         with conn:
             conn.execute(
                 "INSERT INTO group_summaries (period, window_key, period_start,"
                 " period_end, label, text, digest_hash, model, input_tokens,"
-                " output_tokens, generated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+                " output_tokens, generated_at, winner)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT(period, window_key) DO UPDATE SET"
                 "   period_start=excluded.period_start, period_end=excluded.period_end,"
                 "   label=excluded.label, text=excluded.text,"
                 "   digest_hash=excluded.digest_hash, model=excluded.model,"
                 "   input_tokens=excluded.input_tokens,"
                 "   output_tokens=excluded.output_tokens,"
-                "   generated_at=excluded.generated_at",
+                "   generated_at=excluded.generated_at,"
+                "   winner=excluded.winner",
                 (window.period, window.key, window.start_iso(), window.end_iso(),
                  window.label, text, digest_hash, usage.get("model"),
-                 usage.get("input_tokens"), usage.get("output_tokens"), _utcnow()))
+                 usage.get("input_tokens"), usage.get("output_tokens"),
+                 _utcnow(), winner))
 
     def group_summary(self, period, window_key):
         return self.query_one(
