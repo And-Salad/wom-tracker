@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 DEFAULT_MODEL = "claude-sonnet-5"
 DEFAULT_EFFORT = "low"
 
-# The scheduled summaries ride the first update of the Eastern day: the day
+# The scheduled summaries ride the first update of the local day: the day
 # just gone, the week behind it on Mondays, the month behind it on the 1st.
 # They used to wait for six in the morning, which was the first update slot
 # after midnight when there were only four a day. There are now one hundred
@@ -520,8 +520,8 @@ def due_periods(database, now=None):
     something writes it, which is also what catches up a machine that was off
     on the day it should have run.
 
-    Everything is judged in Eastern time so it lines up with the update
-    schedule rather than drifting against the viewer's own clock.
+    Everything is judged in the configured time zone so it lines up with the
+    update schedule rather than drifting against the viewer's own clock.
     """
     from .scheduler import zone
     from datetime import datetime, timezone

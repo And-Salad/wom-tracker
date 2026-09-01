@@ -1,4 +1,10 @@
-"""Background thread that fires the update run on a fixed interval, Eastern time."""
+"""Background thread that fires the update run on a fixed interval.
+
+Slots sit on wall-clock boundaries in the configured time zone - see zone()
+below, which reads the setting the admin page writes. Nothing here is tied to
+one place: "Eastern" appears only as the default, and as the fallback rules
+for a machine with no time zone database at all.
+"""
 
 import logging
 import threading
@@ -12,6 +18,11 @@ log = logging.getLogger(__name__)
 # cuts the blind spot a daily figure is measured across from six hours to ten
 # minutes. Anything under a minute is refused by the API's own per-player
 # cooldown, which holds a repeat update open rather than declining it.
+#
+# Has to divide 60. Slots are found by rounding the minute hand down, so a
+# value that does not go evenly into an hour would put the last slot of one
+# hour a short step from the first of the next, and wants_achievements() -
+# which asks whether a slot landed on the hour - could stop matching at all.
 SLOT_MINUTES = 10
 
 # Achievements move rarely and cost a request per player, so they are not
@@ -109,11 +120,15 @@ def zone_named(name):
 
 
 def previous_slot(now=None, minutes=SLOT_MINUTES):
-    """The most recent slot at or before `now`, as an Eastern-time datetime.
+    """The most recent slot at or before `now`, in the configured zone.
 
     Slots sit on wall-clock boundaries rather than counting from whenever the
     process happened to start, so they stay predictable across a restart and a
     missed one is still recognisably missed.
+
+    `minutes` has to divide 60: the boundary is found by rounding the minute
+    hand down, which only lines up with the hour for a factor of it. See
+    SLOT_MINUTES.
     """
     east = (now or datetime.now(timezone.utc)).astimezone(zone())
     return east.replace(minute=east.minute - east.minute % minutes,
@@ -121,7 +136,7 @@ def previous_slot(now=None, minutes=SLOT_MINUTES):
 
 
 def next_slot(now=None, minutes=SLOT_MINUTES):
-    """The first slot strictly after `now`, as an Eastern-time datetime."""
+    """The first slot strictly after `now`, in the configured zone."""
     return previous_slot(now, minutes) + timedelta(minutes=minutes)
 
 
@@ -131,7 +146,7 @@ def wants_achievements(now=None, minutes=SLOT_MINUTES):
 
 
 class SlotScheduler:
-    """Calls `job(trigger)` once per six-hour Eastern slot.
+    """Calls `job(trigger)` once per slot - every SLOT_MINUTES, on the boundary.
 
     A slot that passed while the machine was off is caught up as soon as the
     app starts, so a gap never silently swallows an update.

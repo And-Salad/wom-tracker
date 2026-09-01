@@ -1,4 +1,5 @@
-# The dashboard, the six-hourly scheduler and the summaries, in one container.
+# The dashboard, the ten-minute update schedule and the summaries, in one
+# container.
 # The charts are drawn in the browser, so nothing here needs a display.
 #
 # Pinned rather than floating: an unpinned tag means the runtime can change
@@ -11,10 +12,18 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Spelled out rather than -r requirements.txt so a rebuild cannot pick up
-# something the tests never saw.
-RUN pip install --no-cache-dir \
-        "flask>=3.0" "waitress>=3.0" "requests>=2.31" "anthropic>=1.0" "tzdata>=2024.1"
+# One list, not two. This was spelled out here to stop a rebuild picking up
+# something the tests never saw - but ">=" floors do not stop that, and having
+# the same dependencies written twice only meant the copies could disagree,
+# which they had. The floors live in requirements.txt, which the tests run
+# against; the base image above is what is actually pinned.
+#
+# tzdata is asked for on top of that list because requirements.txt marks it
+# Windows-only, and this image needs it just as much: a slim Debian carries no
+# system zone database, and without one every day boundary silently falls back
+# to UTC.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt "tzdata>=2024.1"
 
 COPY wom/ ./wom/
 COPY assets/ ./assets/
@@ -26,6 +35,6 @@ VOLUME /data
 
 EXPOSE 8000
 
-# --with-scheduler is what replaces the desktop app: this process does the
-# six-hourly updates and the summaries as well as serving the pages.
+# --with-scheduler is what makes this the whole application: one process runs
+# the ten-minute updates and the summaries as well as serving the pages.
 CMD ["python", "web_app.py", "--host", "0.0.0.0", "--port", "8000", "--with-scheduler"]

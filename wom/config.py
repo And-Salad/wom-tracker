@@ -10,7 +10,6 @@ APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.environ.get("WOM_DATA_DIR") or os.path.join(APP_DIR, "data")
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 DB_PATH = os.path.join(DATA_DIR, "wom.db")
-LOG_PATH = os.path.join(DATA_DIR, "wom.log")
 
 
 def log_path_for(role):
@@ -21,15 +20,14 @@ def log_path_for(role):
     as long as it runs, so a CLI job sharing that file would fail to roll over
     and grow past its cap. One file per role, and they never collide.
     """
-    if not role:
-        return LOG_PATH
-    return os.path.join(DATA_DIR, "wom-{}.log".format(role))
+    return os.path.join(DATA_DIR, "wom-{}.log".format(role or "app"))
 
 DEFAULTS = {
     # Player names to keep updated, in display order.
     "usernames": [],
-    # The Eastern day history was last thinned on. Anything the app writes has
-    # to be declared here: save() keeps only the keys it knows, so a key that
+    # The local day history was last thinned on, in the zone configured below.
+    # Anything the app writes has to be declared here: save() keeps only the
+    # keys it knows, so a key that
     # is not listed is written and then dropped on the next read - which had
     # this compacting, and vacuuming, on every ten-minute run.
     "last_compact": "",
@@ -60,8 +58,8 @@ DEFAULTS = {
     "api_tripped_at": "",
     "api_tripped_by": "",
     # ISO timestamp of the last completed update run; managed by the scheduler.
-    # Runs happen on a fixed six-hour Eastern schedule, so there is nothing
-    # here to configure - see wom/scheduler.py.
+    # Runs happen on a fixed interval - every SLOT_MINUTES, on the wall-clock
+    # boundary - so there is nothing here to configure. See wom/scheduler.py.
     "last_run": "",
 }
 

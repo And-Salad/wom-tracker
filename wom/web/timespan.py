@@ -26,8 +26,8 @@ ALL_TIME = "All time"
 # It is the one window whose length changes as the day runs.
 TODAY = "Today"
 
-# Long windows are drawn from one reading a day. Updates land at least four
-# times daily, which is far more detail than a month-wide axis can render.
+# Long windows are drawn from one reading a day. Updates land every ten
+# minutes, which is far more detail than a month-wide axis can render.
 BUCKET_AFTER_DAYS = 8
 
 

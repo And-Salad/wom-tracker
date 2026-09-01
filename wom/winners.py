@@ -10,9 +10,11 @@ thirty: they are written one a day going forward, so a calendar driven by them
 alone would be blank for the two months it is meant to show. So the figures
 fill the grid and a round-up overrules them where one has been written.
 
-Days are Eastern midnight to Eastern midnight, the same boundaries the
-round-ups are written to. A calendar ruled in UTC days would colour squares
-that the round-up for that date disagreed with.
+Days run midnight to midnight in the configured time zone - the setting the
+admin page writes, read here through scheduler.zone() - which is the same
+boundary the round-ups are written to. A calendar ruled in UTC days would
+colour squares that the round-up for that date disagreed with. Everything
+below that says "local" means that zone, not the server's.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -26,7 +28,7 @@ WHOLE_GROUP = object()
 
 
 def month_range(when=None, back=0):
-    """[start, end) of a month in Eastern time, `back` months before this one."""
+    """[start, end) of a month in local time, `back` months before this one."""
     now = (when or datetime.now(timezone.utc)).astimezone(zone())
     start = now.replace(hour=0, minute=0, second=0, microsecond=0, day=1)
     for _ in range(back):
@@ -36,13 +38,13 @@ def month_range(when=None, back=0):
 
 
 def today_key(when=None):
-    """Which Eastern day is currently in progress."""
+    """Which local day is currently in progress."""
     now = (when or datetime.now(timezone.utc)).astimezone(zone())
     return now.strftime("%Y-%m-%d")
 
 
 def days_in(start, end):
-    """Every Eastern midnight from start up to end, as (day, next) pairs."""
+    """Every local midnight from start up to end, as (day, next) pairs."""
     out = []
     at = start
     while at < end:
@@ -204,7 +206,7 @@ def _gap(a, b):
 
 
 def polled_days(database, players, start, end):
-    """The Eastern days on which the tracker actually looked at everyone.
+    """The local days on which the tracker actually looked at everyone.
 
     Without this a day only has to have every account *on file* to count,
     which is true of every day since each account's first reading - and a day
@@ -218,7 +220,7 @@ def polled_days(database, players, start, end):
     is that evidence. Each run records how many that was, because the answer
     is about the day it ran: measured against today's roster instead, adding
     a seventh account would blank every day behind it. Runs are stamped UTC
-    and days are Eastern, so they are moved before they are counted.
+    and days are local, so they are moved before they are counted.
 
     (Whether every account *now* included was on file through the day is a
     different test, and gains_by_day's "measured" answers it.)

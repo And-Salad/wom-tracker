@@ -11,9 +11,9 @@ from .config import DATA_DIR, log_path_for
 def setup_logging(verbose=False, role="app"):
     """Start logging for one entry point.
 
-    `role` picks the file: the window writes wom.log, and the CLI and the
-    standalone server get their own. They can run at the same time, and on
-    Windows a rotation cannot rename a file another process is holding open.
+    `role` picks the file: the server writes wom-web.log and CLI jobs write
+    wom-cli.log. They can run at the same time, and on Windows a rotation
+    cannot rename a file another process is holding open.
     """
     os.makedirs(DATA_DIR, exist_ok=True)
     handler = RotatingFileHandler(log_path_for(role), maxBytes=512_000,

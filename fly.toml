@@ -14,8 +14,9 @@ primary_region = "iad"
 
 [env]
   WOM_DATA_DIR = "/data"
-  # The update schedule is anchored to Eastern midnight regardless, but the
-  # container would otherwise print "next run" times in UTC.
+  # Day boundaries follow the time zone set under Admin regardless of this;
+  # it only stops the container printing "next run" times in UTC. Set it to
+  # whatever makes the logs easiest to read.
   TZ = "America/New_York"
   # Fly sets this header itself and overwrites anything the caller sent, so
   # it can be believed. Naming it here is what lets the rate limits and the

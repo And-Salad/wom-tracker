@@ -200,7 +200,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--update", action="store_true",
-                        help="run one update pass without opening the window")
+                        help="run one update pass now, without starting the server")
     parser.add_argument("--backfill", nargs="*", metavar="NAME",
                         help="re-import stored history, for the given names or all of them")
     parser.add_argument("--summarize", "--summarise", dest="summarize",

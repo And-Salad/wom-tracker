@@ -8,11 +8,11 @@ class Period:
         self.key = key
         self.label = label
         self.days = days
-        # How finely a line chart should plot this window. Updates land at
-        # least four times a day - more when a player's plugin or a manual
-        # refresh fires - which is far more detail than a month-wide axis can
-        # show. Long windows collapse to one point per day; short ones keep
-        # every snapshot, because a day's worth of points is the whole chart.
+        # How finely a line chart should plot this window. Updates land every
+        # ten minutes - more when a player's plugin or a manual refresh fires
+        # - which is far more detail than a month-wide axis can show. Long
+        # windows collapse to one point per day; short ones keep every
+        # snapshot, because a day's worth of points is the whole chart.
         self.bucket = bucket
 
     def start(self, now=None):

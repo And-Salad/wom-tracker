@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
 );
 
 -- Only what changed. A reading repeats the previous one for 91 of every 100
--- metrics - a boss sitting at zero was being written again every six hours
+-- metrics - a boss sitting at zero was being written again on every update,
 -- forever - so a row is stored only when a value actually moves, and every
 -- read carries the last one forward. See state_at().
 --
@@ -202,7 +202,7 @@ class Database:
                 ) WITHOUT ROWID""")
             # A row survives only where it differs from the one before it for
             # the same metric. IS NOT compares NULLs as equal, which matters:
-            # an unranked metric stays unranked without a row every six hours.
+            # an unranked metric stays unranked without a row on every update.
             conn.execute("""
                 INSERT INTO metrics_sparse
                 SELECT player_id, kind, metric, captured_at, value, rank, level, efficiency
@@ -647,7 +647,7 @@ class Database:
         gap in the data, which is what the dashed stretches are meant to mean.
 
         `bucket="day"` returns the last reading of each UTC day. Updates arrive
-        at least four times daily and often more, which is more detail than a
+        every ten minutes and often more, which is more detail than a
         month-wide axis can render; one end-of-day point per day plots the same
         curve from a fraction of the rows.
 
