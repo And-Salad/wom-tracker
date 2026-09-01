@@ -544,13 +544,13 @@ def _calendar_seed(app):
         for hour in ("02", "23"):
             database.save_snapshot(1, snapshot(
                 day + "T" + hour + ":00:00.000Z",
-                skills={"overall": (xp + (50 if hour == "23" else 0), 50)}))
+                skills={"attack": (xp + (50 if hour == "23" else 0), 50)}))
     # Other is seen once in July and then not again until the 30th.
     database.save_snapshot(2, snapshot("2026-07-02T12:00:00.000Z",
-                                       skills={"overall": (500, 40)}))
+                                       skills={"attack": (500, 40)}))
     for hour, xp in (("21", 9000), ("23", 9500)):
         database.save_snapshot(2, snapshot("2026-08-30T" + hour + ":00:00.000Z",
-                                           skills={"overall": (xp, 60)}))
+                                           skills={"attack": (xp, 60)}))
     return database
 
 
@@ -564,10 +564,10 @@ def test_a_long_gap_is_not_counted_as_one_days_work(app):
     start, end = winners.month_range(
         datetime(2026, 8, 15, tzinfo=timezone.utc), back=0)
     gains = winners.gains_by_day(database, players, start, end)
-    on_the_day = gains["2026-08-30"]["gains"]
+    on_the_day = gains["2026-08-30"]["scores"]
     # 9500 - 9000, not 9500 - 500: the nearer bracketing reading wins, which
     # is the rule baseline_snapshot follows everywhere else.
-    assert on_the_day["other"] == 500
+    assert on_the_day["other"]["raw"] == 500
     assert "other" in gains["2026-08-30"]["short"], "and it says it saw half a day"
 
 
@@ -583,7 +583,7 @@ def test_a_day_without_a_reading_is_a_quiet_day_not_an_unknown_one(app):
     gains = winners.gains_by_day(database, players, start, end)
     # Other has no reading at all on the 29th, but was being tracked by then.
     assert "other" in gains["2026-08-29"]["measured"]
-    assert "other" not in gains["2026-08-29"]["gains"], "tracked, and gained nothing"
+    assert "other" not in gains["2026-08-29"]["scores"], "tracked, and gained nothing"
 
 
 def test_the_round_up_overrules_the_figures_only_for_the_whole_group(app):
@@ -610,7 +610,7 @@ def test_the_round_up_overrules_the_figures_only_for_the_whole_group(app):
 def test_the_calendar_names_a_winner_for_the_month_too(app, client):
     _calendar_seed(app)
     body = client.get("/summaries").get_data(as_text=True)
-    assert "Winner Calendar" in body
+    assert "Maxing Leaderboard" in body
     assert body.count('class="month"') == 2, "last month and this one"
 
 
@@ -661,7 +661,7 @@ def test_a_day_nobody_played_is_blank_not_a_win(app):
     for pid in (1, 2):
         for day in ("2026-08-24", "2026-08-25"):
             database.save_snapshot(pid, snapshot(day + "T02:00:00.000Z",
-                                                 skills={"overall": (400, 30)}))
+                                                 skills={"attack": (400, 30)}))
     players = database.players()
     start, end = winners.month_range(
         datetime(2026, 8, 15, tzinfo=timezone.utc), back=0)
@@ -669,3 +669,37 @@ def test_a_day_nobody_played_is_blank_not_a_win(app):
     assert quiet["measured"] == 2, "both were being tracked"
     assert quiet["winner"] is None
     assert quiet["reason"] == "nobody gained anything"
+
+
+def test_a_ninety_nine_takes_the_day_off_a_bigger_number(app):
+    """Past 99 a skill stops levelling, so experience there cannot outrank
+    somebody who actually reached one."""
+    from wom import winners
+    from datetime import datetime, timezone
+    database = app.config["DATABASE"]
+    for pid, name in ((1, "Climber"), (2, "Maxed")):
+        database.save_player_details({"id": pid, "username": name.lower(),
+                                      "displayName": name, "type": "regular"})
+    edge = winners.NINETY_NINE
+    # Climber crosses 99 in Attack by a single point.
+    database.save_snapshot(1, snapshot("2026-08-19T23:00:00.000Z",
+                                       skills={"attack": (edge - 1, 98)}))
+    database.save_snapshot(1, snapshot("2026-08-20T23:00:00.000Z",
+                                       skills={"attack": (edge, 99)}))
+    # Maxed piles on ten million, all of it above 99.
+    database.save_snapshot(2, snapshot("2026-08-19T23:00:00.000Z",
+                                       skills={"attack": (edge * 2, 99)}))
+    database.save_snapshot(2, snapshot("2026-08-20T23:00:00.000Z",
+                                       skills={"attack": (edge * 2 + 10000000, 99)}))
+
+    players = database.players()
+    start, end = winners.month_range(
+        datetime(2026, 8, 25, tzinfo=timezone.utc), back=0)
+    day = winners.daily_winners(database, players, start, end)["2026-08-20"]
+    assert day["winner"] == "climber", "one experience point, and a 99, beats 10m"
+
+    scores = winners.gains_by_day(database, players, start, end)["2026-08-20"]["scores"]
+    assert scores["climber"]["nines"] == 1
+    assert scores["maxed"]["nines"] == 0
+    assert scores["maxed"]["capped"] == 0, "none of it counted toward a 99"
+    assert scores["maxed"]["raw"] == 10000000

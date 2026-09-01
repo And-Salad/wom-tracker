@@ -46,59 +46,96 @@ def days_in(start, end):
     return out
 
 
-def _overall_readings(database, player_id, since, until):
-    """Every total-experience reading in a range, oldest first.
+# Experience for level 99. Above it a skill stops levelling, so experience
+# past it buys nothing the game recognises.
+NINETY_NINE = 13034431
 
-    One query per player rather than one per day: two months is sixty-two
-    boundaries and this table is two months wide.
+
+def _skill_states(database, player_id, since, until):
+    """[(stamp, {skill: experience})], oldest first.
+
+    A snapshot carries every skill at once, so consecutive rows sharing a
+    captured_at are one complete reading of the account.
     """
-    return database.query(
-        "SELECT captured_at, value FROM metrics"
-        " WHERE player_id=? AND kind='skill' AND metric='overall'"
-        "   AND value IS NOT NULL AND captured_at>=? AND captured_at<?"
+    rows = database.query(
+        "SELECT captured_at, metric, value FROM metrics"
+        " WHERE player_id=? AND kind='skill' AND value IS NOT NULL"
+        "   AND captured_at>=? AND captured_at<?"
         " ORDER BY captured_at", (player_id, since, until))
+    states = []
+    stamp = None
+    current = None
+    for row in rows:
+        if row["captured_at"] != stamp:
+            stamp = row["captured_at"]
+            current = {}
+            states.append((stamp, current))
+        current[row["metric"]] = row["value"]
+    return states
 
 
-def _stamp(when):
-    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+def measure(before, after):
+    """One account's showing over a span, from its skills at either end.
+
+    `nines` is the thing the game marks; `capped` is experience counted only
+    up to ninety-nine in each skill, because past that a skill stops
+    levelling; `raw` is all of it.
+    """
+    nines = 0
+    capped = 0.0
+    raw = 0.0
+    for metric, end in after.items():
+        if metric == "overall":
+            continue
+        start = before.get(metric)
+        if start is None or end <= start:
+            continue
+        raw += end - start
+        if start < NINETY_NINE <= end:
+            nines += 1
+        capped += max(0.0, min(end, NINETY_NINE) - min(start, NINETY_NINE))
+    return {"nines": nines, "raw": raw, "capped": capped}
 
 
-def _gap(a, b):
-    """Seconds between two ISO stamps, however far apart."""
-    return abs((parse_api_time(a) - parse_api_time(b)).total_seconds())
+def key(shown):
+    """How a span is judged, as something sortable.
+
+    A ninety-nine takes it outright and two take it over one. Failing that it
+    is experience up to ninety-nine: an account with everything maxed would
+    otherwise win every day it logged in against people still climbing. Where
+    somebody did reach one, the accounts level on nines are separated by raw
+    experience instead - they have all been credited for the milestone, so the
+    question is who did the most work around it.
+    """
+    return (shown["nines"], shown["raw"] if shown["nines"] else shown["capped"])
 
 
-def _player_days(readings, boundaries):
-    """One player's [gain, short] for each day, by the app's own rule.
+def moved(shown):
+    return bool(shown["nines"] or shown["raw"])
 
-    Two things this has to get right, and the obvious version gets both wrong.
 
-    A day with no reading is not a day with no answer. Wise Old Man records a
-    snapshot when an account's hiscores move, so no reading means the account
-    did not play: it stands where it stood and gains nothing. Treating that as
-    unknown put five of six accounts outside almost every square and handed
-    the calendar to the only one with daily readings.
+def _player_days(states, boundaries):
+    """One account's (score, gained, short) for each day, or None if unseen.
 
-    And a day is measured from the nearer of the two readings bracketing it,
-    which is what baseline_snapshot does everywhere else in this app. Measured
-    from the far side instead, an account first seen at 17:44 after seven
-    quiet weeks has all seven folded into that one day - 9.6m experience where
-    the round-up for the same date says 525,744. `short` says the day was only
-    watched from partway through, which is the same thing coverage_note tells
-    a reader on the other pages.
+    Two things this has to get right. A day with no reading is not a day with
+    no answer: Wise Old Man records a snapshot when an account's hiscores
+    move, so no reading means it did not play - it stands where it stood and
+    gains nothing. And a day is measured from the nearer of the two readings
+    bracketing it, the rule baseline_snapshot follows everywhere else.
+    Measured from the far side, an account first seen at 17:44 after seven
+    quiet weeks had all seven folded into that one day.
     """
     out = []
     index = 0
-    carried = None                       # (stamp, value) of the last reading
+    carried = None                       # (stamp, {skill: experience})
     for position in range(len(boundaries) - 1):
         opens, closes = boundaries[position], boundaries[position + 1]
         before = carried
         inside = None
-        while index < len(readings) and readings[index]["captured_at"] <= _stamp(closes):
-            row = readings[index]
-            if inside is None and row["captured_at"] > _stamp(opens):
-                inside = (row["captured_at"], row["value"])
-            carried = (row["captured_at"], row["value"])
+        while index < len(states) and states[index][0] <= _stamp(closes):
+            if inside is None and states[index][0] > _stamp(opens):
+                inside = states[index]
+            carried = states[index]
             index += 1
         if carried is None:
             out.append(None)             # never seen by the end of this day
@@ -113,15 +150,23 @@ def _player_days(readings, boundaries):
             continue
         # Short only when the day was measured from well into itself. Updates
         # land every six hours, so the nearer reading is often a little after
-        # midnight - which is the schedule working, not thin coverage. The
-        # tenth-of-the-window slop is the same coverage_note allows.
+        # midnight - the schedule working, not thin coverage.
         short = _gap(baseline[0], _stamp(opens)) > 86400 * 0.1
-        out.append((max(0.0, carried[1] - baseline[1]), short))
+        out.append((measure(baseline[1], carried[1]), short))
     return out
 
 
+def _stamp(when):
+    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _gap(a, b):
+    """Seconds between two ISO stamps, however far apart."""
+    return abs((parse_api_time(a) - parse_api_time(b)).total_seconds())
+
+
 def gains_by_day(database, players, start, end):
-    """{date: {"gains": {username: experience}, "measured": [], "short": []}}."""
+    """{date: {"scores": {username: measure}, "measured": [], "short": []}}."""
     boundaries = [day for day, _ in days_in(start, end)] + [end]
     # A reading before the window is what its first day is measured from.
     lookback = _stamp(start - timedelta(days=60))
@@ -130,31 +175,31 @@ def gains_by_day(database, players, start, end):
     out = {}
     for position in range(len(boundaries) - 1):
         out[boundaries[position].strftime("%Y-%m-%d")] = {
-            "gains": {}, "measured": [], "short": []}
+            "scores": {}, "measured": [], "short": []}
 
     for player in players:
-        readings = _overall_readings(database, player["id"], lookback, closes)
-        if not readings:
+        states = _skill_states(database, player["id"], lookback, closes)
+        if not states:
             continue
-        for position, found in enumerate(_player_days(readings, boundaries)):
+        for position, found in enumerate(_player_days(states, boundaries)):
             if found is None:
                 continue
-            gained, short = found
+            shown, short = found
             day = out[boundaries[position].strftime("%Y-%m-%d")]
             day["measured"].append(player["username"])
             if short:
                 day["short"].append(player["username"])
-            if gained:
-                day["gains"][player["username"]] = gained
+            if moved(shown):
+                day["scores"][player["username"]] = shown
     return out
 
 
 def _best(scores):
-    """The username with the most experience, or None if nobody gained any."""
+    """Whoever scores highest, or None if nobody moved at all."""
     if not scores:
         return None
-    winner = max(scores.items(), key=lambda pair: (pair[1], pair[0]))
-    return winner[0] if winner[1] > 0 else None
+    winner = max(scores.items(), key=lambda pair: (key(pair[1]), pair[0]))
+    return winner[0] if moved(winner[1]) else None
 
 
 def daily_winners(database, players, start, end, whole_group=False):
@@ -186,7 +231,7 @@ def daily_winners(database, players, start, end, whole_group=False):
             out[day] = entry
             continue
         named = written.get(day)
-        entry["winner"] = named if named in known else _best(found["gains"])
+        entry["winner"] = named if named in known else _best(found["scores"])
         entry["written"] = entry["winner"] is not None and named in known
         if entry["winner"] is None:
             entry["reason"] = "nobody gained anything"
@@ -194,30 +239,52 @@ def daily_winners(database, players, start, end, whole_group=False):
     return out
 
 
-def month_winner(database, players, start, end, whole_group=False):
-    """Who took a month, counting only the days the whole group was tracked.
+def placings(found, of):
+    """{username: points} for one day, by where each account placed.
 
-    Summed over every day instead, a month is won by whoever was watched
-    longest rather than whoever did most - the same default the daily rule
-    exists to refuse.
+    A win is worth as much as the field it was won against, so taking a day
+    five accounts played counts for more than taking one two did. Accounts
+    that gained nothing score nothing.
+    """
+    ranked = sorted(found["scores"].items(),
+                    key=lambda pair: (key(pair[1]), pair[0]), reverse=True)
+    return {username: of - place for place, (username, _) in enumerate(ranked)}
+
+
+def month_points(database, players, start, end):
+    """{username: average daily points} over the days the whole group was on.
+
+    A month is the average of its days rather than one measurement across the
+    whole of it. Measured end to end, a single ninety-nine on the 3rd takes
+    the month whatever anybody did on the other thirty; averaged, it is worth
+    one good day, which is what it was.
     """
     days = gains_by_day(database, players, start, end)
     of = len(players)
-    total = {}
+    points = {p["username"]: 0.0 for p in players}
     counted = 0
     for found in days.values():
         if len(found["measured"]) < of:
-            continue
+            continue          # the same rule the squares follow
         counted += 1
-        for username, gained in found["gains"].items():
-            total[username] = total.get(username, 0.0) + gained
+        for username, scored in placings(found, of).items():
+            points[username] += scored
     if not counted:
+        return {}
+    return {username: total / counted for username, total in points.items()}
+
+
+def month_winner(database, players, start, end, whole_group=False):
+    """Who took a month, on the average of the days that counted."""
+    points = month_points(database, players, start, end)
+    if not points:
         return None
     if whole_group:
         named = _written_winners(database, "month").get(start.strftime("%Y-%m-%d"))
         if named in {p["username"] for p in players}:
             return named
-    return _best(total)
+    best = max(points.items(), key=lambda pair: (pair[1], pair[0]))
+    return best[0] if best[1] > 0 else None
 
 
 def _written_winners(database, period):
@@ -225,3 +292,33 @@ def _written_winners(database, period):
     return {row["window_key"]: row["winner"]
             for row in database.group_summaries(period=period)
             if row["winner"]}
+
+
+def ranking(database, players, window):
+    """Every account over one window, best first by the rule.
+
+    A day is judged directly. Anything longer is judged on the average of its
+    days, which is how the calendar heads a month - so a monthly round-up and
+    the month above it cannot name different winners.
+    """
+    totals = []
+    for player in players:
+        states = _skill_states(database, player["id"],
+                               _stamp(window.start - timedelta(days=60)),
+                               _stamp(window.end))
+        found = _player_days(states, [window.start, window.end])[0] if states else None
+        shown = found[0] if found else {"nines": 0, "raw": 0.0, "capped": 0.0}
+        totals.append({"username": player["username"],
+                       "name": player["display_name"],
+                       "short": bool(found and found[1]), "points": None, **shown})
+
+    if window.period != "day":
+        points = month_points(database, players, window.start, window.end)
+        for row in totals:
+            row["points"] = points.get(row["username"], 0.0)
+        totals.sort(key=lambda row: (row["points"], key(row), row["username"]),
+                    reverse=True)
+        return totals
+
+    totals.sort(key=lambda row: (key(row), row["username"]), reverse=True)
+    return totals

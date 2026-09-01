@@ -97,6 +97,9 @@
   .standings tr.leader td.rank { color: var(--accent); }
   /* -- the winner calendar on Round-ups -------------------------------
      Two months of squares, each the colour of whoever took that day. */
+  /* Says there is more to read without shouting about it. */
+  .rules { cursor: help; border-bottom: 1px dotted var(--line);
+           display: inline-block; }
   .months { display: flex; gap: 28px; flex-wrap: wrap; margin: 12px 0 4px; }
   .month h4 { margin: 0 0 8px; font-size: 14px; }
   /* Inherits the heading's colour, which is the month winner's own: the name

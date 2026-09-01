@@ -193,6 +193,42 @@ def build_digest(database, config, player, window):
     return "\n".join(lines)
 
 
+def _ranking_lines(ranked):
+    """The order the group's own rule puts them in, for the digest.
+
+    Worked out here rather than left to the model, so the round-up and the
+    calendar square beside it cannot name different winners.
+    """
+    averaged = ranked and ranked[0]["points"] is not None
+    lines = ["Standings by the group's rule - a ninety-nine takes a day, then two",
+             "beat one; failing that, experience counted only up to level 99 in",
+             "each skill, since past that a skill stops levelling."]
+    if averaged:
+        lines.append("Over a period longer than a day the order is the average of")
+        lines.append("its days, so one big day does not decide the whole of it:")
+    else:
+        lines.append("")
+    for place, row in enumerate(ranked, start=1):
+        lines.append("  {}. {} - {}{} new 99s, {} xp toward 99s, {} xp in total{}".format(
+            place, row["name"],
+            "{:.2f} pts a day, ".format(row["points"]) if averaged else "",
+            row["nines"], fmt_int(row["capped"]), fmt_int(row["raw"]),
+            "  (only measured from partway into the period)" if row["short"] else ""))
+    # Decided the same way the calendar decides it, or a month with no day
+    # the whole group was tracked through would still be handed to somebody.
+    top = ranked[0] if ranked else None
+    if top is None:
+        winner = None
+    elif averaged:
+        winner = top["name"] if top["points"] else None
+    else:
+        winner = top["name"] if (top["nines"] or top["raw"]) else None
+    lines.append("")
+    lines.append("Winner: {}".format(winner or "nobody - the period was empty"))
+    lines.append("")
+    return lines
+
+
 def build_group_digest(database, config, players, window):
     """Every tracked player's figures for one window, side by side.
 
@@ -200,9 +236,12 @@ def build_group_digest(database, config, players, window):
     their prose: comparisons need the figures, and this way the round-up does
     not depend on the individual write-ups having been generated first.
     """
+    from . import winners
+
     since, until = window.start_iso(), window.end_iso()
     lines = ["Period: {} ({})".format(window.label, _period_noun(window.period)),
              "Players compared: {}".format(len(players)), ""]
+    lines.extend(_ranking_lines(winners.ranking(database, players, window)))
 
     for player in players:
         skills = database.metric_gains(player["id"], since, "skill", until=until)

@@ -8,10 +8,12 @@
 
 {% block content %}
   <div class="card">
-    <h3>Winner Calendar</h3>
-    <p class="hint">Last month and this one, each day in the colour of whoever
-      gained the most experience and each month in the colour of whoever took
-      it. Days before every account was being tracked are blank.
+    <h3>Maxing Leaderboard</h3>
+    {# The short version is on the page; the whole rule is a mouse away, so
+       the card stays readable to someone who already knows it. #}
+    <p class="hint rules" title="{{ calendar.rule }}">Last month and this one,
+      each day in the colour of whoever won it and each month in the colour of
+      whoever took it. Days before every account was being tracked are blank.
       {% if not calendar.whole_group %}Measured across the players ticked
       beside it.{% endif %}</p>
 

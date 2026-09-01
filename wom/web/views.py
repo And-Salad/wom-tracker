@@ -280,7 +280,29 @@ def winner_calendar(database, players, palette, when=None):
         })
     # No legend: the sidebar beside this lists every player against the same
     # swatch, and each square names its winner on hover.
-    return {"months": months, "whole_group": whole_group}
+    return {"months": months, "whole_group": whole_group, "rule": WINNER_RULE}
+
+
+WINNER_RULE = (
+    "A day goes to whoever reached a 99 in it; two 99s beat one. Where nobody "
+    "reached one, it goes on experience counted only up to level 99 in each "
+    "skill - past that a skill stops levelling, so an account with everything "
+    "maxed does not take a day off people still climbing. Where somebody did "
+    "reach a 99, accounts level on 99s are separated by their raw experience "
+    "instead.\n\n"
+    "A day is left blank until every included account was on file through it: "
+    "an account nobody was watching yet cannot lose a day. Days nobody gained "
+    "anything on are blank too.\n\n"
+    "A month goes to the best average across the days that counted, not to "
+    "one measurement across the whole of it: a single 99 on the 3rd would "
+    "otherwise take the month whatever anybody did on the other thirty. Each "
+    "day is worth points by placing, a win counting for as much as the field "
+    "it was won against.\n\n"
+    "Each day is measured between the two readings bracketing it, taking "
+    "whichever of them sits nearer the boundary - the same rule the written "
+    "round-ups use, so the two never disagree."
+)
+
 
 
 def _day_cell(day, won, by_name, palette, included):
