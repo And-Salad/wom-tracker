@@ -86,7 +86,11 @@
         {% if config.is_from_env('api_key') %}
           <input type="text" value="(from {{ env_keys['api_key'] }})" disabled>
         {% else %}
-          <input type="password" name="api_key" autocomplete="off"
+          {# new-password, not off: browsers ignore "off" on a password field
+             on purpose, so a manager filled the admin password in here and
+             the next save stored it as the Wise Old Man key. #}
+          <input type="password" name="api_key" autocomplete="new-password"
+                 data-1p-ignore data-lpignore="true" data-bwignore
                  placeholder="{{ 'unchanged' if config.get('api_key') else 'optional' }}">
         {% endif %}
       </label>
@@ -131,7 +135,8 @@
         {% if config.is_from_env('anthropic_api_key') %}
           <input type="text" value="(from {{ env_keys['anthropic_api_key'] }})" disabled>
         {% else %}
-          <input type="password" name="anthropic_api_key" autocomplete="off"
+          <input type="password" name="anthropic_api_key" autocomplete="new-password"
+                 data-1p-ignore data-lpignore="true" data-bwignore
                  placeholder="{{ 'unchanged' if config.get('anthropic_api_key') else 'not set' }}">
         {% endif %}
       </label>

@@ -172,8 +172,20 @@ def save_settings():
             config[key] = ""
             continue
         given = request.form.get(key, "").strip()
-        if given:
-            config[key] = given
+        if not given:
+            continue
+        # The one value that is certainly not an API key. Browsers ignore
+        # autocomplete="off" on a password field by design, so a password
+        # manager fills the admin password into these boxes, and the next
+        # save stored it as a key - which the Wise Old Man API then answers
+        # 403 to on every request, looking for all the world like the key was
+        # never cleared. The markup asks not to be filled; this is what
+        # happens when something does it anyway.
+        if hmac.compare_digest(given, admin_password()):
+            flash("That is this dashboard's own password, not an API key - "
+                  "your browser most likely filled it in. Nothing was stored.")
+            continue
+        config[key] = given
     config.save()
     flash("Settings saved. {} player{} tracked.".format(
         len(names), "" if len(names) == 1 else "s"))

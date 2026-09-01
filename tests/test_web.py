@@ -1182,3 +1182,41 @@ def test_the_effort_setting_is_on_the_page_and_is_checked(signed_in, app):
 
     signed_in.post("/admin/settings", data=dict(form, summary_effort="colossal"))
     assert Config().get("summary_effort") == "low", "an unknown effort falls back"
+
+
+def test_the_admin_password_is_never_stored_as_an_api_key(signed_in, app):
+    """Browsers ignore autocomplete="off" on a password field on purpose.
+
+    So a password manager fills the admin password into the API key boxes,
+    and saving stored it as the key - which Wise Old Man then answers 403 to
+    on every request. The page keeps looking like the key was never cleared,
+    because something keeps putting one back.
+    """
+    from wom.config import Config
+    seed(app)
+    form = {"usernames": "zezima", "summary_model": "claude-sonnet-5"}
+
+    page = signed_in.post("/admin/settings",
+                          data=dict(form, api_key="test-password"),
+                          follow_redirects=True)
+    assert Config().get("api_key") == "", "the autofilled password is refused"
+    assert "your browser most likely filled it in" in page.get_data(as_text=True)
+
+    # Refused means "nothing was stored", so whatever was there is untouched.
+    was = Config().get("anthropic_api_key")
+    signed_in.post("/admin/settings",
+                   data=dict(form, anthropic_api_key="test-password"))
+    assert Config().get("anthropic_api_key") == was
+
+    # A key that is not the password still stores, or this guard would be
+    # worse than the bug.
+    signed_in.post("/admin/settings", data=dict(form, api_key="a-real-looking-key"))
+    assert Config().get("api_key") == "a-real-looking-key"
+    signed_in.post("/admin/settings", data=dict(form, clear_api_key="on"))
+    assert Config().get("api_key") == ""
+
+
+def test_the_key_boxes_ask_not_to_be_autofilled(signed_in, app):
+    body = signed_in.get("/admin").get_data(as_text=True)
+    assert 'autocomplete="off"' not in body, "which browsers ignore on passwords"
+    assert body.count('autocomplete="new-password"') == 2
