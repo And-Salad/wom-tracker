@@ -81,15 +81,19 @@ def login():
     if request.method == "POST":
         address, source = client_address()
         sign_in = current_app.config["LIMITS"].sign_in
-        waiting = sign_in.check(address)
+        # take(), not check() then record(): six guesses is small enough that
+        # the gap between the two is a real fraction of it, and eight server
+        # threads posting at once could all pass a check only one should.
+        # Every attempt reserves a slot; a correct one hands it straight back.
+        waiting = sign_in.take(address)
         if waiting:
             error = "Too many attempts. Try again in {} seconds.".format(waiting)
         elif hmac.compare_digest(request.form.get("password", ""), admin_password()):
+            sign_in.refund(address)
             session["wom_admin"] = True
             session.permanent = True
             return redirect(request.args.get("next") or url_for("admin.settings"))
         else:
-            sign_in.record(address)
             # A wrong guess should cost real time even before the lockout.
             time.sleep(0.5)
             error = "That is not the password."
@@ -328,7 +332,11 @@ def prompts():
 def run(action):
     runner = current_app.config["JOBS"]
     database = current_app.config["DATABASE"]
-    scheduler = current_app.config.get("SCHEDULER")
+    # Not named `scheduler`: this module imports the scheduler *module* under
+    # that name, and shadowing it here made every reference in this function
+    # ambiguous to read - which is why _stamp() below used to re-import
+    # stamp_now rather than reach for the module it already had.
+    slots = current_app.config.get("SCHEDULER")
     config = Config()
 
     def exclusive(body):
@@ -339,15 +347,15 @@ def run(action):
         same rows. The scheduler's flag is the one both sides check.
         """
         def work(job):
-            if scheduler is not None and not scheduler.claim():
+            if slots is not None and not slots.claim():
                 job.finish("the scheduled update is running - try again shortly",
                            failed=True)
                 return
             try:
                 body(job)
             finally:
-                if scheduler is not None:
-                    scheduler.release()
+                if slots is not None:
+                    slots.release()
         return work
 
     if action == "update":
@@ -365,7 +373,7 @@ def run(action):
                            "{}/{}  {}".format(i, n, name)),
                        progress=lambda i, n, r: job.say(
                            "{}  {}".format(r.username, r.message), keep=True))
-            config["last_run"] = _stamp()
+            config["last_run"] = scheduler.stamp_now()
             config.save()
             job.finish("update finished")
         started = runner.start("update", exclusive(work))
@@ -409,8 +417,3 @@ def run(action):
 def status():
     from flask import jsonify
     return jsonify(current_app.config["JOBS"].status())
-
-
-def _stamp():
-    from ..scheduler import stamp_now
-    return stamp_now()

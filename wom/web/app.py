@@ -127,7 +127,11 @@ def _add_template_globals(app):
                 "admin_enabled": app.config["ADMIN"],
                 "signed_in": bool(session.get("wom_admin")),
                 # The header carries this on every page, admin included, so it
-                # is supplied here rather than by each view in turn.
+                # is supplied here once rather than by each view in turn. The
+                # public pages used to pass their own as a template argument
+                # too, which wins over a context processor - so this was
+                # computed, and its settings file re-read, only to be thrown
+                # away on every one of those renders.
                 "status": status(settings())}
 
 

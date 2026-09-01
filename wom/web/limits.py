@@ -77,24 +77,77 @@ class Budget:
         """Seconds to wait, or 0 if a call under this key may go ahead.
 
         Only a call that goes ahead is recorded, so a request refused by
-        another bucket does not eat this one's allowance.
+        another bucket does not eat this one's allowance. That split is why
+        this is not one atomic operation, and it costs a little precision:
+        two threads can both pass check() before either records, so the real
+        ceiling is the allowance plus however many requests are in flight.
+        Against a limit of hundreds and a server of eight threads that is
+        noise - but see take() for the one place it is not.
+        """
+        with self._lock:
+            return self._wait(key, time.monotonic())
+
+    def take(self, key):
+        """check() and record() as one step. Returns the seconds to wait, or 0.
+
+        The sign-in lockout uses this. Six guesses is a small enough number
+        that the slack in check-then-record is a real fraction of it: eight
+        server threads posting a password at once would all pass a check that
+        only one of them should, turning six guesses into thirteen.
+
+        A caller that decides afterwards the attempt should not have counted
+        gives it back with refund().
         """
         now = time.monotonic()
         with self._lock:
-            calls = [t for t in self._seen.get(key, ()) if now - t < self.window]
-            self._seen[key] = calls
-            if len(calls) >= self.allowance:
-                return max(1, int(self.window - (now - calls[0])))
-            return 0
+            waiting = self._wait(key, now)
+            if not waiting:
+                self._append(key, now)
+            return waiting
+
+    def refund(self, key):
+        """Give back the most recent take(), for an attempt that should be free.
+
+        A correct password costs nothing: without this, signing in six times
+        in five minutes would lock you out of your own admin page.
+        """
+        with self._lock:
+            calls = self._seen.get(key)
+            if calls:
+                calls.pop()
 
     def record(self, key):
-        now = time.monotonic()
         with self._lock:
-            calls = [t for t in self._seen.get(key, ()) if now - t < self.window]
-            calls.append(now)
-            self._seen[key] = calls
-            if len(self._seen) > 1024:
-                self._seen = {k: v for k, v in self._seen.items() if v}
+            self._append(key, time.monotonic())
+
+    # -- internals, all called with the lock held -------------------------
+
+    def _fresh(self, key, now):
+        calls = [t for t in self._seen.get(key, ()) if now - t < self.window]
+        self._seen[key] = calls
+        return calls
+
+    def _wait(self, key, now):
+        calls = self._fresh(key, now)
+        if len(calls) >= self.allowance:
+            return max(1, int(self.window - (now - calls[0])))
+        return 0
+
+    def _append(self, key, now):
+        self._fresh(key, now).append(now)
+        if len(self._seen) > 1024:
+            # Everything whose calls have all aged out of the window. This
+            # has to re-filter each key rather than drop the already-empty
+            # ones: a key is only pruned when it is looked at, so an address
+            # seen once and never again keeps a stale list forever - and a
+            # caller rotating addresses is exactly the traffic that gets
+            # this dict to 1024 in the first place.
+            live = {}
+            for other, calls in self._seen.items():
+                kept = [t for t in calls if now - t < self.window]
+                if kept:
+                    live[other] = kept
+            self._seen = live
 
 
 class Tripwire:
@@ -172,11 +225,22 @@ EXPORT_DAY_WINDOW = 24 * 3600
 
 # The chart and player endpoints. A heavy human session is a couple of hundred
 # calls in five minutes; one scripted client managed 8,400 in the same time.
-# The per-address ceiling sits well above the first and far below the second,
-# and the tripwire above anything a few people could produce between them.
+# The per-address ceiling sits well above the first and far below the second.
 API_PER_ADDRESS = 600
 API_ADDRESS_WINDOW = 300
-API_TRIP_TOTAL = 3000
+
+# The tripwire's total, which is a different kind of number. It latches until
+# a person clears it, so tripping it is an outage for everyone - and it counts
+# everybody together, which means enough ordinary visitors at once can trip it
+# with no abuse involved at all. At five times the per-address ceiling that
+# took six simultaneous heavy sessions, which is a plausible evening for a
+# group with a shared link rather than an attack.
+#
+# So it sits at twenty-five times one caller's allowance. That is still an
+# order of magnitude under what the scripted client managed on its own, which
+# is the case it exists for: one machine hammering the endpoints trips it long
+# before the total, through the per-address budget refusing it first.
+API_TRIP_TOTAL = 15000
 API_TRIP_WINDOW = 300
 
 # The admin login is on the public internet, so an unlimited guess rate is the
@@ -198,7 +262,8 @@ class ConfigLatch:
     def load(self):
         from ..config import Config
         settings = Config()
-        when = parse_api_time(settings.get("api_tripped_at", ""))             if settings.get("api_tripped_at") else None
+        stored = settings.get("api_tripped_at", "")
+        when = parse_api_time(stored) if stored else None
         if when is None:
             return None, None
         return when, settings.get("api_tripped_by") or "?"

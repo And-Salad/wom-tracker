@@ -1,5 +1,7 @@
 """Budgets, the tripwire, and knowing who is calling."""
 
+import time
+
 from wom.web.limits import (TRUSTED_HEADER_ENV, Budget, Tripwire,
                             client_address)
 
@@ -147,6 +149,30 @@ def test_data_endpoints_refuse_a_caller_past_the_ceiling(client, app, monkeypatc
                       headers={"Fly-Client-IP": "203.0.113.21"}).status_code == 200
 
 
+def test_one_caller_cannot_trip_the_wire_on_their_own(client, app, monkeypatch):
+    """Which is why the wire's total is set where it is.
+
+    A refused call is never counted by the tripwire, so a single address can
+    only ever contribute its own allowance to the total. One machine hammering
+    the endpoints is stopped by its per-address budget long before it gets
+    near - the wire is the backstop for many addresses at once, and the total
+    has to be high enough that a busy evening on a shared link is not one of
+    them, because latching takes the data offline for everyone until a person
+    clears it.
+    """
+    monkeypatch.setenv(TRUSTED_HEADER_ENV, "Fly-Client-IP")
+    limits = app.config["LIMITS"]
+    limits.api_per_address = Budget(allowance=3, window=60)
+    wire = Tripwire(allowance=5, window=60)
+    limits.api_tripwire = wire
+
+    headers = {"Fly-Client-IP": "203.0.113.40"}
+    for _ in range(20):
+        client.get("/api/chart/skill_gains", headers=headers)
+    assert not wire.tripped, "twenty tries from one address, three of them counted"
+    assert wire.seen_in_window == 3
+
+
 def test_a_tripped_wire_stops_data_but_not_the_site(client, app, monkeypatch):
     monkeypatch.setenv(TRUSTED_HEADER_ENV, "Fly-Client-IP")
     limits = app.config["LIMITS"]
@@ -184,3 +210,56 @@ def test_exports_are_budgeted_per_address_and_overall():
                   if limits.export_allowed("10.0.0.{}".format(n // 3), False)[0] == 0)
     assert granted == 5, "the overall cap is the backstop"
     assert limits.export_allowed("10.0.0.9", is_admin=True) == (0, None)
+
+
+def test_take_is_atomic_where_check_then_record_is_not():
+    """The sign-in path counts in ones, so the slack in check() matters.
+
+    check() deliberately does not spend, so that a request refused by a
+    second bucket keeps its allowance here. The cost is that concurrent
+    callers all pass a check only one of them should - fine against a limit
+    of hundreds, not against six.
+    """
+    budget = Budget(allowance=2, window=60)
+    assert [budget.check("a") for _ in range(5)] == [0] * 5, "check never spends"
+
+    fresh = Budget(allowance=2, window=60)
+    assert fresh.take("a") == 0
+    assert fresh.take("a") == 0
+    assert fresh.take("a") > 0, "the third is refused, however they interleave"
+
+
+def test_a_correct_password_does_not_spend_an_attempt():
+    """Otherwise signing in six times in five minutes locks you out."""
+    budget = Budget(allowance=2, window=60)
+    for _ in range(10):
+        assert budget.take("a") == 0, "a refunded attempt costs nothing"
+        budget.refund("a")
+    assert budget.take("a") == 0, "and the allowance is still whole"
+
+
+def test_signing_in_repeatedly_does_not_lock_you_out(client, app, monkeypatch):
+    monkeypatch.delenv(TRUSTED_HEADER_ENV, raising=False)
+    attempts = app.config["LIMITS"].sign_in_attempts
+    for _ in range(attempts + 3):
+        page = client.post("/admin/login", data={"password": "test-password"},
+                           follow_redirects=True)
+        assert "Too many attempts" not in page.get_data(as_text=True)
+        client.post("/admin/logout")
+
+
+def test_a_quiet_key_is_eventually_forgotten():
+    """A caller rotating addresses must not grow the dict without bound.
+
+    Pruning only the keys that happen to be looked at never reached the ones
+    seen once and abandoned, which is precisely the traffic that fills it.
+    """
+    budget = Budget(allowance=5, window=0.05)
+    for n in range(1030):
+        budget.record("addr-{}".format(n))
+    assert len(budget._seen) == 1030, "nothing has aged out yet, so nothing goes"
+
+    time.sleep(0.06)
+    budget.record("fresh")
+    assert "addr-0" not in budget._seen, "an address seen once and abandoned"
+    assert len(budget._seen) == 1, "only the live one is left"

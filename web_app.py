@@ -26,14 +26,22 @@ from wom.web import create_app
 log = logging.getLogger("wom.web")
 
 
-def local_addresses(port):
-    """Addresses worth printing so people know where to point a browser."""
+def local_addresses(port, host="127.0.0.1"):
+    """Addresses worth printing so people know where to point a browser.
+
+    Only ones that will actually answer: bound to loopback, the LAN addresses
+    of this machine are not listening, and printing them next to a line
+    saying "this machine only" was a contradiction someone had to resolve by
+    trying them.
+    """
     out = ["http://localhost:{}".format(port)]
+    if host in ("127.0.0.1", "localhost", "::1"):
+        return out
     try:
-        host = socket.gethostbyname_ex(socket.gethostname())[2]
+        found = socket.gethostbyname_ex(socket.gethostname())[2]
     except OSError:
-        host = []
-    return out + ["http://{}:{}".format(ip, port) for ip in host
+        found = []
+    return out + ["http://{}:{}".format(ip, port) for ip in found
                   if not ip.startswith("127.")]
 
 
@@ -117,7 +125,7 @@ def main(argv=None):
         start_scheduler(app)
 
     print("WOM Tracker - read-only dashboard")
-    for url in local_addresses(args.port):
+    for url in local_addresses(args.port, args.host):
         print("   ", url)
     if args.host == "127.0.0.1":
         print("    (this machine only; pass --host 0.0.0.0 to share on your network)")

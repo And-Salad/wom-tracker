@@ -7,19 +7,23 @@ from flask import Blueprint, abort, render_template, send_file, send_from_direct
 from ..icons import ASSET_DIR, icon_path
 from . import views
 from .data import catalog
-from .selection import database, page_context, status
+from .selection import database, page_context
 
 pages = Blueprint("pages", __name__)
 
 
 def _shell(scope):
-    """What every page hands the sidebar: who, and over what window."""
+    """What every page hands the sidebar: who, and over what window.
+
+    Not `status`: the header line is the same on every page including admin,
+    so the app factory's context processor supplies it. Passing it here as
+    well only overrode an identical value that had already been computed.
+    """
     return {"players": scope["players"],
             "selected": {p["username"] for p in scope["selected"]},
             "colors": scope["palette"],
             "span": scope["span"].as_dict(),
-            "period_labels": scope["period_labels"],
-            "status": status(scope["config"])}
+            "period_labels": scope["period_labels"]}
 
 
 @pages.route("/")
