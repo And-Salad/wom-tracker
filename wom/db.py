@@ -177,6 +177,35 @@ class Database:
                 conn.execute("DROP TABLE summaries")
             conn.executescript(SCHEMA)
 
+        self._drop_ungrouped_recaps(conn)
+
+    def _drop_ungrouped_recaps(self, conn):
+        """Remove group recaps for windows the leaderboard does not judge.
+
+        The group recap became the Maxing Leaderboard's feed, which colours
+        days and awards months and has no verdict for anything else. The
+        weekly, quarterly and yearly ones that had already been written were
+        describing windows nothing on the page could illustrate, so they go
+        rather than sitting in the tree as the only entries with no result
+        beside them.
+
+        Each player's own notes are untouched: those are about one account's
+        progress, and all five windows still say something there.
+        """
+        from .periods import GROUP_PERIODS
+
+        marks = ",".join("?" * len(GROUP_PERIODS))
+        stale = conn.execute(
+            "SELECT COUNT(*) AS n FROM group_summaries"
+            " WHERE period NOT IN ({})".format(marks), GROUP_PERIODS).fetchone()
+        if not (stale and stale["n"]):
+            return
+        with conn:
+            conn.execute("DELETE FROM group_summaries WHERE period NOT IN ({})"
+                         .format(marks), GROUP_PERIODS)
+        log.info("dropped %d group recaps outside %s", stale["n"],
+                 "/".join(GROUP_PERIODS))
+
     def _to_sparse_metrics(self, conn):
         """Rewrite a full-snapshot metrics table as changes only.
 

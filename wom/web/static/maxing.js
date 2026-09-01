@@ -50,6 +50,10 @@
     return tr;
   }
 
+  /* Skills and their experience, and nothing else. An account's written
+     recaps are read on the Recaps page, where every window it has is in one
+     tree; here they would push the day's figures - which are what the row
+     was opened for - below a fold of prose. */
   function render(host, data) {
     host.textContent = "";
     if (data.note) {

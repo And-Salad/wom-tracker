@@ -21,7 +21,7 @@ def seed(app):
 
 def test_public_pages_render(client, app):
     seed(app)
-    for path in ("/", "/milestones", "/summaries", "/players", "/export"):
+    for path in ("/", "/maxing", "/milestones", "/recaps", "/players", "/export"):
         assert client.get(path).status_code == 200, path
 
 
@@ -242,9 +242,9 @@ def test_the_newest_round_up_is_readable_without_clicking(client, app):
     database = seed(app)
     window = periods.latest_window("day")
     database.save_group_summary(window, "Everyone had a quiet day.", "hash")
-    body = client.get("/summaries").get_data(as_text=True)
+    body = client.get("/recaps").get_data(as_text=True)
     assert "Everyone had a quiet day." in body
-    assert "round-up" in body
+    assert "Daily" in body
 
 
 def test_standings_answer_who_won(client, app):
@@ -270,32 +270,72 @@ def test_the_player_ticks_filter_the_players_page(client, app):
     assert one.count('class="player-row"') == 1
 
 
-def test_round_ups_lead_with_one_of_each_length(client, app):
+def test_recaps_lead_with_the_day_and_the_month_and_nothing_else(client, app):
+    """The recap is the Maxing Leaderboard's feed, and the leaderboard
+    colours days and awards months. A weekly or yearly one described a window
+    with no result to put beside it."""
     from wom import periods
     database = seed(app)
     for key in periods.SUMMARY_PERIODS:
         database.save_group_summary(periods.latest_window(key),
-                                    "A {} round-up.".format(key), "hash")
-    body = client.get("/summaries").get_data(as_text=True)
-    for key in periods.SUMMARY_PERIODS:
-        assert "A {} round-up.".format(key) in body, key
+                                    "A {} recap.".format(key), "hash")
+    body = client.get("/recaps").get_data(as_text=True)
+    for key in periods.GROUP_PERIODS:
+        assert "A {} recap.".format(key) in body, key
+    for key in set(periods.SUMMARY_PERIODS) - set(periods.GROUP_PERIODS):
+        assert "A {} recap.".format(key) not in body, key
 
 
-def test_a_player_note_is_named_by_its_own_window(client, app):
-    """The page's period and the note's window are different spans."""
+def test_the_players_page_carries_figures_and_no_prose(client, app):
+    """Two pages showing the same note invited the reader to expect them to
+    say the same thing. This page answers what the figures are; how it has
+    been going is the Maxing page's question."""
     from wom import periods
     database = seed(app)
-    window = periods.latest_window("day")
-    database.save_summary(1, window, "A note about yesterday.", "hash")
+    database.save_summary(1, periods.latest_window("day"),
+                          "A note about yesterday.", "hash")
     body = client.get("/api/player/zezima?period=Day").get_json()
-    assert body["period"] == "Day", "the figures are the rolling last 24 hours"
-    assert body["note"]["label"] == window.label, "the note names its own window"
-    assert body["note"]["label"] != body["period"]
+    assert "note" not in body
+    assert body["groups"], "the figures are still all here"
 
 
-def test_a_player_with_no_note_for_that_period_says_nothing(client, app):
-    seed(app)
-    assert client.get("/api/player/zezima?period=Year").get_json()["note"] is None
+def test_an_accounts_recaps_are_all_five_windows_in_the_tree(client, app):
+    """All five, where the group recap has two: these are about one account's
+    progress, which a quarter still says something about."""
+    from wom import periods
+    from wom.web.views import recap_tree
+    database = seed(app)
+    for key in periods.SUMMARY_PERIODS:
+        database.save_summary(1, periods.latest_window(key),
+                              "A {} note.".format(key), "hash")
+    branches = {branch["username"]: branch
+                for branch in recap_tree(database, database.players(),
+                                         {"zezima": "#fff"})}
+    folders = {f["period"]: f for f in branches["zezima"]["folders"]}
+    assert set(folders) == set(periods.SUMMARY_PERIODS)
+    assert folders["quarter"]["entries"][0]["paragraphs"] == ["A quarter note."]
+
+
+def test_the_maxing_row_opens_onto_skills_and_nothing_else(client, app):
+    """The day's figures are what the row was opened for; a fold of prose
+    above them would bury it."""
+    from wom import periods
+    database = seed(app)
+    database.save_summary(1, periods.latest_window("day"), "A note.", "hash")
+    body = client.get("/api/maxing/player/zezima").get_json()
+    assert "recaps" not in body
+    assert "rows" in body and "total" in body
+
+
+def test_a_players_own_note_carries_no_leaderboard_verdict(app):
+    """It is not the calendar's feed, and "no verdict" beside one would
+    invent a question it was never answering."""
+    from wom import periods
+    from wom.web.views import player_recaps
+    database = seed(app)
+    database.save_summary(1, periods.latest_window("day"), "A note.", "hash")
+    entry = player_recaps(database, database.players()[0])[0]["entries"][0]
+    assert entry["judged"] is False
 
 
 # -- the table on the Data page -------------------------------------------
@@ -418,18 +458,19 @@ def test_the_data_page_offers_the_export_behind_a_button(client, app):
 
 # -- one sidebar, five tabs -----------------------------------------------
 
-def test_every_tab_but_round_ups_carries_the_same_window_controls(client, app):
+def test_every_tab_but_the_calendar_ones_carries_the_window_controls(client, app):
     seed(app)
     for path in ("/", "/milestones", "/players", "/export"):
         body = client.get(path).get_data(as_text=True)
         for control in ('id="period"', 'id="from"', 'id="to"', 'id="all-none"'):
             assert control in body, "{} is missing {}".format(path, control)
-    # Round-ups are written per calendar window, so a date range means nothing
-    # there - and a control that cannot work should not be shown.
-    round_ups = client.get("/summaries").get_data(as_text=True)
-    assert 'id="all-none"' in round_ups, "the ticks still apply"
-    assert 'id="from"' not in round_ups
-    assert 'id="period"' not in round_ups
+    # Recaps and the leaderboard run on calendar windows, so a date range
+    # means nothing on either - and a control that cannot work is not shown.
+    for path in ("/recaps", "/maxing"):
+        body = client.get(path).get_data(as_text=True)
+        assert 'id="all-none"' in body, "{}: the ticks still apply".format(path)
+        assert 'id="from"' not in body, path
+        assert 'id="period"' not in body, path
 
 
 def test_updated_is_when_they_last_moved_not_when_we_last_asked(client, app):
@@ -480,20 +521,16 @@ def test_all_time_is_not_mangled_into_a_period(client, app):
     assert body["span"]["label"] == "All time"
 
 
-def test_a_custom_range_names_no_note(client, app):
-    """A note is filed under a calendar window; a range names none, and one
-    from some other span must not be passed off as this one's."""
-    database = seed(app)
-    from wom import periods
-    window = periods.latest_window("week")
-    database.save_summary(1, window, "A week's work.", "hash")
-
+def test_a_custom_range_names_itself_on_the_player_endpoint(client, app):
+    """The figures are measured over whatever span was asked for, and the
+    answer says which - a range reporting a period's name would be claiming
+    to have measured something else."""
+    seed(app)
     weekly = client.get("/api/player/zezima?period=Week").get_json()
-    assert weekly["note"], "the weekly note is offered for the weekly window"
+    assert weekly["period"] == "Week"
 
     custom = client.get("/api/player/zezima?period=Custom&from=2026-08-01"
                         "&to=2026-08-20&tzoffset=0").get_json()
-    assert custom["note"] is None
     assert custom["period"] == "01 Aug 2026 to 20 Aug 2026"
 
 
@@ -526,7 +563,8 @@ def test_a_bad_date_is_refused_on_a_page_not_a_500(client, app):
     """The window is resolved before a page renders too, and a typo in the
     query string used to reach Flask as an unhandled exception."""
     seed(app)
-    for path in ("/", "/players", "/export", "/milestones", "/summaries"):
+    for path in ("/", "/players", "/export", "/milestones", "/recaps",
+                 "/maxing"):
         response = client.get(path + "?from=notadate")
         assert response.status_code == 400, path
         assert b"not a date" in response.data
@@ -562,11 +600,11 @@ def test_unticking_everyone_survives_a_change_of_tab(client, app):
     assert client.get("/api/players" + empty).get_json()["rows"] == []
 
 
-def test_round_ups_ticks_reload_the_page_rather_than_doing_nothing(client, app):
+def test_recaps_ticks_reload_the_page_rather_than_doing_nothing(client, app):
     """It has no JSON endpoint, so its ticks have to reload or they are inert."""
     seed(app)
-    body = client.get("/summaries").get_data(as_text=True)
-    assert 'data-reload="1"' in body
+    for path in ("/recaps", "/maxing"):
+        assert 'data-reload="1"' in client.get(path).get_data(as_text=True), path
     for path in ("/", "/players", "/export", "/milestones"):
         assert 'data-reload="0"' in client.get(path).get_data(as_text=True), path
 
@@ -1102,10 +1140,10 @@ def test_every_prompt_that_drives_a_round_up_can_be_edited(signed_in, app):
     Per-period files are the supported way to ask a yearly note for something
     a daily one should not say. The page offered the two base prompts and
     nothing else, so the prompts actually driving the quarterly and yearly
-    round-ups could not be read from it, let alone changed.
+    notes could not be read from it, let alone changed.
     """
     from wom import summaries as core
-    path = core.period_prompt_path("year", kind="group")
+    path = core.period_prompt_path("year", kind="player")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("Say something only a year would want said.\n")
@@ -1114,6 +1152,20 @@ def test_every_prompt_that_drives_a_round_up_can_be_edited(signed_in, app):
         assert "Say something only a year would want said." in body
     finally:
         os.remove(path)
+
+
+def test_a_group_prompt_is_offered_only_for_the_windows_it_writes(signed_in, app):
+    """The group recap covers the day and the month, so a group prompt for a
+    quarter would be a file nothing ever loads."""
+    from wom import summaries as core
+    body = signed_in.get("/admin/prompts").get_data(as_text=True)
+    assert 'value="group:month"' in body
+    assert 'value="group:quarter"' not in body
+    assert 'value="player:quarter"' in body, "a player's own notes still cover it"
+
+    signed_in.post("/admin/prompts", data={"seed": "1", "add": "group:year"})
+    assert not os.path.exists(core.period_prompt_path("year", kind="group")), (
+        "and asking for one anyway is refused")
 
 
 def test_saving_an_override_writes_that_period_not_the_base(signed_in, app):
@@ -1225,3 +1277,74 @@ def test_the_key_boxes_ask_not_to_be_autofilled(signed_in, app):
     body = signed_in.get("/admin").get_data(as_text=True)
     assert 'autocomplete="off"' not in body, "which browsers ignore on passwords"
     assert body.count('autocomplete="new-password"') == 2
+
+
+# -- the recap feed and its leaderboard verdict ---------------------------
+
+def test_a_recap_carries_what_the_leaderboard_decided(app, client):
+    """The recap is the calendar's feed, so each entry says what the calendar
+    said. The prose judges on its own reading and the squares judge on the
+    rule; where they differ, the squares are what the page was coloured by."""
+    from datetime import datetime, timezone
+
+    from wom import periods
+    from wom.web.views import recap_feed
+
+    database = _calendar_seed(app)
+    window = periods.latest_window("day", datetime(2026, 8, 31, 12,
+                                                   tzinfo=timezone.utc))
+    database.save_group_summary(window, "A day.", "hash", winner="zezima")
+
+    players = database.players()
+    palette = {p["username"]: "#123456" for p in players}
+    feed = {entry["period"]: entry for entry in recap_feed(database, players, palette)}
+    assert "day" in feed
+    assert feed["day"]["winner"], "the leaderboard's verdict rides along"
+    assert feed["day"]["color"] == "#123456"
+
+
+def test_a_month_short_of_a_fortnight_says_so_rather_than_leaving_a_blank(app):
+    from datetime import datetime, timezone
+
+    from wom import periods
+    from wom.web.views import recap_tree
+
+    database = _calendar_seed(app)
+    window = periods.latest_window("month", datetime(2026, 9, 15, 12,
+                                                     tzinfo=timezone.utc))
+    database.save_group_summary(window, "A month.", "hash")
+    players = database.players()
+    tree = recap_tree(database, players,
+                      {p["username"]: "#fff" for p in players})
+    group = [branch for branch in tree if branch["username"] == "__group__"][0]
+    folders = {f["period"]: f for f in group["folders"]}
+    entry = folders["month"]["entries"][0]
+    assert entry["unawarded"], "August was four days watched, not a month"
+    assert entry["winner"] is None
+
+
+def test_the_tree_holds_the_group_and_every_account(app, client):
+    """Two shapes under one tree: the group's two windows with the verdict
+    each was given, and every account's five without one."""
+    from wom import periods
+    database = seed(app)
+    # No apostrophes: Jinja escapes them, and a test that greps the rendered
+    # page has to grep what was rendered.
+    database.save_summary(1, periods.latest_window("quarter"),
+                          "A note from Zezima.", "hash")
+    database.save_group_summary(periods.latest_window("day"),
+                                "A recap for the group.", "hash")
+    body = client.get("/recaps").get_data(as_text=True)
+    assert "A recap for the group." in body
+    assert "A note from Zezima." in body, "an account's own notes are here too"
+    assert body.index("A recap for the group.") < body.index("A note from Zezima."), (
+        "the group leads, the accounts follow")
+
+
+def test_the_old_round_ups_link_still_arrives(client, app):
+    """Links outlive renames."""
+    seed(app)
+    moved = client.get("/summaries?player=zezima&picked=1")
+    assert moved.status_code == 301
+    assert "/recaps" in moved.headers["Location"]
+    assert "player=zezima" in moved.headers["Location"], "and keeps the ticks"

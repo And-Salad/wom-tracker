@@ -5,14 +5,19 @@ shape of a page was decided and the only place it could be checked. They are
 plain functions of (database, ...) so a test can call them without a request.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .. import periods, theme
 from ..util import fmt_ago, fmt_datetime, fmt_int, parse_api_time, pretty_metric
 
-# The written summaries come in three flavours, named the same way everywhere.
+# A player's own notes cover every window, named the same way everywhere.
 SUMMARY_FOLDERS = (("day", "Daily"), ("week", "Weekly"), ("month", "Monthly"),
                    ("quarter", "Quarterly"), ("year", "Yearly"))
+
+# The group recap covers the two the Maxing Leaderboard judges, in the order
+# the page reads them: the day just gone, then the month behind it.
+GROUP_FOLDERS = tuple((period, title) for period, title in SUMMARY_FOLDERS
+                      if period in periods.GROUP_PERIODS)
 
 METRIC_GROUPS = (("skill", "Skills"), ("boss", "Bosses"),
                  ("activity", "Activities"))
@@ -23,76 +28,159 @@ def paragraphs(text):
     return [block.strip() for block in (text or "").split("\n\n") if block.strip()]
 
 
-def _folder(period, title, rows):
+def group_verdicts(database, players, rows):
+    """{(period, window_key): what the Maxing Leaderboard said}, for every row.
+
+    The group recap is the leaderboard's feed, so every entry carries what the
+    calendar decided for the window it covers. That is not always what the
+    prose decided - the recap judges on its own reading and the squares judge
+    on the rule - and where they differ the difference is the interesting
+    part rather than something to paper over.
+
+    Every day in range is settled in one pass. Asked window by window this
+    walked a month of readings per row, which across a year of daily recaps
+    is the same work three hundred times over.
+    """
+    from .. import winners
+    from .today import is_whole_group
+
+    whole_group = is_whole_group(database, players)
+    days = [row["window_key"] for row in rows if row["period"] == "day"]
+    months = sorted({row["window_key"] for row in rows if row["period"] == "month"})
+    local = winners.zone()
+
+    found = {}
+    if days:
+        opens = datetime.strptime(min(days), "%Y-%m-%d").replace(tzinfo=local)
+        closes = (datetime.strptime(max(days), "%Y-%m-%d").replace(tzinfo=local)
+                  + timedelta(days=1))
+        for key, won in winners.daily_winners(database, players, opens, closes,
+                                              whole_group=whole_group).items():
+            found[("day", key)] = won["winner"]
+    for key in months:
+        start = datetime.strptime(key, "%Y-%m-%d").replace(tzinfo=local)
+        end = (start + timedelta(days=32)).replace(day=1)
+        found[("month", key)] = winners.month_winner(database, players, start,
+                                                     end, whole_group=whole_group)
+
+    out = {}
+    for row in rows:
+        at = (row["period"], row["window_key"])
+        out[at] = {
+            "username": found.get(at),
+            # A month with less than a fortnight of counted days is not
+            # awarded at all, and says so rather than leaving a blank where a
+            # name goes.
+            "unawarded": row["period"] == "month" and not found.get(at),
+        }
+    return out
+
+
+def _recap(row, verdict, palette, by_name):
+    """One stored group recap, with the leaderboard's verdict beside it."""
+    username = verdict["username"]
     return {
-        "period": period, "title": title, "count": len(rows),
-        "entries": [{"key": row["window_key"], "label": row["label"],
-                     "ago": fmt_ago(row["generated_at"]),
-                     "paragraphs": paragraphs(row["text"])}
-                    for row in rows],
+        "key": row["window_key"], "period": row["period"],
+        "label": row["label"], "ago": fmt_ago(row["generated_at"]),
+        "paragraphs": paragraphs(row["text"]),
+        "winner": by_name.get(username, username) if username else None,
+        "color": palette.get(username, theme.MUTED) if username else None,
+        "unawarded": verdict["unawarded"],
+        # Only the group's entries are the leaderboard's feed. A player's own
+        # note is not a verdict about anything, and labelling it "no verdict"
+        # would invent a question it was never answering.
+        "judged": True,
     }
+
+
+def recap_feed(database, players, palette):
+    """The newest day and the newest month, for the top of the page.
+
+    Two, not five. The recap is the Maxing Leaderboard's feed, and the
+    leaderboard colours days and awards months; a weekly or yearly one was
+    describing a window with no result to put beside it.
+    """
+    pairs = []
+    for period, title in GROUP_FOLDERS:
+        found = database.group_summaries(period=period, limit=1)
+        if found:
+            pairs.append((title, found[0]))
+    if not pairs:
+        return []
+    verdicts = group_verdicts(database, players, [row for _title, row in pairs])
+    by_name = {p["username"]: p["display_name"] for p in players}
+    return [dict(_recap(row, verdicts[(row["period"], row["window_key"])],
+                        palette, by_name), title=title)
+            for title, row in pairs]
 
 
 def _branch(name, username, color, folders):
     return {"player": name, "username": username, "color": color,
-            "total": sum(f["count"] for f in folders), "folders": folders}
+            "total": sum(folder["count"] for folder in folders),
+            "folders": folders}
 
 
-def summary_tree(database, selected, palette):
-    """The folder tree on /summaries: the group round-up, then each player.
+def recap_tree(database, players, palette):
+    """Everything written so far: the group first, then each account.
 
-    Both branches are the same shape, which is why they are built by the same
-    two helpers rather than by two near-identical blocks.
+    Two shapes under one tree, because they answer different questions about
+    the same days. The group's branch holds the two windows the leaderboard
+    judges, each entry carrying its verdict. Each account's branch holds all
+    five, with no verdict, because a quarter of one account's progress is not
+    something the calendar has an opinion about.
     """
     tree = []
-    group = [_folder(period, title, database.group_summaries(period=period))
-             for period, title in SUMMARY_FOLDERS
-             if database.group_summaries(period=period)]
-    if group:
-        tree.append(_branch("Group", "__group__", theme.ACCENT, group))
 
-    for player in selected:
-        folders = [_folder(period, title,
-                           database.summaries(player_id=player["id"], period=period))
-                   for period, title in SUMMARY_FOLDERS
-                   if database.summaries(player_id=player["id"], period=period)]
+    group_folders = []
+    everything = []
+    for period, title in GROUP_FOLDERS:
+        rows = database.group_summaries(period=period)
+        if rows:
+            group_folders.append((period, title, rows))
+            everything.extend(rows)
+    if group_folders:
+        verdicts = group_verdicts(database, players, everything)
+        by_name = {p["username"]: p["display_name"] for p in players}
+        tree.append(_branch("Group", "__group__", theme.ACCENT, [
+            {"period": period, "title": title, "count": len(rows),
+             "entries": [_recap(row,
+                                verdicts[(row["period"], row["window_key"])],
+                                palette, by_name)
+                         for row in rows]}
+            for period, title, rows in group_folders]))
+
+    for player in players:
+        folders = player_recaps(database, player)
         if folders:
             tree.append(_branch(player["display_name"], player["username"],
-                                palette[player["username"]], folders))
+                                palette.get(player["username"], theme.MUTED),
+                                folders))
     return tree
 
 
-def latest_round_ups(database):
-    """The newest round-up of each length, longest span last.
+def player_recaps(database, player):
+    """One account's own notes, newest first, in a folder per window length.
 
-    They read as five different things rather than five versions of one: the
-    daily and the weekly nearest it share only a few percent of their wording,
-    because each picks out what stands out at its own scale.
+    All five windows, where the group recap has two: these are about one
+    account's progress, which does not stop being worth writing because the
+    leaderboard has no verdict for a quarter.
     """
-    out = []
+    folders = []
     for period, title in SUMMARY_FOLDERS:
-        rows = database.group_summaries(period=period, limit=1)
+        rows = database.summaries(player_id=player["id"], period=period)
         if rows:
-            out.append({"period": period, "title": title,
-                        "label": rows[0]["label"],
-                        "ago": fmt_ago(rows[0]["generated_at"]),
-                        "paragraphs": paragraphs(rows[0]["text"])})
-    return out
-
-
-def player_note(database, player, period_key):
-    """This player's newest note for one length of window, if there is one.
-
-    The note is named by the window it covers, not by the period the page is
-    set to. Those are different spans - the page's "Day" is the last twenty
-    four hours, the note's is yesterday, midnight to midnight - and putting
-    prose beside numbers invites the reader to assume otherwise.
-    """
-    rows = database.summaries(player_id=player["id"], period=period_key, limit=1)
-    if not rows:
-        return None
-    return {"label": rows[0]["label"], "ago": fmt_ago(rows[0]["generated_at"]),
-            "paragraphs": paragraphs(rows[0]["text"])}
+            folders.append({
+                "period": period, "title": title, "count": len(rows),
+                "entries": [{"key": row["window_key"], "label": row["label"],
+                             "ago": fmt_ago(row["generated_at"]),
+                             "paragraphs": paragraphs(row["text"]),
+                             # Not a leaderboard result, so no verdict beside
+                             # it - see _recap.
+                             "judged": False, "winner": None,
+                             "color": None, "unawarded": False}
+                            for row in rows],
+            })
+    return folders
 
 
 def milestone_feed(database, selected, palette, since=None, until=None,
@@ -173,12 +261,11 @@ def player_detail(database, player, span):
         groups.append({"kind": kind, "title": title, "rows": rows,
                        "moved": sum(1 for r in rows if r["gained"])})
 
+    # No recap here. This page answers "what are the figures", and an account's
+    # written notes answer "how has it been going" - which is the Maxing page's
+    # question, where the same account's row opens onto them. Two pages both
+    # showing the note invited the reader to expect them to say the same thing.
     return {"player": player["display_name"], "period": span.label,
-            # A custom range names no calendar window, so there is no note
-            # filed under it - and none is offered rather than one from some
-            # other span being passed off as this one's.
-            "note": player_note(database, player, span.key) if span.key else None,
-            "writes_notes": span.key in periods.SUMMARY_PERIODS,
             "coverage": coverage_note(bounds[0], since), "groups": groups}
 
 

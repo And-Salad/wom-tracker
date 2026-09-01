@@ -97,7 +97,7 @@ line chart is a metric, a field to plot, and a tooltip caption.
 
 ### Chart resolution
 
-Updates land at least four times a day, and more whenever a plugin or a manual
+Updates land every ten minutes, and more whenever a plugin or a manual
 refresh fires — far more detail than a month-wide axis can draw. Line charts
 therefore plot **one point per day** on the month, quarter and year windows,
 taking each day's last reading; day and week keep every snapshot, because there
@@ -127,9 +127,9 @@ target also answers to `touchstart`/`touchmove`, the tooltip reads its position
 off `event.touches[0]` rather than the event, and a tap anywhere outside a
 chart dismisses it - a finger never fires `mouseleave`.
 
-### Telling the summaries about the gaps
+### Telling the recaps about the gaps
 
-The written summaries face the same problem the charts do, and worse: a month
+The written recaps face the same problem the charts do, and worse: a month
 with no readings in it produces zeros, and a model handed zeros will say the
 player did nothing. Every digest therefore opens with a `Data coverage` line -
 how many readings fall inside the window, what it was actually measured from
@@ -142,7 +142,7 @@ and to, and whether the baseline sits outside it. Three cases get spelled out:
   "did nothing".
 
 Both prompts (`data/summary_prompt.txt`, `data/group_prompt.txt`) carry matching
-instructions, including telling the round-up not to rank a player on a total
+instructions, including telling the recap not to rank a player on a total
 that covers a longer stretch than everyone else's. The coverage line is part of
 the digest, so it is part of the digest hash: adding it re-dated every stored
 summary, which is what forced the last regeneration.
@@ -156,11 +156,15 @@ rather than misleading.
 
 The digest gains a **nearest reading** line for a window it cannot measure:
 where that account stood at the closest date either side, explicitly labelled
-a landmark rather than a figure for the period. And `summary_prompt_year.txt`,
-`summary_prompt_quarter.txt` and their group counterparts - the per-period
-prompt files, which needed no new code - tell the model to use that landmark
-to place a player and never to interpolate between two dates and present the
-result as measured.
+a landmark rather than a figure for the period. And `summary_prompt_year.txt`
+and `summary_prompt_quarter.txt` - the per-period prompt files, which needed
+no new code - tell the model to use that landmark to place a player and never
+to interpolate between two dates and present the result as measured.
+
+Only the per-player ones now. The group recap became the Maxing Leaderboard's
+feed and covers the day and the month alone, so the group counterparts of
+these files were describing windows the calendar has no verdict for; the
+recaps written for them were dropped and the prompts are no longer offered.
 
 It works: the 2025 note for an account that was not being tracked then opens
 by saying it "wasn't tracked at all during 2025", quotes the landmark reading

@@ -183,11 +183,19 @@ def _quarter_before(start_of_quarter):
     return start_of_quarter.replace(year=year, month=month, day=1)
 
 
-# Written notes are produced for each of these, newest complete window first.
-# Quarter and year join the list before either has ever been due, so the first
-# of each is written from whatever history exists rather than from nothing -
-# see the per-period prompts in data/.
+# Each player's own notes are written for all of these, newest complete window
+# first. Quarter and year join the list before either has ever been due, so the
+# first of each is written from whatever history exists rather than from
+# nothing - see the per-period prompts in data/.
 SUMMARY_PERIODS = ("day", "week", "month", "quarter", "year")
+
+# The group recap is written for these only. It is the Maxing Leaderboard's
+# feed - the calendar colours days and awards months, and nothing else - so a
+# weekly, quarterly or yearly group recap was describing a window the
+# leaderboard has no verdict for. A player's own notes still cover all five:
+# those are about one account's progress, which does not stop being
+# interesting because the calendar has nothing to say about it.
+GROUP_PERIODS = ("day", "month")
 
 
 

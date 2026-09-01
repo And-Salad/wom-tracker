@@ -215,3 +215,43 @@ def test_the_old_shape_migrates_without_changing_a_single_answer(tmp_path):
                            ("2026-08-02T00:00:00.000Z", 5000)):
         state = {r["metric"]: r["value"] for r in database.state_at(1, when)}
         assert state == {"attack": expected, "zulrah": 7}
+
+
+def test_group_recaps_outside_the_new_schedule_are_dropped(tmp_path):
+    """The group recap became the leaderboard's feed, which judges days and
+    awards months. The weekly, quarterly and yearly ones already written
+    described windows nothing on the page could illustrate."""
+    from wom import periods
+    from wom.db import Database
+
+    path = str(tmp_path / "recaps.db")
+    database = Database(path)
+    for key in periods.SUMMARY_PERIODS:
+        database.save_group_summary(periods.latest_window(key),
+                                    "A {} recap.".format(key), "hash")
+    kept = {row["period"] for row in database.group_summaries()}
+    assert kept == set(periods.SUMMARY_PERIODS), "all five are there to start"
+
+    # Reopening runs the migration, as a deploy would.
+    again = Database(path)
+    assert {row["period"] for row in again.group_summaries()} == set(
+        periods.GROUP_PERIODS)
+
+
+def test_a_players_own_notes_survive_that_drop(tmp_path):
+    """They are about one account's progress, which a quarter still says
+    something about even where the leaderboard has no verdict."""
+    from wom import periods
+    from wom.db import Database
+
+    path = str(tmp_path / "notes.db")
+    database = Database(path)
+    database.save_player_details({"id": 1, "username": "zezima",
+                                  "displayName": "Zezima", "type": "regular"})
+    for key in periods.SUMMARY_PERIODS:
+        database.save_summary(1, periods.latest_window(key),
+                              "A {} note.".format(key), "hash")
+
+    again = Database(path)
+    assert {row["period"] for row in again.summaries(player_id=1)} == set(
+        periods.SUMMARY_PERIODS)

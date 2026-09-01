@@ -551,6 +551,11 @@ def _missing(database, period, window_key):
         (period, window_key))
     if not (players and players["n"]):
         return True
+    # Only the periods the group recap covers can be owed one. Asked about a
+    # week, this used to answer "missing" forever - there is no weekly group
+    # recap to find - so every run re-wrote every player's weekly note.
+    if period not in periods.GROUP_PERIODS:
+        return False
     return database.group_summary(period, window_key) is None
 
 
@@ -652,12 +657,15 @@ def summarise_all(database, config, players, period_keys=None, force=False,
             if progress:
                 progress(entry)
 
-    # One round-up per window, after the individual notes. It always compares
-    # the whole roster, never the caller's subset: there is a single stored
-    # round-up per window, so writing one from a partial selection would file
-    # a two-player comparison as the verdict for everyone.
+    # One recap per window, after the individual notes, and only for the
+    # windows the Maxing Leaderboard actually judges - it is the calendar's
+    # feed, and the calendar has no verdict for a week or a quarter.
+    #
+    # It always compares the whole roster, never the caller's subset: there is
+    # a single stored recap per window, so writing one from a partial
+    # selection would file a two-player comparison as the verdict for everyone.
     roster = database.players()
-    for key in keys:
+    for key in [k for k in keys if k in periods.GROUP_PERIODS]:
         window = periods.latest_window(key, now)
         entry = {"player": "Group", "period": window.label}
         try:

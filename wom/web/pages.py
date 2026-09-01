@@ -2,7 +2,8 @@
 
 import os
 
-from flask import Blueprint, abort, render_template, send_file, send_from_directory
+from flask import (Blueprint, abort, redirect, render_template, request,
+                   send_file, send_from_directory, url_for)
 
 from ..icons import ASSET_DIR, icon_path
 from . import today, views
@@ -54,14 +55,20 @@ def milestones():
         **_shell(scope))
 
 
-@pages.route("/summaries")
-def summaries_page():
+@pages.route("/recaps")
+def recaps_page():
     scope = page_context()
     return render_template(
-        "summaries.html",
-        latest=views.latest_round_ups(database()),
-        tree=views.summary_tree(database(), scope["selected"], scope["palette"]),
+        "recaps.html",
+        latest=views.recap_feed(database(), scope["selected"], scope["palette"]),
+        tree=views.recap_tree(database(), scope["selected"], scope["palette"]),
         **_shell(scope))
+
+
+@pages.route("/summaries")
+def summaries_redirect():
+    """The tab was called Round-ups and lived here. Links outlive renames."""
+    return redirect(url_for("pages.recaps_page", **request.args), code=301)
 
 
 @pages.route("/players")

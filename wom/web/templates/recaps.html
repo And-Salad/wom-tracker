@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% set page = 'recaps' %}
+{% set no_window = true %}
+{# No JSON behind this page, so the ticks reload it rather than doing nothing. #}
+{% set reloads = true %}
+{% set live_note = "Recaps are written per calendar window, so dates do not apply here. The page reloads when you change who is included." %}
+{% block title %}Recaps - WOM Tracker{% endblock %}
+
+{% macro verdict(entry) %}
+  {# What the Maxing Leaderboard decided for this window, beside what the
+     recap wrote about it. They almost always agree; where they do not, the
+     squares on the calendar were coloured by this one. Only the group's
+     recaps are its feed - a player's own note is answering a different
+     question, and "no verdict" beside one would invent a question it never
+     asked. #}
+  {% if not entry.judged %}
+  {% elif entry.unawarded %}
+    <span class="verdict none" title="A month is awarded only when at least a fortnight of its days counted">Not awarded</span>
+  {% elif entry.winner %}
+    <span class="verdict named" style="--dot: {{ entry.color }}"
+          title="The Maxing Leaderboard's verdict for {{ entry.label }}">
+      <span class="swatch" style="--dot: {{ entry.color }}"></span>{{ entry.winner }}
+    </span>
+  {% else %}
+    <span class="verdict none" title="No day in this window was measured against everyone">No verdict</span>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+  {% if not latest %}
+    <div class="card">
+      <h3>No recaps yet</h3>
+      <p class="hint">
+        Nothing has been written for the included players yet. The day just
+        gone is written by the first update after midnight, and the month
+        behind it on the 1st &mdash; or by
+        <code>py wom_tracker.py --summarize --due</code>.
+      </p>
+    </div>
+  {% endif %}
+
+  {# Open on arrival, because reading them is the point of the page, but a
+     recap runs to several paragraphs and folds away once it is read. #}
+  {% for round_up in latest %}
+    <details class="card latest" open>
+      <summary>
+        <h3>{{ round_up.title }} &middot; {{ round_up.label }}</h3>
+        {{ verdict(round_up) }}
+        <span class="ago">{{ round_up.ago }}</span>
+      </summary>
+      {% for paragraph in round_up.paragraphs %}
+        <p>{{ paragraph }}</p>
+      {% endfor %}
+    </details>
+  {% endfor %}
+
+  {% if tree %}
+    <p class="hint anchor-note" id="earlier">
+      Everything written so far. The group's covers the day and the month the
+      leaderboard judges; each account's own covers all five windows.
+    </p>
+
+    {% for branch in tree %}
+      <details class="card tree">
+        <summary class="node player named" style="--dot: {{ branch.color }}">
+          {{ branch.player }}
+          <span class="count">{{ branch.total }}</span>
+        </summary>
+        {% for folder in branch.folders %}
+          <details class="folder">
+            <summary class="node">
+              {{ folder.title }} <span class="count">{{ folder.count }}</span>
+            </summary>
+            {% for entry in folder.entries %}
+              <details class="leaf">
+                <summary class="node">
+                  {{ entry.label }}
+                  {{ verdict(entry) }}
+                  <span class="count">{{ entry.ago }}</span>
+                </summary>
+                <div class="body">
+                  {% for paragraph in entry.paragraphs %}
+                    <p>{{ paragraph }}</p>
+                  {% endfor %}
+                </div>
+              </details>
+            {% endfor %}
+          </details>
+        {% endfor %}
+      </details>
+    {% endfor %}
+  {% endif %}
+{% endblock %}

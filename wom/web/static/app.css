@@ -317,6 +317,21 @@
   }
 
   /* -- written notes -------------------------------------------------- */
+  /* The Maxing Leaderboard's answer for the window a recap covers, shown
+     beside the prose. The recap judges on its own reading and the calendar
+     judges on the rule; where they differ, the squares followed this. */
+  .verdict {
+    display: inline-flex; align-items: center; gap: 5px;
+    margin-left: var(--space-2); padding: 1px var(--space-2);
+    border: 1px solid var(--line); border-radius: 999px;
+    font-size: var(--text-xs); white-space: nowrap;
+  }
+  .verdict.named { color: var(--dot, var(--ink)); border-color: currentColor; }
+  .verdict.none { color: var(--muted); }
+  /* Folded away inside an opened row: the day's skills are what the row was
+     opened for, and a year of recaps above them would bury it. */
+  .recaps { margin-bottom: var(--space-3); }
+
   .player-note {
     border-left: 2px solid var(--line); padding: 2px 0 2px var(--space-3);
     margin: 0 0 14px; max-width: 70ch;

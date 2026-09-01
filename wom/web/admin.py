@@ -237,6 +237,17 @@ def resume():
 KINDS = (("player", "Per-player"), ("group", "Group round-up"))
 
 
+def _windows_for(kind):
+    """Which windows a prompt of this kind is ever asked for.
+
+    A player's notes cover all five; the group recap is the Maxing
+    Leaderboard's feed and covers the two the calendar judges. Offering a
+    group prompt for a quarter would create a file nothing ever loads.
+    """
+    return (periods.SUMMARY_PERIODS if kind == "player"
+            else periods.GROUP_PERIODS)
+
+
 def _prompt_rows(config):
     """Every prompt file there is to edit: the two bases, then any override.
 
@@ -251,7 +262,7 @@ def _prompt_rows(config):
         rows.append({"kind": kind, "period": "", "title": label + " prompt",
                      "text": core.load_prompt(config, None, kind=kind),
                      "override": False})
-        for key in periods.SUMMARY_PERIODS:
+        for key in _windows_for(kind):
             path = core.period_prompt_path(key, kind=kind)
             if not os.path.exists(path):
                 continue
@@ -270,7 +281,7 @@ def _seed_override(config, choice):
     the instructions that make the digest readable.
     """
     kind, _, period = choice.partition(":")
-    if kind not in ("player", "group") or period not in periods.SUMMARY_PERIODS:
+    if kind not in ("player", "group") or period not in _windows_for(kind):
         flash("That is not a prompt to add.")
         return redirect(url_for("admin.prompts"))
     path = core.period_prompt_path(period, kind=kind)
@@ -289,7 +300,7 @@ def _missing_overrides(config):
     """The (kind, period) pairs that have no file yet, for the add control."""
     out = []
     for kind, label in KINDS:
-        for key in periods.SUMMARY_PERIODS:
+        for key in _windows_for(kind):
             if not os.path.exists(core.period_prompt_path(key, kind=kind)):
                 out.append({"kind": kind, "period": key,
                             "label": "{} - {}".format(label, key)})
@@ -307,8 +318,8 @@ def prompts():
         period = (request.form.get("period") or "").strip()
         if kind not in ("player", "group"):
             flash("Unknown prompt.")
-        elif period and period not in periods.SUMMARY_PERIODS:
-            flash("There is no {} period.".format(period))
+        elif period and period not in _windows_for(kind):
+            flash("A {} prompt is never asked for a {}.".format(kind, period))
         else:
             # A period names its own file; no period means the base one. Both
             # go through period_prompt_path/base_prompt_path rather than

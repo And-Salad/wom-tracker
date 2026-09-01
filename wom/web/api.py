@@ -124,7 +124,13 @@ def player_rows():
 
 @api.route("/api/maxing/player/<username>")
 def maxing_player(username):
-    """One account's day so far, skill by skill, for an opened row."""
+    """One account's day so far, skill by skill, for an opened row.
+
+    The skills and nothing else. An account's written recaps are read on the
+    Recaps page, where every window it has is in one tree - here they would
+    push the day's figures, which are what the row was opened for, below a
+    fold of prose.
+    """
     refused = guard()
     if refused is not None:
         return refused
