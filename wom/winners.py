@@ -158,35 +158,61 @@ def _best(scores):
 
 
 def daily_winners(database, players, start, end, whole_group=False):
-    """{date: {"winner": username, "measured": n, "of": n}} for a range of days.
+    """{date: {"winner", "reason", "measured", "of", "written"}} for a range.
 
-    Where a daily round-up named a winner and every player is included, that
-    is the answer; otherwise the experience decides among whoever could be
-    measured.
+    A day is only answered once every included account was being tracked
+    through it. Before that the question has no honest answer: an account
+    Wise Old Man had not started watching cannot lose a day, so whoever was
+    being watched wins it by default - and for most of a history that has
+    grown lopsided, that is one account collecting a whole month it was
+    merely the only witness to.
+
+    A rule rather than a date, so it holds for any group and lets go of its
+    own accord as the history fills in. Days nobody gained anything on are
+    blank too: nothing happened, and a colour would say something did.
     """
     days = gains_by_day(database, players, start, end)
     known = {p["username"] for p in players}
     written = _written_winners(database, "day") if whole_group else {}
+    of = len(players)
     out = {}
     for day, found in days.items():
-        named = written.get(day)
-        winner = named if named in known else _best(found["gains"])
-        if winner is None:
+        measured = len(found["measured"])
+        entry = {"winner": None, "measured": measured, "of": of,
+                 "written": False, "reason": None}
+        if measured < of:
+            entry["reason"] = "{} of {} accounts were being tracked".format(
+                measured, of)
+            out[day] = entry
             continue
-        out[day] = {"winner": winner, "measured": len(found["measured"]),
-                    "of": len(players), "short": len(found["short"]),
-                    # The round-up saw every player's figures and their
-                    # coverage; a computed winner only saw who had readings.
-                    "written": named in known}
+        named = written.get(day)
+        entry["winner"] = named if named in known else _best(found["gains"])
+        entry["written"] = entry["winner"] is not None and named in known
+        if entry["winner"] is None:
+            entry["reason"] = "nobody gained anything"
+        out[day] = entry
     return out
 
 
 def month_winner(database, players, start, end, whole_group=False):
-    """Who took a whole month, by the same rule."""
+    """Who took a month, counting only the days the whole group was tracked.
+
+    Summed over every day instead, a month is won by whoever was watched
+    longest rather than whoever did most - the same default the daily rule
+    exists to refuse.
+    """
+    days = gains_by_day(database, players, start, end)
+    of = len(players)
     total = {}
-    for found in gains_by_day(database, players, start, end).values():
+    counted = 0
+    for found in days.values():
+        if len(found["measured"]) < of:
+            continue
+        counted += 1
         for username, gained in found["gains"].items():
             total[username] = total.get(username, 0.0) + gained
+    if not counted:
+        return None
     if whole_group:
         named = _written_winners(database, "month").get(start.strftime("%Y-%m-%d"))
         if named in {p["username"] for p in players}:

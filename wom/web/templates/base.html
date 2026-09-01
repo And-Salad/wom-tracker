@@ -113,14 +113,6 @@
     /* The number has to stay readable on six different player colours. */
     text-shadow: 0 1px 2px rgba(0,0,0,.65);
   }
-  /* Hatched: Wise Old Man had readings for only some of the accounts that
-     day, so the winner is the best of those it could see rather than the best
-     of the group. Without this the most closely watched account collects
-     every thinly covered day by default. */
-  .grid-days .day.partial {
-    background-image: repeating-linear-gradient(45deg,
-      rgba(0,0,0,.38) 0 3px, transparent 3px 6px);
-  }
   /* A day that has not happened is not a day nobody won. */
   .grid-days .day.ahead { background: none; border: 1px dashed var(--line);
                           color: var(--muted); text-shadow: none; }

@@ -624,3 +624,48 @@ def test_a_round_up_that_named_a_winner_stores_it_apart_from_its_prose(app):
         (None, "Quiet.")
     # An older round-up with no line keeps every word of its text.
     assert split_winner("Just prose.", players) == (None, "Just prose.")
+
+
+def test_a_day_is_blank_until_every_account_was_being_tracked(app):
+    """An account nobody was watching yet cannot lose a day, so whoever was
+    being watched would win it by default - a whole month of them."""
+    from wom import winners
+    from datetime import datetime, timezone
+    database = _calendar_seed(app)
+    players = database.players()
+    start, end = winners.month_range(
+        datetime(2026, 8, 15, tzinfo=timezone.utc), back=0)
+    won = winners.daily_winners(database, players, start, end)
+
+    # Zezima alone had readings on the 1st; Other was not on file until July,
+    # so both are tracked by August and the early days are answerable.
+    assert won["2026-08-28"]["winner"] == "zezima"
+
+    # Drop Other's history and the same days go blank rather than to Zezima.
+    database.connect().execute("DELETE FROM metrics WHERE player_id=2")
+    database.connect().execute("DELETE FROM snapshots WHERE player_id=2")
+    database.connect().commit()
+    thin = winners.daily_winners(database, players, start, end)
+    assert thin["2026-08-28"]["winner"] is None
+    assert thin["2026-08-28"]["reason"] == "1 of 2 accounts were being tracked"
+    # And no month is handed to the only witness either.
+    assert winners.month_winner(database, players, start, end) is None
+
+
+def test_a_day_nobody_played_is_blank_not_a_win(app):
+    """Nothing happened, and a colour would say something did."""
+    from wom import winners
+    from datetime import datetime, timezone
+    database = _calendar_seed(app)
+    # Both on file, both flat: a genuinely quiet day with nobody excluded.
+    for pid in (1, 2):
+        for day in ("2026-08-24", "2026-08-25"):
+            database.save_snapshot(pid, snapshot(day + "T02:00:00.000Z",
+                                                 skills={"overall": (400, 30)}))
+    players = database.players()
+    start, end = winners.month_range(
+        datetime(2026, 8, 15, tzinfo=timezone.utc), back=0)
+    quiet = winners.daily_winners(database, players, start, end)["2026-08-24"]
+    assert quiet["measured"] == 2, "both were being tracked"
+    assert quiet["winner"] is None
+    assert quiet["reason"] == "nobody gained anything"

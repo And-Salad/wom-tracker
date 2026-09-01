@@ -285,22 +285,17 @@ def winner_calendar(database, players, palette, when=None):
 
 
 def _day_cell(day, won, by_name, palette, included):
-    """One square: who took the day, and how much of the group it could see."""
+    """One square: who took the day, or why it is blank."""
     found = won.get(day.strftime("%Y-%m-%d"))
     ahead = day > datetime.now(day.tzinfo)
-    if found is None or ahead:
+    if ahead:
         return {"day": day.day, "date": day.strftime("%d %b %Y"),
-                "winner": None, "color": None, "ahead": ahead, "partial": False,
-                "note": "not yet" if ahead else "nobody gained anything"}
+                "winner": None, "color": None, "ahead": True, "note": "not yet"}
+    if found is None or found["winner"] is None:
+        return {"day": day.day, "date": day.strftime("%d %b %Y"),
+                "winner": None, "color": None, "ahead": False,
+                "note": (found or {}).get("reason") or "nothing recorded"}
     name = by_name.get(found["winner"], found["winner"])
-    # A day that could only see three accounts named a winner among three.
-    partial = found["measured"] < found["of"]
-    note = name
-    if found["written"]:
-        note += " - named by the round-up"
-    elif partial:
-        note += " - {} of {} accounts were being tracked".format(
-            found["measured"], found["of"])
     return {"day": day.day, "date": day.strftime("%d %b %Y"), "winner": name,
             "color": palette.get(found["winner"]), "ahead": False,
-            "partial": partial, "note": note}
+            "note": name + (" - named by the round-up" if found["written"] else "")}

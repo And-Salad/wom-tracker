@@ -14,8 +14,9 @@
       colour of whoever took the month.
       {% if not calendar.whole_group %}Measured across the players ticked
       beside it.{% endif %}
-      A hatched square is a day some of the accounts were not being tracked
-      yet, so its winner is the best of those there were.</p>
+      A day is only answered once every included account was being tracked
+      through it, so the early ones are blank: an account nobody was watching
+      yet cannot lose a day.</p>
 
     <div class="months">
       {% for month in calendar.months %}
@@ -29,7 +30,7 @@
             {% endfor %}
             {% for _ in range(month.lead) %}<span class="pad"></span>{% endfor %}
             {% for day in month.days %}
-              <span class="day{{ ' ahead' if day.ahead }}{{ ' partial' if day.partial }}"
+              <span class="day{{ ' ahead' if day.ahead }}"
                     {% if day.color %}style="background: {{ day.color }}"{% endif %}
                     title="{{ day.date }} - {{ day.note }}">{{ day.day }}</span>
             {% endfor %}
