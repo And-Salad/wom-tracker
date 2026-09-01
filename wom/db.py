@@ -149,12 +149,6 @@ class Database:
             if "backfilled_at" not in columns:
                 conn.execute("ALTER TABLE players ADD COLUMN backfilled_at TEXT")
 
-        # Summaries used to be one row per period, covering a rolling window
-        # with no start or end. There is no honest way to relabel those as
-        # calendar windows, and they are cheap to write again, so the old table
-        # is dropped rather than converted.
-        # The round-ups started naming a winner in a column rather than only
-        # in their prose, so the calendar on /summaries can colour by it.
         # A run used to record only how many players it managed. Whether it
         # looked at everyone was then answered against today's roster, so
         # adding a seventh account made every past run fall short and blanked
@@ -164,12 +158,18 @@ class Database:
             with conn:
                 conn.execute("ALTER TABLE runs ADD COLUMN roster INTEGER")
 
+        # The round-ups started naming a winner in a column rather than only
+        # in their prose, so the calendar on /summaries can colour by it.
         group_columns = {row["name"]
                          for row in conn.execute("PRAGMA table_info(group_summaries)")}
         if group_columns and "winner" not in group_columns:
             with conn:
                 conn.execute("ALTER TABLE group_summaries ADD COLUMN winner TEXT")
 
+        # Summaries used to be one row per period, covering a rolling window
+        # with no start or end. There is no honest way to relabel those as
+        # calendar windows, and they are cheap to write again, so the old
+        # table is dropped rather than converted.
         summary_columns = {row["name"]
                            for row in conn.execute("PRAGMA table_info(summaries)")}
         if summary_columns and "window_key" not in summary_columns:

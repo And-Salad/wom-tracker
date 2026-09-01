@@ -103,7 +103,16 @@ asleep through a Monday still writes that week when it wakes.
 
 Each stores a hash of its digest, so a player whose numbers have not moved is
 skipped rather than re-billed. A day costs well under a cent; a full set of
-windows across six players is a few cents.
+windows across six players is a few cents. The model and how hard it thinks
+are both set under Admin, and both move that figure.
+
+What each one is told is a prompt you can edit, under **Admin → Prompts**.
+Two base prompts cover every window - one for a player's own note, one for the
+group round-up - and any period may override its own, which is how a yearly
+retrospective can be asked for something a daily note should not say. The page
+lists every prompt file there is, creates an override seeded from the base, and
+removes one to fall back again. They live in `data/`, so they are yours and
+survive a redeploy; `backup.py` brings them down with the database.
 
 The **Maxing Leaderboard** on that page colours a calendar by who took each day:
 whoever reached a 99 takes it, two beat one, and failing that it goes on
@@ -133,12 +142,22 @@ inline script, plus `nosniff`, `DENY` framing, `no-referrer` and, over HTTPS,
 HSTS. Chart tooltips escape anything server-supplied, and CSV columns starting
 with a character a spreadsheet would run as a formula are prefixed.
 
-The session cookie is `Secure`, `HttpOnly` and `SameSite=Lax`. Sign-in failures
-are counted per address and lock that address out for five minutes after six of
-them. The data endpoints allow 600 calls per address per five minutes; a
-tripwire above that latches - writing the latch to the settings file, so a
-restart does not resume serving - until an admin clears it. Exports are five per
-address per six hours, and twenty a day across everyone.
+The session cookie is `Secure`, `HttpOnly` and `SameSite=Lax`. There are no CSRF
+tokens: every admin action is a form POST authenticated by that cookie, and
+`SameSite=Lax` is what stops another site posting one on a signed-in viewer's
+behalf. That is the whole defence, so it is set explicitly rather than left to
+the browser's default.
+
+Sign-in failures are counted per address and lock that address out for five
+minutes after six of them; a correct password costs nothing, so signing in
+often cannot lock you out of your own admin page. The data endpoints allow 600
+calls per address per five minutes. Above *that* sits a tripwire on the total
+across everyone, which does not slow anything down - it stops, and stays
+stopped, writing the latch to the settings file so a restart does not resume
+serving. It is deliberately far out of reach: a refused call is never counted,
+so one machine can only ever contribute its own 600, and tripping it needs
+dozens of addresses at once rather than a busy evening on a shared link.
+Exports are five per address per six hours, and twenty a day across everyone.
 
 ### Knowing who is calling
 
@@ -211,32 +230,46 @@ web_app.py           the server, and with --with-scheduler the schedule too
 wom_tracker.py       the same jobs once, by hand
 deploy.py            commit-checked deploy, then push
 backup.py            pull a verified copy of the hosted database
+backup_schedule.ps1  registers backup.py as a daily Windows task
+fetch_icons.py       download the skill and boss sprites into assets/
 wom/
   api.py             Wise Old Man client, rate limiting and retries
   config.py          settings file, with secrets overridable by environment
   db.py              SQLite schema and queries
   updater.py         one update pass over the username list
   scheduler.py       the ten-minute timer, the configured zone, the busy flag
-  periods.py         the day/week/month/quarter/year windows
+  periods.py         the day/week/month/quarter/year windows, and coverage slack
   summaries.py       the digest, the Claude call and the once-a-day hook
-  winners.py         who took each day and month, by the group's rule
+  winners.py         the Maxing Leaderboard rule: who took each day and month
   catalog.py         what the Overview charts show
-  colors.py          the palette and per-player colour overrides
+  context.py         one request's players, period and memoised gains
+  colors.py          per-player colour overrides
   theme.py           the palette, emitted as CSS variables
   icons.py           skill order, and where each sprite lives
+  logs.py            one log file per entry point
+  util.py            timestamp parsing and number formatting
   web/
     app.py           the application factory: config, hardening, blueprints
     pages.py         the HTML routes
     api.py           /api/chart and /api/player, and the guard in front
-    exporting.py     the export page, its CSV and JSON, and the date parsing
+    data.py          builds what each chart draws, one function per chart
+    exporting.py     the Data page at /export, its CSV and JSON
     admin.py         the password-gated half
     views.py         rows into view models, so routes stay thin
+    selection.py     which players and colours a request is about
     limits.py        budgets, the tripwire, and the caller's address
     timespan.py      the window every page is answering over
+    dates.py         parsing the sidebar's dates, and refusing bad ones
+    jobs.py          admin jobs on their own thread, with progress
     static/          app.css, D3, chartkit.js and a file per page
 tests/               pytest, against a throwaway data directory
+docs/notes.md        longer background on why parts are shaped as they are
 data/                settings, database, prompts and logs (created on first run)
 ```
+
+Two names worth knowing, because the code and the page disagree: the
+**Maxing Leaderboard** is `winners.py` and `winner_calendar` throughout the
+code, and the **Data** page is `/export`, `exporting.py` and `export.html`.
 
 ## Requirements
 

@@ -27,11 +27,10 @@ emits them as CSS custom properties; the page styles itself from those and
 tooltips, so a chart can never land on a background it does not match. There is no light
 mode or toggle - changing the constants in that module changes everything.
 
-The dashboard has five pages: **Overview** (standings and charts for the
-players you tick), **Milestones** (the achievements Wise Old Man has
-recorded), **Round-ups** (the written notes), **Players** (the latest stored
-figures) and **Data** (the export). A sixth, **Admin**, appears when a
-password is configured.
+Every constant in `theme.py` has to appear in `css_variables()`, because that
+dict is the only way any of them reaches the page. `--grid` was missing from
+it for a while, so chartkit.js quietly drew its gridlines from the hardcoded
+fallback beside the lookup and editing `GRID` did nothing at all.
 
 ### Player colours
 
