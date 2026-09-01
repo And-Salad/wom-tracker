@@ -824,3 +824,43 @@ def test_today_is_ordered_by_the_same_rule_as_the_squares(app):
     assert [row["name"] for row in rows] == ["Climber", "Maxed"]
     assert rows[0]["nines"] == 1
     assert rows[1]["moved"] is False, "all of it above 99 counts for nothing"
+
+
+def test_the_day_in_progress_leads_but_has_not_won(app):
+    """Leading at four in the afternoon is not a day won, and must not count
+    toward the month either."""
+    from wom import winners
+    from wom.web.views import winner_calendar
+    from datetime import datetime, timedelta
+    database = app.config["DATABASE"]
+    database.save_player_details({"id": 1, "username": "zezima",
+                                  "displayName": "Zezima", "type": "regular"})
+    today = winners.today_key()
+    yesterday = (datetime.strptime(today, "%Y-%m-%d")
+                 - timedelta(days=1)).strftime("%Y-%m-%d")
+    database.save_snapshot(1, snapshot(yesterday + "T05:00:00.000Z",
+                                       skills={"attack": (1000, 40)}))
+    # One reading just after the day opened and one late in it: a day with a
+    # single reading is measured from that reading and so gains nothing, which
+    # is the same rule every other page follows.
+    database.save_snapshot(1, snapshot(today + "T05:00:00.000Z",
+                                       skills={"attack": (1000, 40)}))
+    database.save_snapshot(1, snapshot(today + "T23:00:00.000Z",
+                                       skills={"attack": (500000, 60)}))
+    _polled(database, 1, [yesterday, today])
+
+    players = database.players()
+    start, end = winners.month_range(back=0)
+    found = winners.daily_winners(database, players, start, end)[today]
+    assert found["winner"] == "zezima", "somebody is ahead"
+    assert found["live"] is True
+
+    # Ahead, but it buys no month points and no tally mark.
+    assert winners.month_points(database, players, start, end).get("zezima", 0) == 0
+    palette = {"zezima": "#fff"}
+    calendar = winner_calendar(database, players, palette)
+    assert calendar["today"]["rows"][0]["won"] == 0
+    square = [d for m in calendar["months"] for d in m["days"]
+              if d["winner"] and d["live"]]
+    assert len(square) == 1, "one square is live, and it is coloured"
+    assert "the day is not over" in square[0]["note"]

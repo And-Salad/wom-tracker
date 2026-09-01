@@ -13,7 +13,8 @@
        the card stays readable to someone who already knows it. #}
     <p class="hint rules" title="{{ calendar.rule }}">Last month and this one,
       each day in the colour of whoever won it and each month in the colour of
-      whoever took it. Days before every account was being tracked are blank.
+      whoever took it. Today shows who is ahead, dashed until the day is over.
+      Days before every account was being tracked are blank.
       {% if not calendar.whole_group %}Measured across the players ticked
       beside it.{% endif %}</p>
 
@@ -30,7 +31,7 @@
             {% endfor %}
             {% for _ in range(month.lead) %}<span class="pad"></span>{% endfor %}
             {% for day in month.days %}
-              <span class="day{{ ' won' if day.color }}{{ ' ahead' if day.ahead }}"
+              <span class="day{{ ' won' if day.color }}{{ ' live' if day.live }}{{ ' ahead' if day.ahead }}"
                     {% if day.color %}style="background: {{ day.color }}"{% endif %}
                     title="{{ day.date }} - {{ day.note }}">{{ day.day }}</span>
             {% endfor %}
@@ -43,15 +44,21 @@
     <div class="standing">
       <h4>Today so far</h4>
       <table>
-        <tr><th>Player</th><th class="num">To 99</th>
-            <th class="num" title="Days won in {{ calendar.today.month }}">Won</th></tr>
+        <tr>
+          <th>Player</th>
+          <th class="num" title="Experience toward a 99 since midnight, which is what the day is judged on">XP Towards 99</th>
+          <th class="num" title="Ninety-nines reached today">99s Today</th>
+          <th class="num" title="Ninety-nines reached in {{ calendar.today.month }}">99s This Month</th>
+          <th class="num" title="Days won in {{ calendar.today.month }}. Today is not one until it is over">Won this Month</th>
+        </tr>
         {% for row in calendar.today.rows %}
           <tr class="{{ 'moved' if row.moved }}">
             <td class="name"><span class="swatch" style="background: {{ row.color }};
                   display:inline-block; margin-right:6px"></span>{{ row.name }}</td>
-            <td class="num">{{ row.capped if row.moved else '-' }}{% if row.nines %}
-              <span class="nines" title="{{ row.nines }} new 99 today">+{{ row.nines }}&#9733;</span>{% endif %}</td>
-            <td class="num dim">{{ row.won or '' }}</td>
+            <td class="num">{{ row.capped if row.moved else '-' }}</td>
+            <td class="num {{ '' if row.nines else 'dim' }}">{{ row.nines or '-' }}</td>
+            <td class="num {{ '' if row.month_nines else 'dim' }}">{{ row.month_nines or '-' }}</td>
+            <td class="num dim">{{ row.won or '-' }}</td>
           </tr>
         {% endfor %}
       </table>

@@ -107,13 +107,16 @@
   /* The finished days and the running one, side by side in one card. */
   .calendar { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; }
   .months { display: flex; gap: 28px; flex-wrap: wrap; margin: 12px 0 4px; }
-  .standing { margin: 12px 0 4px; min-width: 240px; flex: 1 1 240px; }
+  .standing { margin: 12px 0 4px; min-width: 300px; flex: 1 1 300px; }
+  /* Five columns in a side panel: the headings wrap rather than the table
+     pushing the months off their own card. */
+  .standing th { white-space: normal; line-height: 1.25; }
   .standing h4 { margin: 0 0 8px; font-size: 13px; color: var(--muted);
                  text-transform: uppercase; letter-spacing: .04em; }
   .standing table { font-size: 13px; }
   .standing td { padding: 4px 8px; }
   .standing tr:not(.moved) td { color: var(--muted); }
-  .standing .nines { color: var(--accent); margin-left: 4px; font-size: 11px; }
+  .standing td.num { font-variant-numeric: tabular-nums; }
   .month h4 { margin: 0 0 8px; font-size: 14px; }
   /* Inherits the heading's colour, which is the month winner's own: the name
      and the month are saying the same thing, so they say it in one colour.
@@ -137,6 +140,13 @@
      black is a colour someone picked - still reads as a filled square rather
      than as one nobody won. box-sizing keeps it the same size as the rest. */
   .grid-days .day.won { border: 1px solid rgba(255, 255, 255, .28); }
+  /* Today is coloured for whoever leads it but has not been won: the day is
+     hours from over and its last poll has not happened. Dashed and paler, so
+     it reads as a race in progress rather than a result. */
+  .grid-days .day.live {
+    border-style: dashed; border-color: rgba(255, 255, 255, .75);
+    opacity: .72;
+  }
   /* A day that has not happened is not a day nobody won. */
   .grid-days .day.ahead { background: none; border: 1px dashed var(--line);
                           color: var(--muted); text-shadow: none; }

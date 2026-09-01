@@ -298,10 +298,19 @@ def _today_rows(database, players, palette, when=None):
     won = winners.daily_winners(database, players, start, end)
     tally = {}
     for found in won.values():
-        if found["winner"]:
+        # Leading at four in the afternoon is not a day won.
+        if found["winner"] and not found["live"]:
             tally[found["winner"]] = tally.get(found["winner"], 0) + 1
 
     scores = days.get(winners.today_key(when), {}).get("scores", {})
+    # Ninety-nines are the month's headline, so they are counted across it as
+    # well as for today - including today, which counts for a milestone even
+    # though the day itself has not been won yet.
+    month_nines = {}
+    for found in days.values():
+        for username, shown in found["scores"].items():
+            month_nines[username] = month_nines.get(username, 0) + shown["nines"]
+
     nothing = {"nines": 0, "raw": 0.0, "capped": 0.0}
     rows = []
     for player in players:
@@ -310,6 +319,7 @@ def _today_rows(database, players, palette, when=None):
             "name": player["display_name"],
             "color": palette.get(player["username"], theme.MUTED),
             "nines": shown["nines"],
+            "month_nines": month_nines.get(player["username"], 0),
             "capped": fmt_int(round(shown["capped"])),
             "moved": winners.moved(shown),
             "won": tally.get(player["username"], 0),
@@ -335,6 +345,8 @@ WINNER_RULE = (
     "account that submits its own readings would take the day against five "
     "that were never looked at. Days nobody gained anything on are blank too."
     "\n\n"
+    "Today is coloured for whoever leads it, dashed, and counts for nothing "
+    "until it is over.\n\n"
     "A month goes to the best average across the days that counted, not to "
     "one measurement across the whole of it: a single 99 on the 3rd would "
     "otherwise take the month whatever anybody did on the other thirty. Each "
@@ -352,13 +364,19 @@ def _day_cell(day, won, by_name, palette, included):
     found = won.get(day.strftime("%Y-%m-%d"))
     ahead = day > datetime.now(day.tzinfo)
     if ahead:
-        return {"day": day.day, "date": day.strftime("%d %b %Y"),
-                "winner": None, "color": None, "ahead": True, "note": "not yet"}
+        return {"day": day.day, "date": day.strftime("%d %b %Y"), "winner": None,
+                "color": None, "ahead": True, "live": False, "note": "not yet"}
     if found is None or found["winner"] is None:
-        return {"day": day.day, "date": day.strftime("%d %b %Y"),
-                "winner": None, "color": None, "ahead": False,
+        return {"day": day.day, "date": day.strftime("%d %b %Y"), "winner": None,
+                "color": None, "ahead": False, "live": False,
                 "note": (found or {}).get("reason") or "nothing recorded"}
     name = by_name.get(found["winner"], found["winner"])
+    if found["live"]:
+        note = name + " - leading so far, the day is not over"
+    elif found["written"]:
+        note = name + " - named by the round-up"
+    else:
+        note = name
     return {"day": day.day, "date": day.strftime("%d %b %Y"), "winner": name,
             "color": palette.get(found["winner"]), "ahead": False,
-            "note": name + (" - named by the round-up" if found["written"] else "")}
+            "live": found["live"], "note": note}

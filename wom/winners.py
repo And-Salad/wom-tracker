@@ -247,7 +247,7 @@ def _best(scores):
     return winner[0] if moved(winner[1]) else None
 
 
-def daily_winners(database, players, start, end, whole_group=False):
+def daily_winners(database, players, start, end, whole_group=False, when=None):
     """{date: {"winner", "reason", "measured", "of", "written"}} for a range.
 
     A day is only answered once every included account was being tracked
@@ -266,17 +266,21 @@ def daily_winners(database, players, start, end, whole_group=False):
     known = {p["username"] for p in players}
     written = _written_winners(database, "day") if whole_group else {}
     of = len(players)
+    running = today_key(when)
     out = {}
     for day, found in days.items():
         measured = len(found["measured"])
+        # The day in progress shows who is ahead but has not been won: it is
+        # hours from over, and the last poll of it has not happened.
+        live = day == running
         entry = {"winner": None, "measured": measured, "of": of,
-                 "written": False, "reason": None}
+                 "written": False, "reason": None, "live": live}
         if measured < of:
             entry["reason"] = "{} of {} accounts were being tracked".format(
                 measured, of)
             out[day] = entry
             continue
-        if day not in polled:
+        if not live and day not in polled:
             entry["reason"] = "the tracker was not watching that day"
             out[day] = entry
             continue
@@ -312,11 +316,13 @@ def month_points(database, players, start, end):
     days = gains_by_day(database, players, start, end)
     polled = polled_days(database, players, start, end)
     of = len(players)
+    running = today_key()
     points = {p["username"]: 0.0 for p in players}
     counted = 0
     for day, found in days.items():
-        # The same two tests the squares pass.
-        if len(found["measured"]) < of or day not in polled:
+        # The same tests the squares pass, and never the day in progress: a
+        # month should not be decided partly on an afternoon.
+        if day == running or len(found["measured"]) < of or day not in polled:
             continue
         counted += 1
         for username, scored in placings(found, of).items():
