@@ -36,7 +36,7 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
     """
     usernames = list(usernames)
     total = len(usernames)
-    run_id = database.start_run(trigger)
+    run_id = database.start_run(trigger, roster=total)
     results = []
 
     for index, username in enumerate(usernames, start=1):

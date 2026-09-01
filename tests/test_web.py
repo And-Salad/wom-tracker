@@ -84,6 +84,23 @@ def test_the_admin_page_never_echoes_a_key(signed_in, app):
     assert "sk-ant-secret-value" not in signed_in.get("/admin").get_data(as_text=True)
 
 
+def test_a_stored_key_can_be_cleared_but_not_by_an_empty_box(signed_in, app):
+    """A password box shows nothing, so leaving it empty has to mean "keep
+    what is there" - which leaves the tick as the only way to say "drop it"."""
+    from wom.config import Config
+    seed(app)
+    settings = Config()
+    settings["api_key"] = "a-key-wise-old-man-refuses"
+    settings.save()
+
+    form = {"usernames": "zezima", "summary_model": "claude-sonnet-5"}
+    signed_in.post("/admin/settings", data=form)
+    assert Config().get("api_key") == "a-key-wise-old-man-refuses", "blank kept it"
+
+    signed_in.post("/admin/settings", data=dict(form, clear_api_key="on"))
+    assert Config().get("api_key") == "", "the tick cleared it"
+
+
 def test_admin_disappears_entirely_without_a_password(monkeypatch, tmp_path):
     """Fail closed: no password must mean no routes, not open ones."""
     from wom.db import Database
@@ -171,7 +188,7 @@ def test_a_spreadsheet_formula_in_a_name_is_defused(app):
 def test_every_described_chart_has_a_builder():
     """Describing a chart and forgetting to build it used to be silent."""
     from wom import catalog
-    import wom.web.data  # noqa: F401  - importing attaches the builders
+    import wom.web.data  # noqa: F401  - importing is what attaches them
 
     missing = [s.key for s in catalog.SUMMARY_CHARTS if s.build is None]
     assert missing == [], "described but never built: {}".format(missing)
@@ -381,6 +398,24 @@ def test_every_tab_but_round_ups_carries_the_same_window_controls(client, app):
     assert 'id="period"' not in round_ups
 
 
+def test_updated_is_when_they_last_moved_not_when_we_last_asked(client, app):
+    """We poll every ten minutes, so Wise Old Man's `updatedAt` says "now"
+    for an account nobody has logged into in a month."""
+    from wom.util import fmt_ago
+    database = seed(app)
+    database.save_player_details({
+        "id": 1, "username": "zezima", "displayName": "Zezima",
+        "type": "regular", "updatedAt": "2099-01-01T00:00:00.000Z"})
+    # Polled again a day later, with nothing to show for it: same numbers.
+    database.save_snapshot(1, snapshot("2026-09-01T12:00:00.000Z",
+                                       skills={"attack": (5000, 40)},
+                                       bosses={"zulrah": 50}))
+    assert database.last_change(1) == "2026-08-31T12:00:00.000Z",         "a reading that changed nothing is not a change"
+
+    body = client.get("/api/players").get_json()
+    assert body["rows"][0]["updated"] == fmt_ago("2026-08-31T12:00:00.000Z")
+
+
 def test_all_time_opens_at_the_first_reading_held(client, app):
     """Not an unbounded window: the gains baseline needs a real start."""
     seed(app)
@@ -388,6 +423,20 @@ def test_all_time_opens_at_the_first_reading_held(client, app):
     assert span["from"] == "2026-08-25", span
     assert span["choice"] == "All time"
     assert span["custom"] is False, "a named window is not a custom range"
+
+
+def test_today_opens_at_the_viewer_s_midnight_not_a_day_ago(client, app):
+    """"Day" is the last twenty-four hours and so reaches back into
+    yesterday; "Today" is the calendar day the viewer is standing in."""
+    from datetime import datetime, timedelta, timezone
+    seed(app)
+    # An offset far enough east that its "today" is not UTC's, so a window
+    # computed in UTC would fail this rather than passing by coincidence.
+    span = client.get("/api/table?period=Today&tzoffset=600").get_json()["span"]
+    theirs = (datetime.now(timezone.utc) + timedelta(minutes=600)).strftime("%Y-%m-%d")
+    assert span["from"] == theirs == span["to"], span
+    assert span["choice"] == "Today", "a preset, not a custom range"
+    assert span["custom"] is False
 
 
 def test_all_time_is_not_mangled_into_a_period(client, app):
@@ -564,7 +613,7 @@ def _calendar_seed(app, polled=True):
 def _polled(database, players, days):
     """Say the tracker looked at everyone on each of these days."""
     for day in days:
-        run = database.start_run("test")
+        run = database.start_run("test", roster=players)
         database.finish_run(run, ok_count=players, fail_count=0)
         database.connect().execute(
             "UPDATE runs SET started_at=? WHERE id=?",
@@ -630,6 +679,66 @@ def test_the_calendar_names_a_winner_for_the_month_too(app, client):
     body = client.get("/summaries").get_data(as_text=True)
     assert "Maxing Leaderboard" in body
     assert body.count('class="month"') == 2, "last month and this one"
+
+
+def test_adding_a_player_does_not_blank_the_days_before_they_arrived(app):
+    """A run is evidence about the day it ran. Judged against today's roster,
+    a seventh account would retire every day the other six were watched."""
+    from datetime import datetime, timezone
+
+    from wom import winners
+    database = _calendar_seed(app)
+    start, end = winners.month_range(
+        datetime(2026, 8, 15, tzinfo=timezone.utc), back=0)
+    before = winners.polled_days(database, database.players(), start, end)
+    assert before, "the fixture polls every day of August"
+
+    database.save_player_details({"id": 3, "username": "newcomer",
+                                  "displayName": "Newcomer", "type": "regular"})
+    after = winners.polled_days(database, database.players(), start, end)
+    assert after == before
+
+
+def test_a_month_watched_for_less_than_a_fortnight_is_not_awarded(app):
+    """Four days at the end of August is not a month anybody competed over,
+    and the winner it would name is really the winner of those four days."""
+    from datetime import datetime, timezone
+
+    from wom import periods, winners
+    database = _calendar_seed(app)
+    players = database.players()
+    start, end = winners.month_range(
+        datetime(2026, 8, 15, tzinfo=timezone.utc), back=0)
+
+    counted = winners.counted_days(database, players, start, end)
+    assert 0 < counted < winners.MIN_MONTH_DAYS
+    assert winners.month_winner(database, players, start, end) is None
+
+    # The daily squares are untouched: those days were watched and stand.
+    days = winners.daily_winners(database, players, start, end)
+    assert days["2026-08-30"]["winner"], "a day still has a winner"
+
+    # And the monthly round-up is told why, rather than quietly naming the
+    # account that happened to be ahead over four days.
+    window = periods.latest_window("month", datetime(2026, 9, 2, 12,
+                                                     tzinfo=timezone.utc))
+    ranked = winners.ranking(database, players, window)
+    assert all(row["voided"] for row in ranked)
+    from wom.summaries import _ranking_lines
+    digest = "\n".join(_ranking_lines(ranked))
+    assert "not awarded" in digest and "Winner: nobody" in digest
+
+
+def test_a_week_is_not_held_to_the_month_s_fortnight(app):
+    """A week has seven days in it; asking fourteen would void every one."""
+    from datetime import datetime, timezone
+
+    from wom import periods, winners
+    database = _calendar_seed(app)
+    window = periods.latest_window("week", datetime(2026, 9, 2, 12,
+                                                    tzinfo=timezone.utc))
+    ranked = winners.ranking(database, database.players(), window)
+    assert not any(row["voided"] for row in ranked)
 
 
 def test_a_round_up_that_named_a_winner_stores_it_apart_from_its_prose(app):
@@ -873,7 +982,7 @@ def test_wins_are_split_by_how_the_day_was_taken(app):
     experience - so the tallies are kept apart."""
     from wom import winners
     from wom.web.views import winner_calendar
-    from datetime import datetime, timedelta
+    from datetime import datetime
     database = app.config["DATABASE"]
     for pid, name in ((1, "Climber"), (2, "Grinder")):
         database.save_player_details({"id": pid, "username": name.lower(),

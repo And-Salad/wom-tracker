@@ -125,9 +125,7 @@
     var name = el("td", "name");
     name.appendChild(el("span", "twist"));
     var dot = el("span", "swatch");
-    dot.style.background = row.color;
-    dot.style.display = "inline-block";
-    dot.style.marginRight = "6px";
+    dot.style.setProperty("--dot", row.color);
     name.appendChild(dot);
     name.appendChild(document.createTextNode(row.name));
     tr.appendChild(name);

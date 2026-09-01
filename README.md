@@ -1,11 +1,28 @@
 # WOM Tracker
 
 A web app that keeps a list of Old School RuneScape accounts updated from Wise
-Old Man every six hours, charts what changed, and writes short summaries of
-each period with the Claude API. One process serves the pages and runs the
-schedule; the charts are drawn in the browser with D3.
+Old Man every ten minutes, charts what changed, and writes short round-ups of
+each day, week, month, quarter and year with the Claude API. One process serves
+the pages and runs the schedule; the charts are drawn in the browser with D3.
 
-Built against the [Wise Old Man v2 API](https://docs.wiseoldman.net/api).
+Built against the [Wise Old Man v2 API](https://docs.wiseoldman.net/api). MIT
+licensed - see [LICENSE](LICENSE).
+
+**Before you run this yourself**, two things are worth knowing, because neither
+is configurable yet:
+
+- **The clock is US Eastern.** Days, the calendar, and every round-up window
+  run midnight to midnight Eastern, following its daylight saving rather than
+  yours. It is one constant in `wom/scheduler.py`, threaded through
+  `wom/periods.py` and `wom/winners.py` - straightforward to change, not yet
+  changed.
+- **Round-ups are Anthropic-only.** They are opt-in and off by default, and
+  everything else works without them: the charts, the tables, the export and
+  the leaderboard are all computed from the stored readings. Turning them on
+  needs a Claude API key. Any OpenAI-compatible provider would fit behind
+  `generate()` in `wom/summaries.py`; nothing does yet.
+
+Both are honest limits rather than plans.
 
 ## Running it
 
@@ -13,8 +30,8 @@ Built against the [Wise Old Man v2 API](https://docs.wiseoldman.net/api).
 py web_app.py --with-scheduler
 ```
 
-That serves the dashboard on <http://localhost:8000> and runs the six-hourly
-updates and the summaries from the same process. Without `--with-scheduler` it
+That serves the dashboard on <http://localhost:8000> and runs the ten-minute
+updates and the round-ups from the same process. Without `--with-scheduler` it
 only serves what is already stored, which is what you want if something else is
 doing the updating.
 
@@ -57,7 +74,7 @@ The server does the first two on its own; these are the same jobs by hand.
 Against a hosted deployment, run them where the database is:
 
 ```bash
-fly ssh console -a wom-tracker -C "python /app/wom_tracker.py --compact"
+fly ssh console -C "python /app/wom_tracker.py --compact"
 ```
 
 ## Written summaries
@@ -257,16 +274,58 @@ registered otherwise. The session cookie is `Secure`, `HttpOnly` and
 out for five minutes after six of them. Set `WOM_SECRET_KEY` too, or sessions
 end whenever the process restarts.
 
-An admin job and the six-hourly schedule cannot overlap: both take the same
-flag on the scheduler, so pressing **Update now** a minute before the slot
-gets "the scheduled update is running" rather than a second pass over every
-player - which for summaries would be a second set of paid API calls.
+### Knowing who is calling
+
+Three things count per visitor - the sign-in lockout, the export budget and
+the tripwire - so all three depend on telling visitors apart. Behind a proxy
+`remote_addr` is the proxy, which pools everyone into one bucket; but a
+proxy header is only worth believing if something in front of you overwrites
+whatever the caller sent. Trust one unconditionally and it becomes a dial the
+caller controls: rotate the header and every request counts as a new person,
+which buys unlimited password guesses.
+
+So no header is trusted unless you name it:
+
+```bash
+WOM_TRUSTED_IP_HEADER=Fly-Client-IP   # Fly.io, which overwrites it
+WOM_TRUSTED_IP_HEADER=CF-Connecting-IP   # Cloudflare
+WOM_TRUSTED_IP_HEADER=X-Forwarded-For    # nginx, Caddy - see below
+```
+
+Leave it unset when nothing is in front of the app; `remote_addr` is then the
+honest answer. `X-Forwarded-For` is the weakest of these to trust: it is a
+list the client can prepend to, and the leftmost entry - the one read here -
+is the one the client controls unless your proxy rewrites the header rather
+than appending to it.
+
+An admin job and the update schedule cannot overlap: both take the same flag
+on the scheduler, so pressing **Update now** a minute before a slot gets "the
+scheduled update is running" rather than a second pass over every player -
+which for summaries would be a second set of paid API calls.
+
+### Environment variables
+
+Everything here is optional except the admin password, without which there is
+no admin.
+
+| Variable | What it does |
+| --- | --- |
+| `WOM_ADMIN_PASSWORD` | Enables the admin pages. Unset, they are not registered at all. |
+| `WOM_SECRET_KEY` | Signs the admin session cookie. Unset, a fresh key is minted per process and every restart signs you out. |
+| `WOM_DATA_DIR` | Where the database, settings and prompts live. Defaults to `data/` beside the code. |
+| `WOM_TRUSTED_IP_HEADER` | The proxy header carrying the real client address. See above. |
+| `ANTHROPIC_API_KEY` | The round-ups' key. Supplied here it cannot be read or changed from the admin page, which is the point. |
+| `WOM_API_KEY` | Optional Wise Old Man key. Without one the API allows 20 requests a minute, which is ample: six players is twelve requests every ten minutes. |
+| `WOM_INSECURE_COOKIE` | Drops `Secure` from the session cookie, for reaching the admin pages over plain HTTP on a LAN. Not for anything public. |
+| `TZ` | Only affects what the logs print. The schedule is anchored to US Eastern regardless. |
 
 ## Schedule
 
-Updates run every six hours, at **12am, 6am, 12pm and 6pm US Eastern**, and
-follow Eastern daylight saving rather than your own clock. The times are fixed
-in `SLOT_HOURS` in `wom/scheduler.py` and are not configurable from the UI.
+Updates run **every ten minutes**, on the wall-clock boundary, and everything
+dated follows US Eastern midnight rather than your own clock. The interval is
+`SLOT_MINUTES` in `wom/scheduler.py` and is not configurable from the UI.
+Milestones are fetched on the hour rather than every pass: they move rarely and
+cost a request per player.
 
 A slot that passed while the machine was off is caught up as soon as the app
 starts, so a gap never silently swallows an update. The toolbar shows when the
@@ -433,9 +492,10 @@ prompt files, which needed no new code - tell the model to use that landmark
 to place a player and never to interpolate between two dates and present the
 result as measured.
 
-It works: the 2025 note for an untracked account opens "runninr wasn't tracked
-at all during 2025", quotes the July 2026 landmark, and says in as many words
-that it "is just a reference point, not a measure of what happened in 2025".
+It works: the 2025 note for an account that was not being tracked then opens
+by saying it "wasn't tracked at all during 2025", quotes the landmark reading
+it does have, and says in as many words that this "is just a reference point,
+not a measure of what happened in 2025".
 
 ### Missing history
 

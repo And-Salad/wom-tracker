@@ -202,11 +202,20 @@ def _ranking_lines(ranked):
     Worked out here rather than left to the model, so the round-up and the
     calendar square beside it cannot name different winners.
     """
+    from . import winners
+
     averaged = ranked and ranked[0]["points"] is not None
+    voided = bool(ranked and ranked[0].get("voided"))
     lines = ["Standings by the group's rule - a ninety-nine takes a day, then two",
              "beat one; failing that, experience counted only up to level 99 in",
              "each skill, since past that a skill stops levelling."]
-    if averaged:
+    if voided:
+        lines.append("This month is not awarded: only {} of its days were watched"
+                     .format(ranked[0].get("days")))
+        lines.append("with everyone on file, and a month needs {}. Say so plainly -"
+                     .format(winners.MIN_MONTH_DAYS))
+        lines.append("the order below is who did the most work, not who won:")
+    elif averaged:
         lines.append("Over a period longer than a day the order is the average of")
         lines.append("its days, so one big day does not decide the whole of it:")
     else:
@@ -220,14 +229,16 @@ def _ranking_lines(ranked):
     # Decided the same way the calendar decides it, or a month with no day
     # the whole group was tracked through would still be handed to somebody.
     top = ranked[0] if ranked else None
-    if top is None:
+    if top is None or voided:
         winner = None
     elif averaged:
         winner = top["name"] if top["points"] else None
     else:
         winner = top["name"] if (top["nines"] or top["raw"]) else None
     lines.append("")
-    lines.append("Winner: {}".format(winner or "nobody - the period was empty"))
+    empty = ("nobody - too little of the month was watched for it to count"
+             if voided else "nobody - the period was empty")
+    lines.append("Winner: {}".format(winner or empty))
     lines.append("")
     return lines
 

@@ -26,7 +26,7 @@
               </td>
               <td>{{ row.when }}</td>
               <td class="dim">{{ row.ago }}</td>
-              <td style="color: {{ row.color }}">{{ row.player }}</td>
+              <td class="named" style="--dot: {{ row.color }}">{{ row.player }}</td>
               <td>{{ row.name }}</td>
             </tr>
           {% else %}
@@ -39,5 +39,5 @@
 {% endblock %}
 
 {% block scripts %}
-  <script src="/static/milestones.js"></script>
+  <script src="/static/milestones.js?v={{ assets }}"></script>
 {% endblock %}

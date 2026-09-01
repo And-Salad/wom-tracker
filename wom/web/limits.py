@@ -10,36 +10,53 @@ person can produce.
 """
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
 
 from flask import request
 
+from ..util import parse_api_time
+
 log = logging.getLogger(__name__)
 
-# Set by the proxy in front of us and not passed through from the client, so
-# these can be believed where a bare X-Forwarded-For cannot.
-CLIENT_IP_HEADERS = ("Fly-Client-IP", "CF-Connecting-IP", "True-Client-IP")
+# Which header, if any, carries the real client address. Empty by default,
+# and that default is the safe one: a header is only worth believing when
+# something in front of us overwrites whatever the client sent. Trusting one
+# unconditionally hands every limit here a dial the caller controls - rotate
+# the header and the sign-in lockout, the export budget and the tripwire all
+# count every request as a different person.
+#
+# Set it to whatever your proxy sets and nothing else:
+#
+#   Fly-Client-IP      Fly.io          CF-Connecting-IP   Cloudflare
+#   True-Client-IP     Akamai, others  X-Forwarded-For    nginx, Caddy, ALBs
+#
+# X-Forwarded-For is a list the client can prepend to; only its rightmost
+# entries come from proxies you control, so the leftmost value is read here
+# and it is the weakest of these to trust.
+TRUSTED_HEADER_ENV = "WOM_TRUSTED_IP_HEADER"
+
+
+def trusted_header():
+    return (os.environ.get(TRUSTED_HEADER_ENV) or "").strip()
 
 
 def client_address():
     """The caller's address as well as we can know it, and where it came from.
 
-    Behind a proxy `remote_addr` is the proxy, which would put every visitor in
-    one bucket: six bad sign-ins from anyone would lock out everyone. Returns
-    (address, source) so a log line can say which header answered.
+    Behind a proxy `remote_addr` is the proxy, which would put every visitor
+    in one bucket: six bad sign-ins from anyone would lock out everyone. With
+    no proxy configured it is the only honest answer. Returns (address,
+    source) so a log line can say which one answered.
     """
-    for header in CLIENT_IP_HEADERS:
+    header = trusted_header()
+    if header:
         value = (request.headers.get(header) or "").strip()
         if value:
-            return value, header
-    # Leftmost is the original client. Waitress strips X-Forwarded-* unless it
-    # is told to trust a proxy, so this is a fallback for other deployments
-    # rather than the path taken on Fly.
-    forwarded = (request.headers.get("X-Forwarded-For") or "").strip()
-    if forwarded:
-        return forwarded.split(",")[0].strip(), "X-Forwarded-For"
+            # Leftmost is the original client where the header is a list.
+            return value.split(",")[0].strip(), header
     return request.remote_addr or "?", "remote_addr"
 
 
@@ -88,7 +105,7 @@ class Tripwire:
     an abusive run costs one burst rather than hours of billed traffic.
     """
 
-    def __init__(self, allowance, window):
+    def __init__(self, allowance, window, store=None):
         self.allowance = allowance
         self.window = window
         self._calls = []
@@ -96,12 +113,20 @@ class Tripwire:
         self.tripped_at = None
         self.tripped_by = None
         self.seen_in_window = 0
+        # The latch is meant to hold until a person clears it, and a process
+        # that restarts is not a person. Without somewhere to write it down,
+        # a deploy - or the crash the flood caused - resumes serving.
+        self._store = store
+        if store is not None:
+            self.tripped_at, self.tripped_by = store.load()
 
     def reset(self):
         with self._lock:
             self._calls = []
             self.tripped_at = None
             self.tripped_by = None
+        if self._store is not None:
+            self._store.clear()
 
     @property
     def tripped(self):
@@ -120,6 +145,8 @@ class Tripwire:
                 return False
             self.tripped_at = datetime.now(timezone.utc)
             self.tripped_by = address
+        if self._store is not None:
+            self._store.save(self.tripped_at, address)
         log.error("tripwire: %d data requests in %ds, last from %s - refusing "
                   "until an admin resumes", self.allowance, self.window, address)
         return True
@@ -155,6 +182,37 @@ API_TRIP_WINDOW = 300
 _EVERYONE = "*"
 
 
+class ConfigLatch:
+    """The tripwire's latch, kept in the settings file so it outlives us.
+
+    Deliberately not in the database: the tripwire exists to stop serving
+    data, and the thing it protects is the same file everything else is
+    reading. A setting is also somewhere a person can see and undo by hand.
+    """
+
+    def load(self):
+        from ..config import Config
+        settings = Config()
+        when = parse_api_time(settings.get("api_tripped_at", ""))             if settings.get("api_tripped_at") else None
+        if when is None:
+            return None, None
+        return when, settings.get("api_tripped_by") or "?"
+
+    def save(self, when, address):
+        from ..config import Config
+        settings = Config()
+        settings["api_tripped_at"] = when.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        settings["api_tripped_by"] = address or "?"
+        settings.save()
+
+    def clear(self):
+        from ..config import Config
+        settings = Config()
+        settings["api_tripped_at"] = ""
+        settings["api_tripped_by"] = ""
+        settings.save()
+
+
 class Limits:
     """Every budget for one application.
 
@@ -167,13 +225,14 @@ class Limits:
                  exports_per_address=EXPORTS_PER_ADDRESS,
                  exports_per_day=EXPORTS_PER_DAY,
                  api_per_address=API_PER_ADDRESS,
-                 api_trip_total=API_TRIP_TOTAL):
+                 api_trip_total=API_TRIP_TOTAL,
+                 latch=None):
         self.exports_per_address = exports_per_address
         self.exports_per_day = exports_per_day
         self.export_per_address = Budget(exports_per_address, EXPORT_ADDRESS_WINDOW)
         self.export_overall = Budget(exports_per_day, EXPORT_DAY_WINDOW)
         self.api_per_address = Budget(api_per_address, API_ADDRESS_WINDOW)
-        self.api_tripwire = Tripwire(api_trip_total, API_TRIP_WINDOW)
+        self.api_tripwire = Tripwire(api_trip_total, API_TRIP_WINDOW, store=latch)
 
     address = staticmethod(client_address)
 

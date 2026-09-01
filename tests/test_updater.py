@@ -120,17 +120,17 @@ def test_the_roster_spelling_of_a_name_is_the_one_shown():
     """Wise Old Man holds some names in lower case; the roster is where a
     person wrote them out properly."""
     from wom.updater import _spelled_as_asked
-    assert _spelled_as_asked({"displayName": "and salad"}, "And Salad") \
-        ["displayName"] == "And Salad"
+    assert _spelled_as_asked({"displayName": "lynx titan"}, "Lynx Titan") \
+        ["displayName"] == "Lynx Titan"
     # Neither source is authoritative, so it upgrades the other way too
     # rather than flattening a name the API had spelled properly.
-    assert _spelled_as_asked({"displayName": "NogginWhack"}, "nogginwhack") \
-        ["displayName"] == "NogginWhack"
+    assert _spelled_as_asked({"displayName": "SirPugger"}, "sirpugger") \
+        ["displayName"] == "SirPugger"
     # A name that genuinely changed is a different name, not a reshaped one.
     assert _spelled_as_asked({"displayName": "New Name"}, "Old Name") \
         ["displayName"] == "New Name"
     # And nothing is invented where the API said nothing.
-    assert _spelled_as_asked({}, "And Salad") == {}
+    assert _spelled_as_asked({}, "Lynx Titan") == {}
 
 
 def test_a_rejected_api_key_is_dropped_rather_than_taking_the_tracker_down():

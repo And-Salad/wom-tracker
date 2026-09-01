@@ -150,9 +150,7 @@
       var name = cell(tr, "", "name");
       var dot = document.createElement("span");
       dot.className = "swatch";
-      dot.style.background = row.color;
-      dot.style.display = "inline-block";
-      dot.style.marginRight = "7px";
+      dot.style.setProperty("--dot", row.color);
       name.insertBefore(dot, name.firstChild);
       name.appendChild(text(row.player));
       cell(tr, row.label, "metric");

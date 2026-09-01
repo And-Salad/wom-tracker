@@ -12,7 +12,7 @@
           end of the window, and how far it moved inside it. Sort by any
           column.</p>
       </div>
-      <p style="margin:0 0 0 auto">
+      <p class="push-right">
         <button type="button" id="open-export">Export a file&hellip;</button>
       </p>
     </div>
@@ -30,8 +30,7 @@
         <span>Metric</span>
         <select id="metric"></select>
       </label>
-      <p class="hint count" id="count" style="margin-left:auto; align-self: end;
-                                              padding-bottom: 8px"></p>
+      <p class="hint count" id="count"></p>
     </div>
 
     <div class="scroll grid-scroll">
@@ -50,7 +49,7 @@
       </table>
     </div>
     <p class="hint" id="state">Loading&hellip;</p>
-    <p class="hint" style="margin-top:8px">The window is the period in the
+    <p class="hint stack-top">The window is the period in the
       sidebar until you set a date, after which the dates hold it until you
       clear them with the &times;. A blank rank means the account is not on the
       hiscores for that metric, which is not the same as zero.
@@ -93,17 +92,17 @@
 
       <h4>Dates</h4>
       <div class="row">
-        <label class="field" style="max-width: 200px">
+        <label class="field narrow">
           <span>From</span><input type="date" name="from">
         </label>
-        <label class="field" style="max-width: 200px">
+        <label class="field narrow">
           <span>To</span><input type="date" name="to">
         </label>
       </div>
       <p class="hint">Both inclusive, both optional - leave them empty for the
         whole history. Dates mean your days, not UTC ones.</p>
 
-      <p class="hint" id="estimate" style="margin-top:10px"></p>
+      <p class="hint stack-top" id="estimate"></p>
 
       <div class="dialog-actions">
         <button type="button" id="close-export" class="quiet">Cancel</button>
@@ -135,7 +134,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/d3.v7.min.js"></script>
-<script src="/static/chartkit.js"></script>
-<script src="/static/table.js"></script>
+<script src="/static/d3.v7.min.js?v={{ assets }}"></script>
+<script src="/static/chartkit.js?v={{ assets }}"></script>
+<script src="/static/table.js?v={{ assets }}"></script>
 {% endblock %}

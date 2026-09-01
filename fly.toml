@@ -1,9 +1,12 @@
-# Fly.io deployment for the WOM tracker.
+# Fly.io deployment for the WOM tracker. One way to host it, not the way:
+# the app is a plain Flask process and runs anywhere Python does. See the
+# README for the environment variables it reads.
 #
 # One machine, always on, with a volume for the database. Always on is
 # deliberate: the update schedule runs inside this process, and a machine
 # that Fly has stopped cannot wake itself to do it.
-
+#
+# `fly launch` will rewrite the app name and region for your own account.
 app = "wom-tracker"
 primary_region = "iad"
 
@@ -14,6 +17,11 @@ primary_region = "iad"
   # The update schedule is anchored to Eastern midnight regardless, but the
   # container would otherwise print "next run" times in UTC.
   TZ = "America/New_York"
+  # Fly sets this header itself and overwrites anything the caller sent, so
+  # it can be believed. Naming it here is what lets the rate limits and the
+  # sign-in lockout tell one visitor from another; behind a different proxy,
+  # name that proxy's header instead, and behind none, leave it unset.
+  WOM_TRUSTED_IP_HEADER = "Fly-Client-IP"
 
 [[mounts]]
   source = "wom_data"

@@ -51,12 +51,10 @@ DEFAULTS = {
     # Chart colour overrides, {lowercase username: "#rrggbb"}. Anything not
     # listed falls back to the default palette by list position.
     "player_colors": {},
-    # Hide to the system tray instead of quitting when the window is closed.
-    "minimize_to_tray": True,
-    # The dashboard, run from the Sharing tab rather than a console window.
-    "web_port": 8000,
-    "web_lan": False,
-    "web_autostart": False,
+    # Set when the data endpoints' tripwire latches, cleared from the admin
+    # page. Here rather than in memory so a restart does not resume serving.
+    "api_tripped_at": "",
+    "api_tripped_by": "",
     # ISO timestamp of the last completed update run; managed by the scheduler.
     # Runs happen on a fixed six-hour Eastern schedule, so there is nothing
     # here to configure - see wom/scheduler.py.

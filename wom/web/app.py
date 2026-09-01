@@ -5,6 +5,7 @@ the export in exporting.py, the admin half in admin.py, the view models in
 views.py. This file used to be all of them at once.
 """
 
+import hashlib
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -20,7 +21,7 @@ from .api import api as api_blueprint
 from .dates import BadRequest
 from .exporting import exporting as exporting_blueprint
 from .jobs import JobRunner
-from .limits import Limits
+from .limits import ConfigLatch, Limits
 from .pages import pages as pages_blueprint
 from .selection import settings, status
 
@@ -37,9 +38,15 @@ def create_app(limits=None):
     # which behind a proxy is the proxy's own hop.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=0, x_proto=1)
 
+    # Versioned asset URLs, so the browser may cache them for a year and
+    # still pick up a deploy the moment one lands. Computed once, at startup:
+    # the files cannot change under a running process.
+    app.config["ASSETS"] = _asset_version(app.static_folder)
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = timedelta(days=365)
+
     app.config["DATABASE"] = Database(DB_PATH)
     app.config["JOBS"] = JobRunner()
-    app.config["LIMITS"] = limits or Limits()
+    app.config["LIMITS"] = limits or Limits(latch=ConfigLatch())
     # Set by web_app.py when it starts the scheduler; None when the dashboard
     # is served without one, in which case there is nothing to collide with.
     app.config.setdefault("SCHEDULER", None)
@@ -115,12 +122,26 @@ def _add_template_globals(app):
         declarations = ["    {}: {};".format(name, value)
                         for name, value in theme.css_variables().items()]
         return {"now": datetime.now(timezone.utc),
+                "assets": app.config["ASSETS"],
                 "css_variables": "\n".join(declarations),
                 "admin_enabled": app.config["ADMIN"],
                 "signed_in": bool(session.get("wom_admin")),
                 # The header carries this on every page, admin included, so it
                 # is supplied here rather than by each view in turn.
                 "status": status(settings())}
+
+
+def _asset_version(folder):
+    """A short token that changes whenever a static file does."""
+    digest = hashlib.sha1()
+    for name in sorted(os.listdir(folder or ".")):
+        try:
+            stat = os.stat(os.path.join(folder, name))
+        except OSError:
+            continue
+        digest.update("{}:{}:{}".format(name, stat.st_mtime_ns, stat.st_size)
+                      .encode("utf-8"))
+    return digest.hexdigest()[:8]
 
 
 def _is_local(host):

@@ -1,6 +1,7 @@
 """Budgets, the tripwire, and knowing who is calling."""
 
-from wom.web.limits import Budget, Tripwire, client_address
+from wom.web.limits import (TRUSTED_HEADER_ENV, Budget, Tripwire,
+                            client_address)
 
 
 def test_a_budget_allows_its_allowance_then_refuses():
@@ -50,22 +51,70 @@ def test_the_tripwire_clears_only_when_asked():
     assert wire.status()["tripped"] is False
 
 
-def test_the_client_address_prefers_a_header_the_proxy_sets(app):
-    """remote_addr behind a proxy is the proxy, which pools every visitor."""
+def test_a_client_supplied_header_is_ignored_until_a_proxy_is_named(app, monkeypatch):
+    """Otherwise every limit here has a dial the caller controls: rotate the
+    header and each request counts as a different person."""
+    monkeypatch.delenv(TRUSTED_HEADER_ENV, raising=False)
     with app.test_request_context("/", headers={"Fly-Client-IP": "203.0.113.7"}):
-        assert client_address() == ("203.0.113.7", "Fly-Client-IP")
-
-    with app.test_request_context(
-            "/", headers={"X-Forwarded-For": "198.51.100.9, 172.16.0.1"}):
-        address, source = client_address()
-        assert address == "198.51.100.9", "the leftmost entry is the client"
-        assert source == "X-Forwarded-For"
-
-    with app.test_request_context("/"):
         assert client_address()[1] == "remote_addr"
 
+    monkeypatch.setenv(TRUSTED_HEADER_ENV, "Fly-Client-IP")
+    with app.test_request_context("/", headers={"Fly-Client-IP": "203.0.113.7"}):
+        assert client_address() == ("203.0.113.7", "Fly-Client-IP")
+    # Named but absent: the proxy is the only thing that sets it, so its
+    # absence means this request did not come through the proxy.
+    with app.test_request_context("/", headers={"CF-Connecting-IP": "203.0.113.8"}):
+        assert client_address()[1] == "remote_addr"
 
-def test_data_endpoints_refuse_a_caller_past_the_ceiling(client, app):
+    # A list header reads leftmost, which is the original client.
+    monkeypatch.setenv(TRUSTED_HEADER_ENV, "X-Forwarded-For")
+    with app.test_request_context(
+            "/", headers={"X-Forwarded-For": "198.51.100.9, 172.16.0.1"}):
+        assert client_address() == ("198.51.100.9", "X-Forwarded-For")
+
+
+def test_the_sign_in_lockout_cannot_be_shaken_off_with_a_header(client, app,
+                                                                monkeypatch):
+    """The bug this replaced: ten guesses, ten claimed addresses, no lockout."""
+    monkeypatch.delenv(TRUSTED_HEADER_ENV, raising=False)
+    from wom.web import admin as admin_module
+    # The lockout is one budget for the whole process, so this test borrows it
+    # and puts it back rather than leaving everyone else locked out.
+    admin_module._sign_in.reset()
+    try:
+        refused = False
+        for attempt in range(admin_module.SIGN_IN_ATTEMPTS + 2):
+            page = client.post(
+                "/admin/login", data={"password": "wrong"},
+                headers={"Fly-Client-IP": "203.0.113.{}".format(attempt)})
+            if "Too many attempts" in page.get_data(as_text=True):
+                refused = True
+                break
+        assert refused, "a header nobody vouches for must not buy a fresh allowance"
+    finally:
+        admin_module._sign_in.reset()
+
+
+def test_a_latched_tripwire_is_still_latched_after_a_restart(tmp_path):
+    """A deploy is not a person clearing it, and neither is the crash the
+    flood caused."""
+    from wom.web.limits import ConfigLatch
+
+    latch = ConfigLatch()
+    wire = Tripwire(allowance=1, window=60, store=latch)
+    wire.note("203.0.113.44")
+    assert wire.tripped
+
+    # A new process, reading the same settings.
+    again = Tripwire(allowance=1, window=60, store=ConfigLatch())
+    assert again.tripped and again.tripped_by == "203.0.113.44"
+
+    again.reset()
+    assert not Tripwire(allowance=1, window=60, store=ConfigLatch()).tripped
+
+
+def test_data_endpoints_refuse_a_caller_past_the_ceiling(client, app, monkeypatch):
+    monkeypatch.setenv(TRUSTED_HEADER_ENV, "Fly-Client-IP")
     limits = app.config["LIMITS"]
     limits.api_per_address = Budget(allowance=3, window=60)
     limits.api_tripwire = Tripwire(allowance=999, window=60)
@@ -77,7 +126,8 @@ def test_data_endpoints_refuse_a_caller_past_the_ceiling(client, app):
                       headers={"Fly-Client-IP": "203.0.113.21"}).status_code == 200
 
 
-def test_a_tripped_wire_stops_data_but_not_the_site(client, app):
+def test_a_tripped_wire_stops_data_but_not_the_site(client, app, monkeypatch):
+    monkeypatch.setenv(TRUSTED_HEADER_ENV, "Fly-Client-IP")
     limits = app.config["LIMITS"]
     wire = Tripwire(allowance=2, window=60)
     limits.api_tripwire = wire

@@ -80,7 +80,11 @@ def icon(kind, metric):
 
 @pages.route("/assets/<path:name>")
 def asset(name):
-    return send_from_directory(ASSET_DIR, name)
+    # send_from_directory is what stops a crafted name walking out of the
+    # directory; it refuses anything that resolves outside it.
+    response = send_from_directory(ASSET_DIR, name)
+    response.headers["Cache-Control"] = "public, max-age=604800"
+    return response
 
 
 FAVICON = os.path.join(ASSET_DIR, "favicon.png")

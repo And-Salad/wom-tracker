@@ -22,7 +22,7 @@
     <div class="months">
       {% for month in calendar.months %}
         <div class="month">
-          <h4 style="color: {{ month.color }}">{{ month.label }}
+          <h4 class="named" style="--dot: {{ month.color }}">{{ month.label }}
             {% if month.winner %}<span class="took">{{ month.winner }}</span>{% endif %}
           </h4>
           <div class="grid-days">
@@ -32,7 +32,7 @@
             {% for _ in range(month.lead) %}<span class="pad"></span>{% endfor %}
             {% for day in month.days %}
               <span class="day{{ ' won' if day.color }}{{ ' live' if day.live }}{{ ' ahead' if day.ahead }}"
-                    {% if day.color %}style="background: {{ day.color }}"{% endif %}
+                    {% if day.color %}style="--day: {{ day.color }}"{% endif %}
                     title="{{ day.date }} - {{ day.note }}">{{ day.day }}</span>
             {% endfor %}
           </div>
@@ -43,20 +43,23 @@
     {# The grid is finished days; this is the one still running. #}
     <div class="standing">
       <h4>Today so far</h4>
+      <div class="scroll">
       <table>
         <tr>
           <th></th>
           <th>Player</th>
           <th class="num" title="Experience toward a 99 since midnight, which is what the day is judged on">XP Towards 99</th>
           <th class="num" title="Ninety-nines reached today">99s Today</th>
-          <th class="num" title="Days of {{ calendar.today.month }} taken by reaching a 99">99 Wins {{ calendar.today.month }}</th>
-          <th class="num" title="Days of {{ calendar.today.month }} taken on experience, nobody having reached a 99. Today is not one until it is over">XP Wins {{ calendar.today.month }}</th>
+          {# The month sits under the measure rather than beside it: on one
+             line it is most of the column, and the figures below are four
+             characters wide. #}
+          <th class="num" title="Days of {{ calendar.today.month }} taken by reaching a 99">99 Wins<span class="when">{{ calendar.today.month }}</span></th>
+          <th class="num" title="Days of {{ calendar.today.month }} taken on experience, nobody having reached a 99. Today is not one until it is over">XP Wins<span class="when">{{ calendar.today.month }}</span></th>
         </tr>
         {% for row in calendar.today.rows %}
           <tr class="{{ 'moved' if row.moved }}">
             <td class="rank">{{ row.place }}</td>
-            <td class="name"><span class="swatch" style="background: {{ row.color }};
-                  display:inline-block; margin-right:6px"></span>{{ row.name }}</td>
+            <td class="name"><span class="swatch" style="--dot: {{ row.color }}"></span>{{ row.name }}</td>
             <td class="num">{{ row.capped if row.moved else '-' }}</td>
             <td class="num {{ '' if row.nines else 'dim' }}">{{ row.nines or '-' }}</td>
             <td class="num {{ '' if row.nine_wins else 'dim' }}">{{ row.nine_wins or '-' }}</td>
@@ -64,29 +67,38 @@
           </tr>
         {% endfor %}
       </table>
+      </div>
     </div>
     </div>
   </div>
 
+  {% if tree %}
+    <p class="hint jump"><a href="#earlier">Earlier round-ups and player notes &darr;</a></p>
+  {% endif %}
+
+  {# Open on arrival, because reading it is the point of the page, but a
+     round-up runs to several paragraphs and folds away once it is read. #}
   {% for round_up in latest %}
-    <div class="card latest">
-      <h3>{{ round_up.title }} &middot; {{ round_up.label }}</h3>
-      <p class="hint">Written {{ round_up.ago }}.</p>
+    <details class="card latest" open>
+      <summary>
+        <h3>{{ round_up.title }} &middot; {{ round_up.label }}</h3>
+        <span class="ago">{{ round_up.ago }}</span>
+      </summary>
       {% for paragraph in round_up.paragraphs %}
         <p>{{ paragraph }}</p>
       {% endfor %}
-    </div>
+    </details>
   {% endfor %}
 
   {% if tree %}
-    <p class="hint" style="margin: 18px 0 8px">
+    <p class="hint anchor-note" id="earlier">
       Earlier round-ups, and each player's own notes:
     </p>
   {% endif %}
 
   {% for player in tree %}
     <details class="card tree">
-      <summary class="node player" style="color: {{ player.color }}">
+      <summary class="node player named" style="--dot: {{ player.color }}">
         {{ player.player }}
         <span class="count">{{ player.total }}</span>
       </summary>

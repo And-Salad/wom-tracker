@@ -138,7 +138,7 @@ def player_rows(database, players, palette):
             "exp": fmt_int(player["exp"]),
             "ehp": fmt_int(player["ehp"]),
             "ehb": fmt_int(player["ehb"]),
-            "updated": fmt_ago(player["updated_at"]),
+            "updated": fmt_ago(database.last_change(player["id"])),
             "snapshots": fmt_int(database.snapshot_count(player["id"])),
         })
     return rows
@@ -351,6 +351,10 @@ WINNER_RULE = (
     "otherwise take the month whatever anybody did on the other thirty. Each "
     "day is worth points by placing, a win counting for as much as the field "
     "it was won against.\n\n"
+    "A month with fewer than two weeks of counted days is not awarded at "
+    "all. A month decided on the two days at the end of it is really a "
+    "winner of those two days, and a month's name in colour claims more "
+    "than that.\n\n"
     "Each day is measured between the two readings bracketing it, taking "
     "whichever of them sits nearer the boundary - the same rule the written "
     "round-ups use, so the two never disagree."

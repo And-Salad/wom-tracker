@@ -35,8 +35,8 @@
     tr.appendChild(icon);
     tr.appendChild(el("td", null, row.when));
     tr.appendChild(el("td", "dim", row.ago));
-    var who = el("td", null, row.player);
-    who.style.color = row.color;
+    var who = el("td", "named", row.player);
+    who.style.setProperty("--dot", row.color);
     tr.appendChild(who);
     tr.appendChild(el("td", null, row.name));
     return tr;

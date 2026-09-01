@@ -28,7 +28,7 @@
         <button type="submit">Write missing round-ups</button></form>
       <form method="post" action="/admin/run/backfill">
         <button type="submit">Re-import all history</button></form>
-      <a href="/admin/prompts" class="grow" style="color: var(--accent)">Edit the summary prompts</a>
+      <a href="/admin/prompts" class="grow accent">Edit the summary prompts</a>
     </div>
     <div id="job" class="job">
       <p class="job-note">{{ job.note }}</p>
@@ -37,7 +37,7 @@
   </div>
 
   {% if tripwire and tripwire.tripped %}
-    <div class="card" style="border-color:#d9a441">
+    <div class="card attention">
       <h3>Data endpoints are paused</h3>
       <p class="hint">More than {{ tripwire.allowance }} chart and player
         requests arrived within {{ tripwire.window // 60 }} minutes, which is
@@ -73,6 +73,12 @@
                  placeholder="{{ 'unchanged' if config.get('api_key') else 'optional' }}">
         {% endif %}
       </label>
+      {% if config.get('api_key') and not config.is_from_env('api_key') %}
+        <label class="tick sub">
+          <input type="checkbox" name="clear_api_key">
+          Remove the stored key and talk to Wise Old Man anonymously
+        </label>
+      {% endif %}
 
       <h4>Round-ups</h4>
       <label class="tick">
@@ -99,6 +105,12 @@
                  placeholder="{{ 'unchanged' if config.get('anthropic_api_key') else 'not set' }}">
         {% endif %}
       </label>
+      {% if config.get('anthropic_api_key') and not config.is_from_env('anthropic_api_key') %}
+        <label class="tick sub">
+          <input type="checkbox" name="clear_anthropic_api_key">
+          Remove the stored key, which stops round-ups being written
+        </label>
+      {% endif %}
 
       <p><button type="submit">Save settings</button></p>
     </form>
@@ -126,12 +138,12 @@
         {% endfor %}
       </table>
     </div>
-    <form method="post" action="/admin/prune" id="prune" style="margin-top: 12px">
+    <form method="post" action="/admin/prune" id="prune" class="apply">
       <button type="submit">Delete data for players off the list</button>
     </form>
   </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/admin.js"></script>
+<script src="/static/admin.js?v={{ assets }}"></script>
 {% endblock %}

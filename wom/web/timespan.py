@@ -21,6 +21,10 @@ from .dates import BadRequest, day_bound, local_day, viewer_offset
 
 CUSTOM = "Custom"
 ALL_TIME = "All time"
+# "Day" is the last twenty-four hours; this is the calendar day the viewer is
+# standing in, which is what someone means when they ask how today is going.
+# It is the one window whose length changes as the day runs.
+TODAY = "Today"
 
 # Long windows are drawn from one reading a day. Updates land at least four
 # times daily, which is far more detail than a month-wide axis can render.
@@ -49,6 +53,8 @@ class Timespan:
             return "the last {}".format(self.label.lower())
         if self.label == ALL_TIME:
             return "the whole history"
+        if self.label == TODAY:
+            return "today"
         return self.label
 
     @property
@@ -68,7 +74,7 @@ class Timespan:
 
 def labels():
     """Everything the sidebar's period select offers, in order."""
-    return list(periods.labels()) + [ALL_TIME, CUSTOM]
+    return [TODAY] + list(periods.labels()) + [ALL_TIME, CUSTOM]
 
 
 def current_timespan(database=None, players=None):
@@ -103,6 +109,13 @@ def current_timespan(database=None, players=None):
             opened, until, "{} to {}".format(_pretty(opens_on), _pretty(closes_on)),
             key=None, bucket=_bucket(opened, until),
             from_date=opens_on, to_date=closes_on)
+
+    if asked.lower() == TODAY.lower():
+        # Midnight where the viewer is, which is the same boundary the dates
+        # in the sidebar use, so "Today" and a custom range of today agree.
+        day = local_day(_now(), offset)
+        return Timespan(day_bound(day, offset_minutes=offset), None, TODAY,
+                        key=None, bucket=None, from_date=day, to_date=day)
 
     if asked.lower() == ALL_TIME.lower():
         opened = _earliest(database, players) or _rolling().start_iso()

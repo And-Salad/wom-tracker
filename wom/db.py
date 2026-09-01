@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS runs (
     finished_at TEXT,
     ok_count    INTEGER DEFAULT 0,
     fail_count  INTEGER DEFAULT 0,
+    roster      INTEGER,                          -- players tracked at the time
     trigger     TEXT,                             -- scheduled | manual | startup
     notes       TEXT
 );
@@ -154,6 +155,15 @@ class Database:
         # is dropped rather than converted.
         # The round-ups started naming a winner in a column rather than only
         # in their prose, so the calendar on /summaries can colour by it.
+        # A run used to record only how many players it managed. Whether it
+        # looked at everyone was then answered against today's roster, so
+        # adding a seventh account made every past run fall short and blanked
+        # the history behind it. Old rows have no answer and say so with NULL.
+        run_columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+        if "roster" not in run_columns:
+            with conn:
+                conn.execute("ALTER TABLE runs ADD COLUMN roster INTEGER")
+
         group_columns = {row["name"]
                          for row in conn.execute("PRAGMA table_info(group_summaries)")}
         if group_columns and "winner" not in group_columns:
@@ -354,6 +364,20 @@ class Database:
             conn.execute("UPDATE players SET backfilled_at=? WHERE id=?",
                          (when or _utcnow(), player_id))
 
+    def last_change(self, player_id):
+        """When this player's numbers last actually moved.
+
+        A row is only written when something changed, so the newest reading a
+        player holds is the last time they played. `players.updated_at` is a
+        different question - it is when Wise Old Man last refreshed them,
+        which we cause every ten minutes, so it reads "9m ago" forever
+        whether or not the account has been logged into all week.
+        """
+        row = self.query_one(
+            "SELECT MAX(captured_at) AS at FROM metrics WHERE player_id=?",
+            (player_id,))
+        return row["at"] if row else None
+
     def snapshot_count(self, player_id):
         row = self.query_one("SELECT COUNT(*) AS n FROM snapshots WHERE player_id=?",
                              (player_id,))
@@ -483,12 +507,13 @@ class Database:
         params.append(limit)
         return self.query(sql, params)
 
-    def start_run(self, trigger):
+    def start_run(self, trigger, roster=None):
+        """Open a run. `roster` is how many players it set out to update."""
         conn = self.connect()
         with conn:
             cur = conn.execute(
-                "INSERT INTO runs (started_at, trigger) VALUES (?,?)", (_utcnow(), trigger)
-            )
+                "INSERT INTO runs (started_at, trigger, roster) VALUES (?,?,?)",
+                (_utcnow(), trigger, roster))
         return cur.lastrowid
 
     def finish_run(self, run_id, ok_count, fail_count, notes=""):

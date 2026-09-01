@@ -127,9 +127,14 @@ def save_settings():
     config["summary_model"] = model if model in SUMMARY_MODELS else "claude-sonnet-5"
     config["user_agent_contact"] = request.form.get("user_agent_contact", "").strip()
     # A key supplied by the environment is not editable here, and a blank box
-    # means "leave it alone" rather than "erase it".
+    # means "leave it alone" rather than "erase it" -- a password box that
+    # cannot show what it holds cannot be emptied on purpose either, so the
+    # tick beside it is the only way to say "erase it".
     for key in ("api_key", "anthropic_api_key"):
         if config.is_from_env(key):
+            continue
+        if request.form.get("clear_" + key):
+            config[key] = ""
             continue
         given = request.form.get(key, "").strip()
         if given:

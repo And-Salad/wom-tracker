@@ -15,7 +15,7 @@
             <th>Player</th><th>Type</th>
             <th class="num">Combat</th><th class="num">Total level</th>
             <th class="num">Total XP</th><th class="num">EHP</th><th class="num">EHB</th>
-            <th>Last update</th>
+            <th title="When their numbers last moved, not when we last asked: we poll every ten minutes whether or not anyone is playing">Updated</th>
           </tr>
         </thead>
         <tbody>
@@ -25,8 +25,7 @@
                 tabindex="0" role="button" aria-expanded="false">
               <td class="name">
                 <span class="twist" aria-hidden="true"></span>
-                <span class="swatch" style="background: {{ row.color }};
-                      display:inline-block; margin-right:6px"></span>{{ row.name }}
+                <span class="swatch" style="--dot: {{ row.color }}"></span>{{ row.name }}
               </td>
               <td class="dim">{{ row.type }}</td>
               <td class="num">{{ row.combat }}</td>
@@ -49,5 +48,5 @@
 {% endblock %}
 
 {% block scripts %}
-  <script src="/static/players.js"></script>
+  <script src="/static/players.js?v={{ assets }}"></script>
 {% endblock %}

@@ -56,6 +56,12 @@ def days_in(start, end):
 # past it buys nothing the game recognises.
 NINETY_NINE = 13034431
 
+# How much of a month has to have been watched before it is worth awarding.
+# A month decided on the two days at the end of it is not a month anybody
+# competed over, and the winner it names is really a winner of those days.
+# Two weeks is where a month starts reading as a month rather than a sample.
+MIN_MONTH_DAYS = 14
+
 
 def _skill_states(database, player_id, since, until):
     """[(stamp, {skill: experience})], oldest first, one per reading.
@@ -208,16 +214,24 @@ def polled_days(database, players, start, end):
     at all, and the one account that submits its own readings takes the day
     against five accounts that were never looked at.
 
-    A run that came back with a result for every tracked player is that
-    evidence. Runs are stamped UTC and days are Eastern, so they are moved
-    before they are counted.
+    A run that came back with a result for every player it set out to update
+    is that evidence. Each run records how many that was, because the answer
+    is about the day it ran: measured against today's roster instead, adding
+    a seventh account would blank every day behind it. Runs are stamped UTC
+    and days are Eastern, so they are moved before they are counted.
+
+    (Whether every account *now* included was on file through the day is a
+    different test, and gains_by_day's "measured" answers it.)
     """
     rows = database.query(
-        "SELECT started_at, ok_count FROM runs WHERE started_at>=? AND started_at<?",
+        "SELECT started_at, ok_count, roster FROM runs"
+        " WHERE started_at>=? AND started_at<?",
         (_stamp(start), _stamp(end)))
-    enough = len(players)
     days = set()
     for row in rows:
+        # Runs from before the column existed have no roster of their own;
+        # today's is the best guess available for them.
+        enough = row["roster"] if row["roster"] else len(players)
         if (row["ok_count"] or 0) < enough:
             continue
         when = parse_api_time(row["started_at"])
@@ -321,14 +335,30 @@ def placings(found, of):
     return {username: of - place for place, (username, _) in enumerate(ranked)}
 
 
-def month_points(database, players, start, end):
+def month_points(database, players, start, end, minimum=0):
     """{username: average daily points} over the days the whole group was on.
 
     A month is the average of its days rather than one measurement across the
     whole of it. Measured end to end, a single ninety-nine on the 3rd takes
     the month whatever anybody did on the other thirty; averaged, it is worth
     one good day, which is what it was.
+
+    `minimum` is how many of those days there have to be before the answer
+    means anything; below it there is no answer, not a provisional one.
     """
+    points, counted = _scored_days(database, players, start, end)
+    if counted < max(1, minimum):
+        return {}
+    return {username: total / counted for username, total in points.items()}
+
+
+def counted_days(database, players, start, end):
+    """How many days of a span the whole group was watched through."""
+    return _scored_days(database, players, start, end)[1]
+
+
+def _scored_days(database, players, start, end):
+    """({username: total points}, how many days those came from)."""
     days = gains_by_day(database, players, start, end)
     polled = polled_days(database, players, start, end)
     of = len(players)
@@ -343,14 +373,15 @@ def month_points(database, players, start, end):
         counted += 1
         for username, scored in placings(found, of).items():
             points[username] += scored
-    if not counted:
-        return {}
-    return {username: total / counted for username, total in points.items()}
+    return points, counted
 
 
 def month_winner(database, players, start, end, whole_group=False):
-    """Who took a month, on the average of the days that counted."""
-    points = month_points(database, players, start, end)
+    """Who took a month, on the average of the days that counted.
+
+    Nobody, where too few of them counted: see MIN_MONTH_DAYS.
+    """
+    points = month_points(database, players, start, end, minimum=MIN_MONTH_DAYS)
     if not points:
         return None
     if whole_group:
@@ -387,9 +418,20 @@ def ranking(database, players, window):
                        "short": bool(found and found[1]), "points": None, **shown})
 
     if window.period != "day":
-        points = month_points(database, players, window.start, window.end)
+        # Only a month has a floor. A week has seven days in it, and asking a
+        # fortnight of a fortnight would void every one of them.
+        minimum = MIN_MONTH_DAYS if window.period == "month" else 0
+        points = month_points(database, players, window.start, window.end,
+                              minimum=minimum)
+        voided = bool(minimum and not points)
+        # Only worth asking when the answer is going to be printed: it walks
+        # every player's readings again.
+        days = counted_days(database, players, window.start,
+                            window.end) if voided else None
         for row in totals:
             row["points"] = points.get(row["username"], 0.0)
+            row["voided"] = voided
+            row["days"] = days
         totals.sort(key=lambda row: (row["points"], key(row), row["username"]),
                     reverse=True)
         return totals
