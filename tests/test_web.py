@@ -995,15 +995,18 @@ def test_the_tab_icon_is_linked_and_survives_its_file_being_absent(client, app):
     assert client.get("/favicon.ico").status_code == expected
 
 
-def test_today_stands_beside_the_grid_in_the_same_card(app, client):
-    """The squares are finished days; the table is the one still running."""
+def test_today_follows_the_grid_in_a_card_of_its_own(app, client):
+    """The squares are finished days; the table is the one still running.
+
+    Two questions, so two cards - and this order, because the running day
+    only makes sense once you have seen what a finished one looks like.
+    """
     _calendar_seed(app)
     body = client.get("/maxing").get_data(as_text=True)
-    calendar = body[body.index('class="calendar"'):]
-    assert 'class="months"' in calendar
-    assert "Today so far" in calendar
-    # Both live inside the one card, which is what puts them side by side.
-    assert calendar.index('class="months"') < calendar.index("Today so far")
+    assert body.index('class="months"') < body.index("Today so far")
+    assert body.index("Today so far") < body.index("Experience toward 99 today")
+    # Its own card, not a panel inside the calendar's.
+    assert 'class="card standing"' in body
 
 
 def test_today_is_ordered_by_the_same_rule_as_the_squares(app):

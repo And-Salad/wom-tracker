@@ -19,7 +19,6 @@
       {% if not calendar.whole_group %}Measured across the players ticked
       beside it.{% endif %}</p>
 
-    <div class="calendar">
     <div class="months">
       {% for month in calendar.months %}
         <div class="month">
@@ -40,12 +39,19 @@
         </div>
       {% endfor %}
     </div>
+  </div>
 
-    {# The grid is finished days; this is the one still running. #}
-    <div class="standing">
-      <h4>Today so far</h4>
-      <p class="hint">Click a row for the skills behind it.</p>
-      <div class="scroll">
+  {# The grid above is finished days; this is the one still running. Its own
+     card rather than a panel beside the months: the two are answering
+     different questions, and squeezed side by side the table had to wrap its
+     own headings to fit a column it never had room for. #}
+  <div class="card standing">
+    <h3>Today so far</h3>
+    <p class="hint">Where everyone stands since midnight, by the same measure
+      the squares are coloured by &mdash; but not a verdict: today has not been
+      polled to its end and cannot qualify yet. Click a row for the skills
+      behind it.</p>
+    <div class="scroll">
       <table class="today">
         <thead>
         <tr>
@@ -82,8 +88,6 @@
         {% endfor %}
         </tbody>
       </table>
-      </div>
-    </div>
     </div>
   </div>
 

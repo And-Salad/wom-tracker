@@ -107,12 +107,13 @@ everyone that day. A month goes to the best average across its days, and is not
 awarded at all unless a fortnight of them counted. Mousing over the description
 on the page gives the whole rule.
 
-Beside the calendar is the day still running, ranked by the same measure and
-deliberately not a verdict - today has not been polled to its end. Below it the
-same figures are drawn as a line per account, midnight to midnight, so the axis
-is the whole day rather than however much of it has happened. Opening an account
-gives the skills behind its day, including the experience past 99 that the rule
-does not count. The prose lives on the Recaps tab; this page is figures.
+Below the calendar, in its own card, is the day still running - ranked by the
+same measure and deliberately not a verdict, since today has not been polled to
+its end. Below that again the same figures are drawn as a line per account,
+midnight to midnight, so the axis is the whole day rather than however much of
+it has happened. Opening an account gives the skills behind its day, including
+the experience past 99 that the rule does not count. The prose lives on the
+Recaps tab; this page is figures.
 
 ## Recaps
 

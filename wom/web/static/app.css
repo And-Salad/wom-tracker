@@ -472,28 +472,22 @@
   .rules {
     cursor: help; border-bottom: 1px dotted var(--line); display: inline-block;
   }
-  .calendar {
-    display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap;
-  }
   .months {
     display: flex; gap: 28px; flex-wrap: wrap; margin: var(--space-3) 0 4px;
   }
-  /* The basis is what the table actually needs, not what we hoped it would
-     take: a flex item refuses to shrink below its content, so a 300px basis
-     did not squeeze the table - it pushed the whole page sideways. Given its
-     real width it drops below the months instead. */
-  .standing { margin: var(--space-3) 0 4px; min-width: 0; flex: 1 1 430px; }
-  .standing h4 {
-    margin: 0 0 var(--space-2); font-size: var(--text-sm); color: var(--muted);
-    text-transform: uppercase; letter-spacing: .04em;
-  }
-  /* Sized to its contents, not stretched across whatever room the card has:
-     six names and four short numbers spread over a full width read as four
+  /* The standings are their own card below the months now, not a panel
+     wedged in beside them. As a flex item they could never be given a width:
+     an item refuses to shrink below its content, so any basis small enough to
+     leave the months alone was ignored and the page scrolled sideways
+     instead. Given the full width there is nothing left to fight over. */
+  .standing { min-width: 0; }
+  /* Still sized to its contents rather than stretched across the card: six
+     names and four short numbers spread over a thousand pixels read as four
      unrelated columns. */
   .standing table { font-size: var(--text-sm); width: auto; }
-  /* Five columns in a side panel: the headings wrap rather than the table
-     pushing the months off their own card, and the month sits under the
-     measure rather than doubling the column's width. */
+  /* The month stays under its measure rather than beside it - two lines of
+     small text is a narrower column than one long line, and these figures
+     are four characters wide. */
   .standing th { white-space: normal; line-height: 1.25; }
   .standing th .when {
     display: block; font-weight: 500; text-transform: none; letter-spacing: 0;
@@ -547,11 +541,11 @@
   }
 
   @media (max-width: 820px) {
-    /* Two months will not sit side by side on a phone; they stack, and the
-       standings drop below them rather than squeezing in beside. */
-    .calendar { gap: 14px; }
+    /* The day columns go fractional, so the two months shrink to share the
+       width rather than one wrapping below the other. (The comment here used
+       to say they stack. They do not, and did not - the squares are given a
+       fraction of the row precisely so both months keep fitting.) */
     .months { gap: 18px; }
-    .standing { min-width: 0; flex: 1 1 100%; margin-top: 0; }
     .grid-days { grid-template-columns: repeat(7, 1fr); }
     .grid-days .day, .grid-days .pad { height: 34px; }
   }
