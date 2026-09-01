@@ -16,7 +16,7 @@ from functools import wraps
 from flask import (Blueprint, current_app, flash, redirect, render_template,
                    request, session, url_for)
 
-from .. import periods, summaries as core
+from .. import periods, scheduler, summaries as core
 from ..colors import normalise, player_color, set_player_color
 from ..config import Config, ENV_KEYS, normalise_usernames
 from ..summaries import SUMMARY_MODELS
@@ -33,6 +33,28 @@ PASSWORD_ENV = "WOM_ADMIN_PASSWORD"
 SIGN_IN_ATTEMPTS = 6
 SIGN_IN_WINDOW = 300
 _sign_in = Budget(SIGN_IN_ATTEMPTS, SIGN_IN_WINDOW)
+
+
+# Enough to cover a group without making the box a menu: anything else can be
+# typed, and is checked before it is stored.
+COMMON_ZONES = (
+    "America/New_York", "America/Chicago", "America/Denver",
+    "America/Los_Angeles", "America/Sao_Paulo", "Europe/London",
+    "Europe/Dublin", "Europe/Paris", "Europe/Berlin", "Europe/Helsinki",
+    "Africa/Johannesburg", "Asia/Dubai", "Asia/Kolkata", "Asia/Singapore",
+    "Asia/Tokyo", "Australia/Perth", "Australia/Sydney", "Pacific/Auckland",
+    "UTC",
+)
+
+
+def _is_a_zone(name):
+    """True for a name zoneinfo can resolve on this machine."""
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo(name)
+        return True
+    except Exception:
+        return False
 
 
 def admin_password():
@@ -108,7 +130,7 @@ def settings():
     tripwire = current_app.config["LIMITS"].api_tripwire
     return render_template(
         "admin.html", page="admin", config=config, roster=roster,
-        models=SUMMARY_MODELS, env_keys=ENV_KEYS,
+        models=SUMMARY_MODELS, env_keys=ENV_KEYS, zones=COMMON_ZONES,
         job=current_app.config["JOBS"].status(),
         tripwire=tripwire.status() if tripwire else None,
         periods=[p.key for p in periods.PERIODS])
@@ -126,6 +148,17 @@ def save_settings():
     model = request.form.get("summary_model", "")
     config["summary_model"] = model if model in SUMMARY_MODELS else "claude-sonnet-5"
     config["user_agent_contact"] = request.form.get("user_agent_contact", "").strip()
+    # A zone this machine cannot resolve would move every day boundary to UTC
+    # without saying so, which is a strange way to find out you typed it wrong.
+    asked = request.form.get("timezone", "").strip()
+    if asked and asked != config.get("timezone"):
+        if _is_a_zone(asked):
+            config["timezone"] = asked
+            scheduler.forget_zone()
+            flash("Days now run midnight to midnight in {}.".format(asked))
+        else:
+            flash("{} is not a time zone this machine knows. Use a name like "
+                  "Europe/London.".format(asked))
     # A key supplied by the environment is not editable here, and a blank box
     # means "leave it alone" rather than "erase it" -- a password box that
     # cannot show what it holds cannot be emptied on purpose either, so the

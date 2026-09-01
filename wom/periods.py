@@ -76,11 +76,11 @@ def latest_window(period, now=None, offset=0):
     """The most recently *completed* window of a period.
 
     `offset` steps further back: 1 is the one before it, and so on. Everything
-    is anchored to Eastern midnight so the boundaries line up with the update
-    schedule rather than drifting against the viewer's clock.
+    is anchored to midnight in the configured zone, so the boundaries line up
+    with the update schedule rather than drifting against a viewer's clock.
     """
-    from .scheduler import EASTERN
-    now = (now or datetime.now(timezone.utc)).astimezone(EASTERN)
+    from .scheduler import zone
+    now = (now or datetime.now(timezone.utc)).astimezone(zone())
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if period == "day":

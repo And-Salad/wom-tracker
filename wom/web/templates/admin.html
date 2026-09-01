@@ -57,6 +57,23 @@
       <textarea name="usernames" rows="8" spellcheck="false"
         >{{ config.get("usernames", []) | join("\n") }}</textarea>
 
+      <h4>Clock</h4>
+      <label class="field">
+        <span>Time zone</span>
+        <input type="text" name="timezone" list="zones" spellcheck="false"
+               value="{{ config.get('timezone', '') }}">
+      </label>
+      {# A few to click, and any IANA name may be typed. #}
+      <datalist id="zones">
+        {% for name in zones %}<option value="{{ name }}">{% endfor %}
+      </datalist>
+      <p class="hint" style="margin: -4px 0 14px">
+        Days, the calendar and every round-up window run midnight to midnight
+        here, following that place's daylight saving rather than this
+        machine's. Changing it re-cuts the days: round-ups already written keep
+        the dates they were written under.
+      </p>
+
       <h4>Wise Old Man</h4>
       <label class="field">
         <span>Contact for the User-Agent header</span>

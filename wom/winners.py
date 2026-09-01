@@ -17,7 +17,7 @@ that the round-up for that date disagreed with.
 
 from datetime import datetime, timedelta, timezone
 
-from .scheduler import EASTERN
+from .scheduler import zone
 from .util import parse_api_time
 
 # The round-up judged the whole group. Narrowing to some of them makes its
@@ -27,7 +27,7 @@ WHOLE_GROUP = object()
 
 def month_range(when=None, back=0):
     """[start, end) of a month in Eastern time, `back` months before this one."""
-    now = (when or datetime.now(timezone.utc)).astimezone(EASTERN)
+    now = (when or datetime.now(timezone.utc)).astimezone(zone())
     start = now.replace(hour=0, minute=0, second=0, microsecond=0, day=1)
     for _ in range(back):
         start = (start - timedelta(days=1)).replace(day=1)
@@ -37,7 +37,7 @@ def month_range(when=None, back=0):
 
 def today_key(when=None):
     """Which Eastern day is currently in progress."""
-    now = (when or datetime.now(timezone.utc)).astimezone(EASTERN)
+    now = (when or datetime.now(timezone.utc)).astimezone(zone())
     return now.strftime("%Y-%m-%d")
 
 
@@ -227,6 +227,7 @@ def polled_days(database, players, start, end):
         "SELECT started_at, ok_count, roster FROM runs"
         " WHERE started_at>=? AND started_at<?",
         (_stamp(start), _stamp(end)))
+    local = zone()
     days = set()
     for row in rows:
         # Runs from before the column existed have no roster of their own;
@@ -236,7 +237,7 @@ def polled_days(database, players, start, end):
             continue
         when = parse_api_time(row["started_at"])
         if when is not None:
-            days.add(when.astimezone(EASTERN).strftime("%Y-%m-%d"))
+            days.add(when.astimezone(local).strftime("%Y-%m-%d"))
     return days
 
 

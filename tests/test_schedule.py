@@ -6,11 +6,11 @@ import pytest
 from conftest import snapshot
 
 from wom import periods, summaries
-from wom.scheduler import EASTERN
+from wom.scheduler import zone
 
 
 def at(year, month, day, hour):
-    return datetime(year, month, day, hour, 0, tzinfo=EASTERN)
+    return datetime(year, month, day, hour, 0, tzinfo=zone())
 
 
 def written(db, player, now, keys):

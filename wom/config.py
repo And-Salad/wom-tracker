@@ -38,6 +38,10 @@ DEFAULTS = {
     # minutes. A key that the API rejects is worse than none: it answers 403
     # to every request, so the client drops it and carries on without.
     "api_key": "",
+    # The clock everything dated runs on: day boundaries, the calendar, and
+    # the window each round-up is written for. An IANA name, so daylight
+    # saving follows that place rather than this machine.
+    "timezone": "America/New_York",
     # Contact string sent in the User-Agent header, as the API docs ask for.
     "user_agent_contact": "",
     # Claude API key for the written summaries. Left blank, the Anthropic SDK

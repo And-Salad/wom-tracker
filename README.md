@@ -9,20 +9,16 @@ Built against the [Wise Old Man v2 API](https://docs.wiseoldman.net/api). MIT
 licensed - see [LICENSE](LICENSE).
 
 **Before you run this yourself**, two things are worth knowing, because neither
-is configurable yet:
+is not configurable:
 
-- **The clock is US Eastern.** Days, the calendar, and every round-up window
-  run midnight to midnight Eastern, following its daylight saving rather than
-  yours. It is one constant in `wom/scheduler.py`, threaded through
-  `wom/periods.py` and `wom/winners.py` - straightforward to change, not yet
-  changed.
-- **Round-ups are Anthropic-only.** They are opt-in and off by default, and
-  everything else works without them: the charts, the tables, the export and
-  the leaderboard are all computed from the stored readings. Turning them on
-  needs a Claude API key. Any OpenAI-compatible provider would fit behind
-  `generate()` in `wom/summaries.py`; nothing does yet.
+**Round-ups are Anthropic-only.** They are opt-in and off by default, and
+everything else works without them: the charts, the tables, the export and the
+leaderboard are all computed from the stored readings. Turning them on needs a
+Claude API key. Any OpenAI-compatible provider would fit behind `generate()` in
+`wom/summaries.py`; nothing does yet.
 
-Both are honest limits rather than plans.
+The clock is not one of these: set your time zone under **Admin**, and days,
+the calendar and every round-up window follow it.
 
 ## Running it
 
@@ -152,12 +148,14 @@ a history rather than overwriting each other.
 
 ### When they get written
 
-The **6am Eastern** update slot writes any window that has closed and has not
-been summarised yet - the day every morning, the week once a Monday has passed,
-the month once the 1st has. Because the test is "has this window been written",
-a machine asleep through a Monday still writes that week when it wakes, and a
-long gap catches up rather than skipping. The other three update slots write
-nothing, and `--due` runs exactly what is owed right now.
+The first update of each local day writes any window that has closed and has
+not been summarised yet - the day itself, the week once a Monday has passed,
+the month once the 1st has. Updates run every ten minutes, so that is whichever
+slot lands first after midnight; there is no fixed hour to remember, and none
+to miss. Because the test is "has this window been written", a machine asleep
+through a Monday still writes that week when it wakes, and a long gap catches
+up rather than skipping. Every other slot that day writes nothing, and `--due`
+runs exactly what is owed right now.
 
 That is 430 windows a year - so 430 group round-ups plus 430 per player, about
 1.18 windows a day.
@@ -319,12 +317,14 @@ no admin.
 | `ANTHROPIC_API_KEY` | The round-ups' key. Supplied here it cannot be read or changed from the admin page, which is the point. |
 | `WOM_API_KEY` | Optional Wise Old Man key. Without one the API allows 20 requests a minute, which is ample: six players is twelve requests every ten minutes. |
 | `WOM_INSECURE_COOKIE` | Drops `Secure` from the session cookie, for reaching the admin pages over plain HTTP on a LAN. Not for anything public. |
-| `TZ` | Only affects what the logs print. The schedule is anchored to US Eastern regardless. |
+| `TZ` | Only affects what the logs print. Day boundaries follow the time zone set under Admin. |
 
 ## Schedule
 
-Updates run **every ten minutes**, on the wall-clock boundary, and everything
-dated follows US Eastern midnight rather than your own clock. The interval is
+Updates run **every ten minutes**, on the wall-clock boundary. Everything
+dated - day boundaries, the calendar, the window each round-up covers - follows
+midnight in the time zone set under **Admin**, so it tracks that place's
+daylight saving rather than the server's. The interval itself is
 `SLOT_MINUTES` in `wom/scheduler.py` and is not configurable from the UI.
 Milestones are fetched on the hour rather than every pass: they move rarely and
 cost a request per player.
@@ -797,7 +797,9 @@ py -m pip install -r requirements.txt
 ```
 
 Nothing needs a display: the charts are drawn in the browser, so there is no
-matplotlib and no image library on the server. Without `tzdata` the scheduler
-falls back to a built-in US Eastern rule (`_UsEastern` in `wom/scheduler.py`),
-which matches the real zone for any year using the post-2007 daylight saving
-dates. Without `anthropic` everything works except the written summaries.
+matplotlib and no image library on the server. Without `tzdata`, US Eastern
+still works from a built-in rule (`_UsEastern` in `wom/scheduler.py`) that
+matches the real zone for any year using the post-2007 daylight saving dates;
+any other zone falls back to UTC with a line in the log, rather than guessing
+an offset and putting every day boundary in the wrong place. Without
+`anthropic` everything works except the written round-ups.

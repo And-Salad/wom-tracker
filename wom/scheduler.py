@@ -57,16 +57,55 @@ class _UsEastern(tzinfo):
         return datetime(year, month, first_sunday + 7 * (nth - 1))
 
 
-def _eastern():
+# The clock everything dated runs on: days, the calendar, and the window each
+# round-up is written for. Configurable, because "midnight" is a local idea and
+# a group in Perth should not have its days end at nine in the morning.
+DEFAULT_ZONE = "America/New_York"
+
+_zone = None
+
+
+def zone():
+    """The configured time zone, resolved once and remembered.
+
+    Resolved lazily rather than at import: the setting lives in a file that
+    may not exist yet when this module is first imported, and a long-running
+    server has to notice when it changes. The admin page calls forget_zone()
+    after a save, which is what makes the change take effect without a
+    restart.
+    """
+    global _zone
+    if _zone is None:
+        from .config import Config
+        _zone = zone_named((Config().get("timezone") or "").strip() or DEFAULT_ZONE)
+    return _zone
+
+
+def forget_zone():
+    """Re-read the setting on the next call."""
+    global _zone
+    _zone = None
+
+
+def zone_named(name):
+    """One named zone, or the nearest honest thing to it.
+
+    Windows ships no IANA database, so `tzdata` is a requirement there. Where
+    it is missing anyway, Eastern still works from the rules built in below;
+    anything else falls back to UTC rather than silently pretending, since a
+    wrong offset would put every day boundary in the wrong place.
+    """
     try:
         from zoneinfo import ZoneInfo
-        return ZoneInfo("America/New_York")
+        return ZoneInfo(name)
     except Exception:
-        log.warning("no IANA time zone data found; using the built-in Eastern rules")
-        return _UsEastern()
-
-
-EASTERN = _eastern()
+        if name == DEFAULT_ZONE:
+            log.warning("no time zone database found; using the built-in "
+                        "Eastern rules")
+            return _UsEastern()
+        log.error("cannot load the time zone %r - falling back to UTC. Install "
+                  "tzdata, or set one this machine knows.", name)
+        return timezone.utc
 
 
 def previous_slot(now=None, minutes=SLOT_MINUTES):
@@ -76,7 +115,7 @@ def previous_slot(now=None, minutes=SLOT_MINUTES):
     process happened to start, so they stay predictable across a restart and a
     missed one is still recognisably missed.
     """
-    east = (now or datetime.now(timezone.utc)).astimezone(EASTERN)
+    east = (now or datetime.now(timezone.utc)).astimezone(zone())
     return east.replace(minute=east.minute - east.minute % minutes,
                         second=0, microsecond=0)
 

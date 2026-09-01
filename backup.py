@@ -102,6 +102,47 @@ def verify(path):
     return counts
 
 
+def fetch_settings(fly, app, folder, stamp):
+    """Bring the prompts and the settings file down beside the database.
+
+    The prompts are the one thing on that volume nobody could rebuild. They
+    are edited through the admin page and live only there - the repo ships
+    defaults in code, not files - and a database backup does not touch them.
+    A few kilobytes to keep whatever wording turned out to work.
+
+    Best effort: a prompt that will not come down is not a failed backup. The
+    database is what the exit code is about.
+    """
+    names = [line.strip() for line in
+             run([fly, "ssh", "console", "-a", app, "-C", "ls /data"]).splitlines()]
+    wanted = sorted({name for name in names
+                     if name.endswith(".txt") and "prompt" in name}
+                    | {"config.json"})
+    into = os.path.join(folder, "settings-{}".format(stamp))
+    os.makedirs(into, exist_ok=True)
+    saved = []
+    for name in wanted:
+        target = os.path.join(into, name)
+        run([fly, "ssh", "sftp", "get", "/data/" + name, target, "-a", app])
+        if os.path.exists(target) and os.path.getsize(target):
+            saved.append(name)
+        elif os.path.exists(target):
+            os.remove(target)
+    if not saved:
+        os.rmdir(into)
+    return into, saved
+
+
+def rotate_settings(folder, keep):
+    """The same retention as the database copies, for the settings folders."""
+    folders = sorted(name for name in os.listdir(folder)
+                     if name.startswith("settings-")
+                     and os.path.isdir(os.path.join(folder, name)))
+    for stale in folders[:-keep] if keep > 0 else []:
+        shutil.rmtree(os.path.join(folder, stale), ignore_errors=True)
+        print("  removed {}".format(stale))
+
+
 def rotate(folder, keep):
     """Keep the newest `keep` copies and delete the rest."""
     copies = sorted(f for f in os.listdir(folder)
@@ -137,7 +178,16 @@ def main(argv=None):
     size = os.path.getsize(target) / 1e6
     print("\n{}  ({:.1f} MB)".format(target, size))
     print("  " + ", ".join("{} {:,}".format(name, n) for name, n in counts.items()))
+
+    print("\nfetching the prompts and settings...")
+    where, saved = fetch_settings(fly, args.app, args.into, stamp)
+    if saved:
+        print("  {} -> {}".format(", ".join(saved), where))
+    else:
+        print("  nothing came down; the database copy above still stands")
+
     rotate(args.into, args.keep)
+    rotate_settings(args.into, args.keep)
     print("\nRestore with:  fly ssh sftp shell -a {}  ->  put <file> /data/wom.db"
           .format(args.app))
     print("then: fly apps restart {}".format(args.app))

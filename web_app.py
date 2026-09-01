@@ -49,8 +49,8 @@ def _thin_history(database, settings):
     than a month-wide chart can draw. Nothing had ever called this: it was a
     command somebody had to remember, which is a thing that does not happen.
     """
-    from wom.scheduler import EASTERN
-    today = datetime.now(timezone.utc).astimezone(EASTERN).strftime("%Y-%m-%d")
+    from wom.scheduler import zone
+    today = datetime.now(timezone.utc).astimezone(zone()).strftime("%Y-%m-%d")
     if settings.get("last_compact") == today:
         return
     result = database.compact_snapshots(keep_days=COMPACT_KEEP_DAYS)

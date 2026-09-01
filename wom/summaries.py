@@ -523,9 +523,9 @@ def due_periods(database, now=None):
     Everything is judged in Eastern time so it lines up with the update
     schedule rather than drifting against the viewer's own clock.
     """
-    from .scheduler import EASTERN
+    from .scheduler import zone
     from datetime import datetime, timezone
-    now = (now or datetime.now(timezone.utc)).astimezone(EASTERN)
+    now = (now or datetime.now(timezone.utc)).astimezone(zone())
 
     # A period is owed when its newest complete window has not been written
     # yet. That is what catches up a machine asleep on the day itself: the

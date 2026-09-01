@@ -101,6 +101,39 @@ def test_a_stored_key_can_be_cleared_but_not_by_an_empty_box(signed_in, app):
     assert Config().get("api_key") == "", "the tick cleared it"
 
 
+def test_the_time_zone_is_a_setting_and_is_checked_before_it_is_stored(signed_in, app):
+    """A zone this machine cannot resolve would quietly move every day
+    boundary to UTC, which is a strange way to learn you typed it wrong."""
+    from wom import periods, scheduler
+    from wom.config import Config
+    seed(app)
+    form = {"usernames": "zezima", "summary_model": "claude-sonnet-5"}
+    was = Config().get("timezone")
+    try:
+        signed_in.post("/admin/settings", data=dict(form, timezone="Australia/Perth"))
+        assert Config().get("timezone") == "Australia/Perth"
+        assert scheduler.zone().key == "Australia/Perth", "and takes effect at once"
+
+        page = signed_in.post("/admin/settings",
+                              data=dict(form, timezone="Mars/Olympus_Mons"),
+                              follow_redirects=True)
+        assert "not a time zone" in page.get_data(as_text=True)
+        assert Config().get("timezone") == "Australia/Perth", "the good one stands"
+
+        # And the day boundaries follow it: Perth is far enough east that its
+        # midnight is the previous afternoon in UTC.
+        from datetime import datetime, timezone as utc
+        window = periods.latest_window("day",
+                                       datetime(2026, 9, 1, 12, tzinfo=utc.utc))
+        assert window.start.utcoffset().total_seconds() == 8 * 3600
+    finally:
+        # One settings file for the whole run, and one cached zone behind it.
+        settings = Config()
+        settings["timezone"] = was
+        settings.save()
+        scheduler.forget_zone()
+
+
 def test_admin_disappears_entirely_without_a_password(monkeypatch, tmp_path):
     """Fail closed: no password must mean no routes, not open ones."""
     from wom.db import Database
