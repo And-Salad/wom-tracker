@@ -44,6 +44,19 @@ def today_key(when=None):
     return now.strftime("%Y-%m-%d")
 
 
+def today_range(when=None):
+    """[midnight, next midnight) of the local day in progress.
+
+    The whole day, not the part of it that has happened. What is being asked
+    is "how is today going", and a chart that stops at the current minute
+    redraws its own axis every ten minutes - the day is the frame, and the
+    lines simply have not reached the right-hand edge yet.
+    """
+    now = (when or datetime.now(timezone.utc)).astimezone(zone())
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start, start + timedelta(days=1)
+
+
 def days_in(start, end):
     """Every local midnight from start up to end, as (day, next) pairs."""
     out = []
@@ -66,7 +79,7 @@ NINETY_NINE = 13034431
 MIN_MONTH_DAYS = 14
 
 
-def _skill_states(database, player_id, since, until):
+def skill_states(database, player_id, since, until):
     """[(stamp, {skill: experience})], oldest first, one per reading.
 
     Only changes are stored, but a reading where nothing moved is still a
@@ -119,6 +132,41 @@ def measure(before, after):
             nines += 1
         capped += max(0.0, min(end, NINETY_NINE) - min(start, NINETY_NINE))
     return {"nines": nines, "raw": raw, "capped": capped}
+
+
+def measure_by_skill(before, after):
+    """The same measure, kept per skill instead of summed.
+
+    measure() answers "how did they do"; this answers "at what", which is the
+    question a reader asks the moment they see the total. Same arithmetic, so
+    the parts always add up to the whole - anything that rounded or filtered
+    differently here would produce a breakdown that argues with the figure it
+    is breaking down.
+
+    Skills that did not move are left out: twenty-three rows of zero is not a
+    breakdown, and the caller knows the full list if it wants to say so.
+    """
+    out = {}
+    for metric, end in after.items():
+        if metric == "overall":
+            continue
+        start = before.get(metric)
+        if start is None or end <= start:
+            continue
+        capped = max(0.0, min(end, NINETY_NINE) - min(start, NINETY_NINE))
+        out[metric] = {
+            "capped": capped,
+            "raw": end - start,
+            # Experience past 99 in a skill already at it. Counted nowhere in
+            # the ranking, which is exactly why it is worth showing: it is the
+            # difference between a quiet day and a day that scored nothing.
+            "beyond": (end - start) - capped,
+            "reached_99": start < NINETY_NINE <= end,
+            "at_99": end >= NINETY_NINE,
+            "before": start,
+            "after": end,
+        }
+    return out
 
 
 def key(shown):
@@ -258,7 +306,7 @@ def gains_by_day(database, players, start, end):
             "scores": {}, "measured": [], "short": []}
 
     for player in players:
-        states = _skill_states(database, player["id"], lookback, closes)
+        states = skill_states(database, player["id"], lookback, closes)
         if not states:
             continue
         for position, found in enumerate(_player_days(states, boundaries)):
@@ -413,7 +461,7 @@ def ranking(database, players, window):
     """
     totals = []
     for player in players:
-        states = _skill_states(database, player["id"],
+        states = skill_states(database, player["id"],
                                _stamp(window.start - timedelta(days=60)),
                                _stamp(window.end))
         found = _player_days(states, [window.start, window.end])[0] if states else None

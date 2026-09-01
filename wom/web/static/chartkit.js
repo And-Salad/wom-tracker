@@ -32,8 +32,27 @@
   }
   var full = new Intl.NumberFormat();
   var compact = d3.format("~s");
-  var day = d3.timeFormat("%d %b %Y");
-  var dayTime = d3.timeFormat("%d %b %H:%M");
+  /* Time labels are written in the zone a chart's window is defined in, and
+     a payload says which by sending `offset` (minutes east of UTC). Where it
+     says nothing, the viewer's own zone is the honest default - the sidebar's
+     dates are already read that way.
+
+     Formatting is done in UTC against a shifted timestamp, which is the only
+     way to render a zone the browser is not in. It also settles a
+     disagreement: the axis used to be written in UTC and the tooltip in the
+     viewer's zone, so hovering a point named an hour the tick beneath it
+     contradicted. Both go through here now. */
+  var day = d3.utcFormat("%d %b %Y");
+  var dayTime = d3.utcFormat("%d %b %H:%M");
+
+  function labelZone(data) {
+    var offset = (data && data.offset !== undefined && data.offset !== null)
+      ? data.offset : -new Date().getTimezoneOffset();
+    return function (stamp) {
+      return new Date((stamp instanceof Date ? stamp.getTime() : stamp)
+                      + offset * 60000);
+    };
+  }
 
   var tip = d3.select("body").append("div").attr("class", "tip").style("opacity", 0);
 
@@ -507,9 +526,11 @@
     else { valueAxis(g, f, y, data.ylabel); }
 
     var span = (ends - data.since) / 86400000;
+    var inZone = labelZone(data);
+    var tickFmt = span <= 2 ? d3.utcFormat("%H:%M") : d3.utcFormat("%d %b");
     var ticks = g.append("g").attr("transform", "translate(0," + f.tall + ")")
       .call(d3.axisBottom(x).ticks(Math.min(8, Math.max(3, Math.round(f.inner / 110))))
-        .tickFormat(span <= 2 ? d3.utcFormat("%H:%M") : d3.utcFormat("%d %b")));
+        .tickFormat(function (at) { return tickFmt(inZone(at)); }));
     ticks.select(".domain").attr("stroke", COLOR.line);
     ticks.selectAll("line").attr("stroke", COLOR.line);
     ticks.selectAll("text").attr("fill", COLOR.muted).style("font-size", "11px");
@@ -591,7 +612,7 @@
           .attr("r", 4).attr("fill", function (d) { return d.s.color; })
           .attr("stroke", COLOR.panel).attr("stroke-width", 1.5);
         picks.sort(function (a, b) { return b.p[1] - a.p[1]; });
-        var stamp = new Date(anchor.p[0]);
+        var stamp = inZone(anchor.p[0]);
         var head = d3.create("b");
         head.text(span <= 2 ? dayTime(stamp) : day(stamp));
         var html = head.node().outerHTML;

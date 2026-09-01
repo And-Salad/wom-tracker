@@ -10,7 +10,7 @@ from flask import (Blueprint, Response, abort, current_app, jsonify, request,
                    session)
 
 from . import data as web_data
-from . import views
+from . import today, views
 from ..context import ViewContext
 from ..util import parse_api_time, pretty_metric
 from .selection import (chosen, colors, current_span, database, roster,
@@ -120,6 +120,40 @@ def player_rows():
     return _fresh({"rows": views.player_rows(database(), picked,
                                              colors(config, players)),
                    "span": span.as_dict()})
+
+
+@api.route("/api/maxing/player/<username>")
+def maxing_player(username):
+    """One account's day so far, skill by skill, for an opened row."""
+    refused = guard()
+    if refused is not None:
+        return refused
+    player = database().player_by_username(username)
+    if player is None:
+        abort(404)
+    return _fresh(today.breakdown(database(), player))
+
+
+@api.route("/api/maxing/trend")
+def maxing_trend():
+    """Experience toward 99 since midnight, one line per included account.
+
+    Its own endpoint rather than a catalogue chart: the Overview's charts all
+    answer over the sidebar's period, and this one is always the day in
+    progress. Handing it a period it then ignores would be the confusing part.
+    """
+    refused = guard()
+    if refused is not None:
+        return refused
+    config = settings()
+    players = roster(config)
+    picked = chosen(players)
+    if not picked:
+        return jsonify({"empty": "Include at least one player using the "
+                                 "sidebar swatches."})
+    context = ViewContext(database(), config, players, selected=picked,
+                          span=_span(picked))
+    return _fresh(today.trend(database(), picked, context.color_for))
 
 
 @api.route("/api/milestones")

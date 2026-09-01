@@ -710,7 +710,7 @@ def test_the_round_up_overrules_the_figures_only_for_the_whole_group(app):
 
 def test_the_calendar_names_a_winner_for_the_month_too(app, client):
     _calendar_seed(app)
-    body = client.get("/summaries").get_data(as_text=True)
+    body = client.get("/maxing").get_data(as_text=True)
     assert "Maxing Leaderboard" in body
     assert body.count('class="month"') == 2, "last month and this one"
 
@@ -739,6 +739,7 @@ def test_the_standings_count_the_days_the_squares_colour(app):
     from datetime import datetime, timezone
 
     from wom import periods
+    from wom.web.today import standings
     from wom.web.views import winner_calendar
 
     database = _calendar_seed(app)
@@ -752,11 +753,13 @@ def test_the_standings_count_the_days_the_squares_colour(app):
     assert window.key == "2026-08-30"
     database.save_group_summary(window, "A day.", "hash", winner="zezima")
 
-    shown = winner_calendar(database, players, palette, when)
-    august = shown["months"][1]           # last month beside this one
+    # The squares and the tally are built by different modules now, which is
+    # the whole reason to keep asserting they still agree.
+    calendar = winner_calendar(database, players, palette, when)
+    august = calendar["months"][1]        # last month beside this one
     square = [day for day in august["days"] if day["date"] == "30 Aug 2026"][0]
     credited = {row["name"]: row["xp_wins"] + row["nine_wins"]
-                for row in shown["today"]["rows"]}
+                for row in standings(database, players, palette, when)["rows"]}
     assert square["winner"] == "Zezima", "the square went to the round-up's pick"
     assert credited["Zezima"] >= 1, "and so must the tally beside it"
     assert credited.get("Other", 0) == 0, "not to whoever the figures preferred"
@@ -957,9 +960,8 @@ def test_the_tab_icon_is_linked_and_survives_its_file_being_absent(client, app):
 def test_today_stands_beside_the_grid_in_the_same_card(app, client):
     """The squares are finished days; the table is the one still running."""
     _calendar_seed(app)
-    body = client.get("/summaries").get_data(as_text=True)
-    calendar = body[body.index('class="calendar"'):body.index("Maxing", body.index('class="calendar"') + 10)] \
-        if "Maxing" in body[body.index('class="calendar"'):] else body[body.index('class="calendar"'):]
+    body = client.get("/maxing").get_data(as_text=True)
+    calendar = body[body.index('class="calendar"'):]
     assert 'class="months"' in calendar
     assert "Today so far" in calendar
     # Both live inside the one card, which is what puts them side by side.
@@ -968,6 +970,7 @@ def test_today_stands_beside_the_grid_in_the_same_card(app, client):
 
 def test_today_is_ordered_by_the_same_rule_as_the_squares(app):
     from wom import winners
+    from wom.web.today import standings
     from wom.web.views import winner_calendar
     from datetime import datetime, timedelta
     database = app.config["DATABASE"]
@@ -991,7 +994,7 @@ def test_today_is_ordered_by_the_same_rule_as_the_squares(app):
 
     players = database.players()
     palette = {p["username"]: "#fff" for p in players}
-    rows = winner_calendar(database, players, palette)["today"]["rows"]
+    rows = standings(database, players, palette)["rows"]
     # One experience point and a 99 outranks nine million spent past one.
     assert [row["name"] for row in rows] == ["Climber", "Maxed"]
     assert rows[0]["nines"] == 1
@@ -1002,6 +1005,7 @@ def test_the_day_in_progress_leads_but_has_not_won(app):
     """Leading at four in the afternoon is not a day won, and must not count
     toward the month either."""
     from wom import winners
+    from wom.web.today import standings
     from wom.web.views import winner_calendar
     from datetime import datetime, timedelta
     database = app.config["DATABASE"]
@@ -1031,7 +1035,7 @@ def test_the_day_in_progress_leads_but_has_not_won(app):
     assert winners.month_points(database, players, start, end).get("zezima", 0) == 0
     palette = {"zezima": "#fff"}
     calendar = winner_calendar(database, players, palette)
-    leader = calendar["today"]["rows"][0]
+    leader = standings(database, players, palette)["rows"][0]
     assert leader["place"] == 1
     assert leader["nine_wins"] == 0 and leader["xp_wins"] == 0
     square = [d for m in calendar["months"] for d in m["days"]
@@ -1044,6 +1048,7 @@ def test_wins_are_split_by_how_the_day_was_taken(app):
     """A day is taken either by reaching a 99 or, where nobody did, on
     experience - so the tallies are kept apart."""
     from wom import winners
+    from wom.web.today import standings
     from wom.web.views import winner_calendar
     from datetime import datetime
     database = app.config["DATABASE"]
@@ -1077,8 +1082,8 @@ def test_wins_are_split_by_how_the_day_was_taken(app):
     players = database.players()
     palette = {p["username"]: "#fff" for p in players}
     rows = {row["name"]: row for row in
-            winner_calendar(database, players, palette,
-                            when=datetime(2026, 8, 15))["today"]["rows"]}
+            standings(database, players, palette,
+                      when=datetime(2026, 8, 15))["rows"]}
     assert rows["Climber"]["nine_wins"] == 1 and rows["Climber"]["xp_wins"] == 0
     assert rows["Grinder"]["nine_wins"] == 0 and rows["Grinder"]["xp_wins"] == 1
 

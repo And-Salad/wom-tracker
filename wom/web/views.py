@@ -257,9 +257,12 @@ def winner_calendar(database, players, palette, when=None):
     answering a different question from the one on screen.
     """
     from .. import winners
+    from .today import is_whole_group
 
-    everyone = database.players()
-    whole_group = len(players) >= len(everyone) > 0
+    # The same test the standings beside this make, from the same helper: two
+    # copies of it is two chances for the squares and the tally to answer
+    # different questions on one card.
+    whole_group = is_whole_group(database, players)
     by_name = {p["username"]: p["display_name"] for p in players}
 
     months = []
@@ -280,60 +283,7 @@ def winner_calendar(database, players, palette, when=None):
         })
     # No legend: the sidebar beside this lists every player against the same
     # swatch, and each square names its winner on hover.
-    return {"months": months, "whole_group": whole_group, "rule": WINNER_RULE,
-            "today": _today_rows(database, players, palette, when, whole_group)}
-
-
-def _today_rows(database, players, palette, when=None, whole_group=False):
-    """Where everyone stands in the day now in progress, and this month.
-
-    The grid is finished days; this is the one still running. It is deliberately
-    not a verdict - today has not been polled to its end and cannot qualify yet -
-    so it shows the running figures and lets the squares do the awarding.
-
-    It counts the month's wins the same way the squares are coloured, down to
-    whether a written round-up overruled the figures. Asked differently, the
-    two halves of one card disagreed: a square in somebody's colour, and a
-    tally beside it crediting the day to whoever the figures alone preferred.
-    """
-    from .. import winners
-
-    start, end = winners.month_range(when, back=0)
-    days = winners.gains_by_day(database, players, start, end)
-    won = winners.daily_winners(database, players, start, end,
-                                whole_group=whole_group)
-    # A day is taken either by reaching a ninety-nine or, where nobody did, on
-    # experience - so the days somebody won are worth splitting the same way.
-    by_nine, by_xp = {}, {}
-    for day, found in won.items():
-        # Leading at four in the afternoon is not a day won.
-        if not found["winner"] or found["live"]:
-            continue
-        scored = days.get(day, {}).get("scores", {}).get(found["winner"])
-        tally = by_nine if scored and scored["nines"] else by_xp
-        tally[found["winner"]] = tally.get(found["winner"], 0) + 1
-
-    scores = days.get(winners.today_key(when), {}).get("scores", {})
-    nothing = {"nines": 0, "raw": 0.0, "capped": 0.0}
-    rows = []
-    for player in players:
-        shown = scores.get(player["username"], nothing)
-        rows.append({
-            "name": player["display_name"],
-            "color": palette.get(player["username"], theme.MUTED),
-            "nines": shown["nines"],
-            "capped": fmt_int(round(shown["capped"])),
-            "moved": winners.moved(shown),
-            "nine_wins": by_nine.get(player["username"], 0),
-            "xp_wins": by_xp.get(player["username"], 0),
-            # Ordered by the same rule the squares are, so the table reads as
-            # the day's standings rather than as a second opinion.
-            "rank": winners.key(shown),
-        })
-    rows.sort(key=lambda row: (row["rank"], row["name"]), reverse=True)
-    for place, row in enumerate(rows, start=1):
-        row["place"] = place
-    return {"rows": rows, "month": start.strftime("%B %Y")}
+    return {"months": months, "whole_group": whole_group, "rule": WINNER_RULE}
 
 
 WINNER_RULE = (

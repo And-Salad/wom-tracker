@@ -5,7 +5,7 @@ import os
 from flask import Blueprint, abort, render_template, send_file, send_from_directory
 
 from ..icons import ASSET_DIR, icon_path
-from . import views
+from . import today, views
 from .data import catalog
 from .selection import database, page_context
 
@@ -32,6 +32,17 @@ def dashboard():
     return render_template("dashboard.html", specs=catalog(), **_shell(scope))
 
 
+@pages.route("/maxing")
+def maxing():
+    scope = page_context()
+    return render_template(
+        "maxing.html",
+        calendar=views.winner_calendar(database(), scope["selected"],
+                                       scope["palette"]),
+        today=today.standings(database(), scope["selected"], scope["palette"]),
+        **_shell(scope))
+
+
 @pages.route("/milestones")
 def milestones():
     scope = page_context()
@@ -48,8 +59,6 @@ def summaries_page():
     scope = page_context()
     return render_template(
         "summaries.html",
-        calendar=views.winner_calendar(database(), scope["selected"],
-                                       scope["palette"]),
         latest=views.latest_round_ups(database()),
         tree=views.summary_tree(database(), scope["selected"], scope["palette"]),
         **_shell(scope))
