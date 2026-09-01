@@ -53,13 +53,15 @@ def _levels_gained(ctx, player):
     start, end = ctx.bounds_for(player)
     if start is None or end is None or start["id"] == end["id"]:
         return 0
-    levels = {}
-    for snapshot_id in (start["id"], end["id"]):
+    levels = []
+    for edge in (start, end):
         row = ctx.db.query_one(
-            "SELECT level FROM metrics WHERE snapshot_id=? AND kind='skill'"
-            " AND metric='overall'", (snapshot_id,))
-        levels[snapshot_id] = (row["level"] if row and row["level"] else 0)
-    return max(0, levels[end["id"]] - levels[start["id"]])
+            "SELECT level FROM metrics WHERE player_id=? AND kind='skill'"
+            " AND metric='overall' AND captured_at<=?"
+            " ORDER BY captured_at DESC LIMIT 1",
+            (edge["player_id"], edge["captured_at"]))
+        levels.append(row["level"] if row and row["level"] else 0)
+    return max(0, levels[1] - levels[0])
 
 
 @chart("standings")

@@ -5,12 +5,15 @@ also flattened into `metrics` so charts and tables can query them with SQL.
 """
 
 import json
+import logging
 import os
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 
 from .util import parse_api_time
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS players (
@@ -42,21 +45,25 @@ CREATE TABLE IF NOT EXISTS snapshots (
     UNIQUE (player_id, captured_at)
 );
 
+-- Only what changed. A reading repeats the previous one for 91 of every 100
+-- metrics - a boss sitting at zero was being written again every six hours
+-- forever - so a row is stored only when a value actually moves, and every
+-- read carries the last one forward. See state_at().
+--
+-- WITHOUT ROWID with this key makes the table its own index, and the key is
+-- ordered for the only question anyone asks of it: what was this metric worth
+-- at or before some moment. That folds away both indexes the old shape needed.
 CREATE TABLE IF NOT EXISTS metrics (
-    snapshot_id INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
     player_id   INTEGER NOT NULL,
-    captured_at TEXT NOT NULL,
     kind        TEXT NOT NULL,                    -- skill | boss | activity | computed
     metric      TEXT NOT NULL,                    -- e.g. overall, zulrah, ehp
+    captured_at TEXT NOT NULL,
     value       REAL,                             -- experience | kills | score | value
     rank        INTEGER,
     level       INTEGER,                          -- skills only
     efficiency  REAL,                             -- ehp for skills, ehb for bosses
-    PRIMARY KEY (snapshot_id, kind, metric)
-);
-
-CREATE INDEX IF NOT EXISTS idx_metrics_lookup
-    ON metrics (player_id, metric, captured_at);
+    PRIMARY KEY (player_id, kind, metric, captured_at)
+) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS achievements (
     player_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
@@ -135,6 +142,7 @@ class Database:
     def _migrate(self):
         """Bring an older database file up to the current schema."""
         conn = self.connect()
+        self._to_sparse_metrics(conn)
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(players)")}
         with conn:
             if "backfilled_at" not in columns:
@@ -158,6 +166,57 @@ class Database:
             with conn:
                 conn.execute("DROP TABLE summaries")
             conn.executescript(SCHEMA)
+
+    def _to_sparse_metrics(self, conn):
+        """Rewrite a full-snapshot metrics table as changes only.
+
+        The old shape wrote every metric of every reading, which for this data
+        was 91% repetition, and carried two indexes larger than the table. The
+        new one keeps a row only where a value moved.
+
+        Done in one transaction against a copy, so an interrupted migration
+        leaves the original in place rather than half a table.
+        """
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(metrics)")]
+        if not columns or "snapshot_id" not in columns:
+            return                                  # already sparse, or brand new
+        log.info("compacting the metrics table to changes only; this takes a moment")
+        with conn:
+            conn.execute("DROP TABLE IF EXISTS metrics_sparse")
+            conn.execute("""
+                CREATE TABLE metrics_sparse (
+                    player_id INTEGER NOT NULL, kind TEXT NOT NULL,
+                    metric TEXT NOT NULL, captured_at TEXT NOT NULL,
+                    value REAL, rank INTEGER, level INTEGER, efficiency REAL,
+                    PRIMARY KEY (player_id, kind, metric, captured_at)
+                ) WITHOUT ROWID""")
+            # A row survives only where it differs from the one before it for
+            # the same metric. IS NOT compares NULLs as equal, which matters:
+            # an unranked metric stays unranked without a row every six hours.
+            conn.execute("""
+                INSERT INTO metrics_sparse
+                SELECT player_id, kind, metric, captured_at, value, rank, level, efficiency
+                FROM (
+                    SELECT m.*,
+                           LAG(m.value) OVER w AS pv, LAG(m.rank) OVER w AS pr,
+                           LAG(m.level) OVER w AS pl, LAG(m.efficiency) OVER w AS pe,
+                           ROW_NUMBER() OVER w AS rn
+                    FROM metrics m
+                    WINDOW w AS (PARTITION BY m.player_id, m.kind, m.metric
+                                 ORDER BY m.captured_at))
+                WHERE rn = 1 OR value IS NOT pv OR rank IS NOT pr
+                   OR level IS NOT pl OR efficiency IS NOT pe""")
+            conn.execute("DROP TABLE metrics")
+            conn.execute("ALTER TABLE metrics_sparse RENAME TO metrics")
+            # Nothing has ever read the raw payload; only the newest per player
+            # is kept, as a sample of exactly what the API hands back.
+            conn.execute("""
+                UPDATE snapshots SET payload='' WHERE id NOT IN (
+                    SELECT id FROM snapshots s WHERE captured_at = (
+                        SELECT MAX(captured_at) FROM snapshots x
+                        WHERE x.player_id = s.player_id))""")
+        conn.execute("VACUUM")
+        log.info("metrics table rewritten")
 
     def connect(self):
         conn = getattr(self._local, "conn", None)
@@ -237,12 +296,40 @@ class Database:
             if cur.rowcount == 0:
                 return None  # already stored
             snapshot_id = cur.lastrowid
+            # One payload per player: a sample of exactly what the API returns,
+            # for the day a field we do not flatten turns out to matter. Every
+            # payload was six megabytes of JSON nothing has ever read.
+            conn.execute(
+                "UPDATE snapshots SET payload='' WHERE player_id=? AND id<>?",
+                (player_id, snapshot_id))
+            # Only what moved. The reading before this one is what "moved" is
+            # measured against, and a metric that matches it is not written.
+            before = self._state_before(conn, player_id, captured_at)
+            changed = [row for row in _flatten(player_id, captured_at, data)
+                       if before.get((row[1], row[2])) != row[4:]]
             conn.executemany(
-                "INSERT OR REPLACE INTO metrics (snapshot_id, player_id, captured_at,"
-                " kind, metric, value, rank, level, efficiency) VALUES (?,?,?,?,?,?,?,?,?)",
-                list(_flatten(snapshot_id, player_id, captured_at, data)),
-            )
+                "INSERT OR REPLACE INTO metrics (player_id, kind, metric,"
+                " captured_at, value, rank, level, efficiency)"
+                " VALUES (?,?,?,?,?,?,?,?)", changed)
         return snapshot_id
+
+    @staticmethod
+    def _state_before(conn, player_id, when):
+        """{(kind, metric): (value, rank, level, efficiency)} at or before `when`.
+
+        A snapshot can arrive out of order - Wise Old Man's history is imported
+        oldest first, and a backfill can land beside readings already stored -
+        so this asks what was true just before this reading rather than
+        assuming the newest row is the one to compare against.
+        """
+        rows = conn.execute(
+            "SELECT kind, metric, value, rank, level, efficiency FROM metrics m"
+            " WHERE player_id=? AND captured_at<? AND captured_at = ("
+            "   SELECT MAX(captured_at) FROM metrics x WHERE x.player_id=m.player_id"
+            "     AND x.kind=m.kind AND x.metric=m.metric AND x.captured_at<?)",
+            (player_id, when, when)).fetchall()
+        return {(r["kind"], r["metric"]):
+                (r["value"], r["rank"], r["level"], r["efficiency"]) for r in rows}
 
     def save_snapshots(self, player_id, snapshots):
         """Store many snapshots, skipping any already held. Returns how many were new."""
@@ -428,8 +515,13 @@ class Database:
         imported newest-first, so within an imported day the largest id is the
         oldest snapshot.
 
-        Metrics cascade from snapshots, so one delete does it. Returns the
-        preview dict with the actual count removed.
+        Metrics are thinned with them, to the last change of each metric on
+        each day. That has to happen together: a change deleted while the
+        reading after it survives would leave the reading carrying an older
+        value, which is worse than losing the detail. Keeping each day's last
+        change and each day's last reading is exact at every surviving moment.
+
+        Returns the preview dict with the actual count removed.
         """
         summary = self.compaction_preview(keep_days)
         cutoff = summary["cutoff"]
@@ -442,6 +534,14 @@ class Database:
                 "     GROUP BY player_id, substr(captured_at, 1, 10)))",
                 (cutoff, cutoff))
             summary["removed"] = cur.rowcount
+            conn.execute(
+                "DELETE FROM metrics WHERE captured_at < ?"
+                " AND captured_at NOT IN ("
+                "   SELECT MAX(x.captured_at) FROM metrics x"
+                "    WHERE x.player_id=metrics.player_id AND x.kind=metrics.kind"
+                "      AND x.metric=metrics.metric AND x.captured_at < ?"
+                "    GROUP BY substr(x.captured_at, 1, 10))",
+                (cutoff, cutoff))
         # VACUUM cannot run inside a transaction, and reclaims the file space.
         conn.execute("VACUUM")
         return summary
@@ -449,8 +549,11 @@ class Database:
     def prune_players(self, keep_usernames):
         """Drop players no longer on the tracked list, and everything they own.
 
-        Snapshots, metrics and achievements all cascade from `players`, so the
-        one delete is enough. Returns how many players went.
+        Snapshots and achievements cascade from `players`. Metrics do not:
+        they carry no foreign key any more, because the key that made them
+        cheap is the one they are read by. So they are deleted by hand, and
+        before the players row goes - after it, there is nothing to name them.
+        Returns how many players went.
         """
         keep = [n.lower() for n in keep_usernames]
         # `x NOT IN (NULL)` is NULL, not true, so an empty keep list has to be
@@ -461,6 +564,9 @@ class Database:
             where = "1=1"
         conn = self.connect()
         with conn:
+            conn.execute(
+                "DELETE FROM metrics WHERE player_id IN ("
+                "  SELECT id FROM players WHERE " + where + ")", keep)
             removed = conn.execute(
                 "DELETE FROM players WHERE " + where, keep).rowcount
             # Group round-ups belong to no player, so nothing cascades them.
@@ -478,114 +584,156 @@ class Database:
     def player_by_username(self, username):
         return self.query_one("SELECT * FROM players WHERE username=?", (username.lower(),))
 
+    def observations(self, player_id, since=None, until=None):
+        """When this account was read, oldest first.
+
+        A snapshot row is the record that somebody looked, whether or not
+        anything had changed. That is a different fact from the metrics beside
+        it and the only one that can answer "were we watching".
+        """
+        sql = "SELECT captured_at FROM snapshots WHERE player_id=?"
+        params = [player_id]
+        if since:
+            sql += " AND captured_at>=?"
+            params.append(since)
+        if until:
+            sql += " AND captured_at<?"
+            params.append(until)
+        return [row["captured_at"]
+                for row in self.query(sql + " ORDER BY captured_at", params)]
+
     def metric_history(self, player_id, metric, kind="skill", limit=None, since=None,
                        bucket=None, until=None):
         """Time series of one metric for one player, oldest first.
 
-        Unbounded by default: at four snapshots a day a row cap silently drops
-        the oldest points off a chart, which reads as history that never
-        happened. Callers that want a window pass `since` instead.
+        One point per reading, not per change. Only changes are stored, but a
+        reading where nothing moved is what tells a chart the line was flat
+        rather than unmeasured - drop those and a quiet fortnight looks like a
+        gap in the data, which is what the dashed stretches are meant to mean.
 
         `bucket="day"` returns the last reading of each UTC day. Updates arrive
         at least four times daily and often more, which is more detail than a
         month-wide axis can render; one end-of-day point per day plots the same
         curve from a fraction of the rows.
 
-        With `since`, the snapshot just before the window is included as well,
-        so a line drawn over that window starts at its left edge instead of
-        wherever the first snapshot inside it happens to fall. `until` closes
-        the window at the other end.
+        With `since`, the reading just before the window opens it, so a line
+        drawn over that window starts at its left edge rather than wherever
+        the first reading inside it happens to fall.
         """
-        where = " WHERE player_id=? AND metric=? AND kind=?"
-        params = [player_id, metric, kind]
+        changes = self.query(
+            "SELECT captured_at, value, rank, level, efficiency FROM metrics"
+            " WHERE player_id=? AND metric=? AND kind=?"
+            + (" AND captured_at<?" if until else "") + " ORDER BY captured_at",
+            [player_id, metric, kind] + ([until] if until else []))
+        stamps = self.observations(player_id, since, until)
         if since:
-            where += " AND captured_at>=?"
-            params.append(since)
-        if until:
-            where += " AND captured_at<?"
-            params.append(until)
+            earlier = self.query_one(
+                "SELECT captured_at FROM snapshots WHERE player_id=? AND captured_at<?"
+                " ORDER BY captured_at DESC LIMIT 1", (player_id, since))
+            if earlier is not None:
+                stamps.insert(0, earlier["captured_at"])
+
+        rows = []
+        at = 0
+        held = None
+        for stamp in stamps:
+            while at < len(changes) and changes[at]["captured_at"] <= stamp:
+                held = changes[at]
+                at += 1
+            if held is None:
+                continue          # the metric was not on file this early
+            rows.append({"captured_at": stamp, "value": held["value"],
+                         "rank": held["rank"], "level": held["level"],
+                         "efficiency": held["efficiency"]})
         if bucket == "day":
-            # MAX() picks each day's last reading, and SQLite fills the bare
-            # columns from that same row.
-            sql = ("SELECT MAX(captured_at) AS captured_at, value, rank, level,"
-                   " efficiency FROM metrics" + where +
-                   " GROUP BY substr(captured_at, 1, 10)")
-        else:
-            sql = ("SELECT captured_at, value, rank, level, efficiency FROM metrics"
-                   + where)
-        if limit:
-            # Keep the newest rows when capped, but still hand them back oldest first.
-            rows = list(reversed(self.query(
-                sql + " ORDER BY captured_at DESC LIMIT ?", params + [limit])))
-        else:
-            rows = self.query(sql + " ORDER BY captured_at ASC", params)
-        if since:
-            baseline = self.query_one(
-                "SELECT captured_at, value, rank, level, efficiency FROM metrics"
-                " WHERE player_id=? AND metric=? AND kind=? AND captured_at<?"
-                " ORDER BY captured_at DESC LIMIT 1",
-                (player_id, metric, kind, since))
-            if baseline is not None:
-                rows.insert(0, baseline)
+            by_day = {}
+            for row in rows:
+                by_day[row["captured_at"][:10]] = row
+            rows = [by_day[day] for day in sorted(by_day)]
+        if limit and len(rows) > limit:
+            rows = rows[-limit:]
         return rows
 
-    def latest_snapshot_metrics(self, player_id, kind=None):
-        sql = (
-            "SELECT * FROM metrics WHERE snapshot_id = ("
-            "  SELECT id FROM snapshots WHERE player_id=? ORDER BY captured_at DESC LIMIT 1)"
-        )
-        params = [player_id]
-        if kind:
-            sql += " AND kind=?"
-            params.append(kind)
-        return self.query(sql + " ORDER BY metric", params)
+    def state_at(self, player_id, when=None, kind=None):
+        """Where an account stood at a moment: one row per metric.
 
-    def snapshot_metrics(self, snapshot_id, kind=None):
-        """One named reading's metrics.
-
-        The same rows as latest_snapshot_metrics, for a snapshot already
-        chosen. A window that ends in the past has to report where the account
-        stood then, not where it stands now.
+        Rows are stored only where a value moved, so the answer is the newest
+        row at or before `when` for each metric rather than the rows sharing
+        one timestamp. `when` of None means now.
         """
-        sql = "SELECT * FROM metrics WHERE snapshot_id=?"
-        params = [snapshot_id]
+        edge = when or "9999"
+        sql = ("SELECT kind, metric, captured_at, value, rank, level, efficiency"
+               " FROM metrics m WHERE player_id=? AND captured_at<=?")
+        params = [player_id, edge]
         if kind:
             sql += " AND kind=?"
             params.append(kind)
+        sql += (" AND captured_at = (SELECT MAX(captured_at) FROM metrics x"
+                "   WHERE x.player_id=m.player_id AND x.kind=m.kind"
+                "     AND x.metric=m.metric AND x.captured_at<=?)")
+        params.append(edge)
         return self.query(sql + " ORDER BY metric", params)
+
+    def latest_snapshot_metrics(self, player_id, kind=None):
+        return self.state_at(player_id, None, kind)
+
+    def snapshot_metrics(self, snapshot, kind=None):
+        """Where an account stood at one named reading.
+
+        Takes the snapshot row rather than its id: with only changes stored, a
+        reading is a moment in time, not a set of rows carrying its number.
+        """
+        if snapshot is None:
+            return []
+        when = snapshot["captured_at"] if not isinstance(snapshot, str) else snapshot
+        return self.state_at(snapshot["player_id"] if not isinstance(snapshot, str)
+                             else None, when, kind)
 
     def export_rows(self, player_ids, kinds=None, since=None, until=None,
                     batch=2000):
-        """Every stored reading in a range, oldest first, yielded in batches.
+        """Every stored reading in a range, oldest first, one row per metric.
 
-        For the export page, which can legitimately ask for a year of every
-        metric for everyone - tens of thousands of rows. Yielding keeps the
-        whole result off the heap and lets the response stream.
+        Storage keeps only what changed, but the file has always meant "one
+        row per metric per reading" and a spreadsheet asking what someone had
+        on a given date should not have to carry values forward itself. So the
+        readings are rebuilt here: a running state per player, emitted whole at
+        each moment that player was read.
+
+        One player at a time, so what is held in memory is one account's
+        metrics rather than the whole export.
         """
         if not player_ids:
             return
-        sql = ("SELECT m.captured_at, p.display_name, p.username, m.kind,"
-               "       m.metric, m.value, m.level, m.rank"
-               "  FROM metrics m JOIN players p ON p.id = m.player_id"
-               " WHERE m.player_id IN ({})".format(",".join("?" * len(player_ids))))
-        params = list(player_ids)
-        if kinds:
-            sql += " AND m.kind IN ({})".format(",".join("?" * len(kinds)))
-            params.extend(kinds)
-        if since:
-            sql += " AND m.captured_at >= ?"
-            params.append(since)
-        if until:
-            sql += " AND m.captured_at < ?"
-            params.append(until)
-        sql += " ORDER BY m.captured_at, p.display_name, m.kind, m.metric"
-        cursor = self.connect().execute(sql, params)
-        while True:
-            rows = cursor.fetchmany(batch)
-            if not rows:
-                return
-            for row in rows:
-                yield row
+        wanted = list(kinds) if kinds else None
+        for player_id in player_ids:
+            who = self.query_one(
+                "SELECT display_name, username FROM players WHERE id=?", (player_id,))
+            if who is None:
+                continue
+            sql = ("SELECT captured_at, kind, metric, value, level, rank FROM metrics"
+                   " WHERE player_id=?")
+            params = [player_id]
+            if wanted:
+                sql += " AND kind IN ({})".format(",".join("?" * len(wanted)))
+                params.extend(wanted)
+            if until:
+                sql += " AND captured_at<?"
+                params.append(until)
+            changes = self.query(sql + " ORDER BY captured_at", params)
+
+            held = {}
+            at = 0
+            for stamp in self.observations(player_id, since, until):
+                while at < len(changes) and changes[at]["captured_at"] <= stamp:
+                    row = changes[at]
+                    held[(row["kind"], row["metric"])] = row
+                    at += 1
+                for (kind, metric), row in sorted(held.items()):
+                    yield {"captured_at": stamp,
+                           "display_name": who["display_name"],
+                           "username": who["username"], "kind": kind,
+                           "metric": metric, "value": row["value"],
+                           "level": row["level"], "rank": row["rank"]}
 
     # -- gains over a window ----------------------------------------------
 
@@ -602,10 +750,10 @@ class Database:
         nearer of the two is wrong by less.
         """
         before = self.query_one(
-            "SELECT id, captured_at FROM snapshots WHERE player_id=? AND captured_at<=?"
+            "SELECT id, player_id, captured_at FROM snapshots WHERE player_id=? AND captured_at<=?"
             " ORDER BY captured_at DESC LIMIT 1", (player_id, since))
         after = self.query_one(
-            "SELECT id, captured_at FROM snapshots WHERE player_id=? AND captured_at>?"
+            "SELECT id, player_id, captured_at FROM snapshots WHERE player_id=? AND captured_at>?"
             + (" AND captured_at<?" if until else "") +
             " ORDER BY captured_at ASC LIMIT 1",
             (player_id, since, until) if until else (player_id, since))
@@ -633,7 +781,7 @@ class Database:
 
     def latest_snapshot(self, player_id):
         return self.query_one(
-            "SELECT id, captured_at FROM snapshots WHERE player_id=?"
+            "SELECT id, player_id, captured_at FROM snapshots WHERE player_id=?"
             " ORDER BY captured_at DESC LIMIT 1", (player_id,))
 
     def snapshot_bounds(self, player_id, since, until=None):
@@ -651,7 +799,7 @@ class Database:
 
     def snapshot_at_or_before(self, player_id, when):
         return self.query_one(
-            "SELECT id, captured_at FROM snapshots WHERE player_id=? AND captured_at<?"
+            "SELECT id, player_id, captured_at FROM snapshots WHERE player_id=? AND captured_at<?"
             " ORDER BY captured_at DESC LIMIT 1", (player_id, when))
 
     def metric_gains(self, player_id, since, kind="skill", bounds=None, until=None):
@@ -665,24 +813,23 @@ class Database:
             player_id, since, until)
         if start is None or end is None or start["id"] == end["id"]:
             return {}
-        rows = self.query(
-            # LEFT JOIN, not JOIN: a metric the player was unranked on at the
-            # baseline has no value there (the API's -1 is stored as NULL), and
-            # an inner join silently dropped it from the window entirely - so a
-            # boss taken from unranked to 286 kills counted as no kills at all.
-            # Unranked means below the hiscore cutoff, so zero is the right
-            # thing to measure from; the same goes for a boss that did not
-            # exist yet when the baseline was taken.
-            "SELECT e.metric AS metric, e.value - COALESCE(s.value, 0) AS gained"
-            " FROM metrics e LEFT JOIN metrics s"
-            "   ON s.snapshot_id=? AND s.kind=e.kind AND s.metric=e.metric"
-            " WHERE e.snapshot_id=? AND e.kind=? AND e.value IS NOT NULL",
-            (start["id"], end["id"], kind),
-        )
-        return {r["metric"]: max(0.0, r["gained"]) for r in rows if r["gained"]}
+        # A metric missing from the opening state counts from zero rather than
+        # being dropped: unranked means below the hiscore cutoff, and a boss
+        # taken from unranked to 286 kills is 286 kills, not none. The same
+        # goes for a boss that did not exist yet when the window opened.
+        opened = {row["metric"]: row["value"]
+                  for row in self.state_at(player_id, start["captured_at"], kind)}
+        gains = {}
+        for row in self.state_at(player_id, end["captured_at"], kind):
+            if row["value"] is None:
+                continue
+            moved = row["value"] - (opened.get(row["metric"]) or 0.0)
+            if moved:
+                gains[row["metric"]] = max(0.0, moved)
+        return gains
 
 
-def _flatten(snapshot_id, player_id, captured_at, data):
+def _flatten(player_id, captured_at, data):
     for kind, key in (("skill", "skills"), ("boss", "bosses"),
                       ("activity", "activities"), ("computed", "computed")):
         section = data.get(key) or {}
@@ -698,7 +845,7 @@ def _flatten(snapshot_id, player_id, captured_at, data):
             if efficiency is None:
                 efficiency = entry.get("ehb")
             yield (
-                snapshot_id, player_id, captured_at, kind, metric,
+                player_id, kind, metric, captured_at,
                 _num(value), _num(entry.get("rank")), _num(entry.get("level")),
                 _num(efficiency),
             )

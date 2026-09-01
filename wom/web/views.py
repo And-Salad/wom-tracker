@@ -154,7 +154,7 @@ def player_detail(database, player, span):
         gains = database.metric_gains(player["id"], since, kind, bounds=bounds)
         rows = []
         end = bounds[1]
-        readings = (database.snapshot_metrics(end["id"], kind) if end
+        readings = (database.snapshot_metrics(end, kind) if end
                     else database.latest_snapshot_metrics(player["id"], kind))
         for row in readings:
             if row["value"] is None and row["level"] is None:
@@ -226,7 +226,7 @@ def metric_table(database, players, since, until, palette):
         for kind, title in METRIC_GROUPS:
             gains = database.metric_gains(player["id"], since, kind,
                                           bounds=(start, end))
-            for row in database.snapshot_metrics(end["id"], kind):
+            for row in database.snapshot_metrics(end, kind):
                 if row["value"] is None and row["level"] is None:
                     continue      # unranked and never seen: not worth a line
                 rows.append({

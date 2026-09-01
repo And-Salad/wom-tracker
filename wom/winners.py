@@ -58,25 +58,34 @@ NINETY_NINE = 13034431
 
 
 def _skill_states(database, player_id, since, until):
-    """[(stamp, {skill: experience})], oldest first.
+    """[(stamp, {skill: experience})], oldest first, one per reading.
 
-    A snapshot carries every skill at once, so consecutive rows sharing a
-    captured_at are one complete reading of the account.
+    Only changes are stored, but a reading where nothing moved is still a
+    reading - it says the account stood where it stood at that moment, which
+    is exactly what a day needs to be measured from. So the walk is driven by
+    when the account was read, with each change laid over a running copy.
     """
-    rows = database.query(
+    changes = database.query(
         "SELECT captured_at, metric, value FROM metrics"
         " WHERE player_id=? AND kind='skill' AND value IS NOT NULL"
-        "   AND captured_at>=? AND captured_at<?"
-        " ORDER BY captured_at", (player_id, since, until))
+        "   AND captured_at<? ORDER BY captured_at",
+        (player_id, until))
+    stamps = database.observations(player_id, since, until)
+    if not stamps:
+        return []
+
     states = []
-    stamp = None
-    current = None
-    for row in rows:
-        if row["captured_at"] != stamp:
-            stamp = row["captured_at"]
-            current = {}
-            states.append((stamp, current))
-        current[row["metric"]] = row["value"]
+    at = 0
+    running = {}
+    for stamp in stamps:
+        moved = False
+        while at < len(changes) and changes[at]["captured_at"] <= stamp:
+            if not moved:
+                running = dict(running)
+                moved = True
+            running[changes[at]["metric"]] = changes[at]["value"]
+            at += 1
+        states.append((stamp, running))
     return states
 
 
