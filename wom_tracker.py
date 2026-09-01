@@ -137,8 +137,7 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
     if due_only:
         keys = summaries.due_periods(database)
         if not keys:
-            print("nothing due yet - the schedule writes these from"
-                  " {:02d}:00 Eastern".format(summaries.SUMMARY_HOUR))
+            print("nothing due yet - every window that has closed is written")
             return 0
         print("due right now: {}".format(", ".join(keys)))
     else:

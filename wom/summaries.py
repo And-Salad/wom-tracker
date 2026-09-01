@@ -26,9 +26,12 @@ log = logging.getLogger(__name__)
 DEFAULT_MODEL = "claude-sonnet-5"
 DEFAULT_EFFORT = "low"
 
-# The scheduled summaries ride the 6am Eastern update slot: the day just gone
-# every morning, the week behind on Mondays, the month behind on the 1st.
-SUMMARY_HOUR = 6
+# The scheduled summaries ride the first update of the Eastern day: the day
+# just gone, the week behind it on Mondays, the month behind it on the 1st.
+# They used to wait for six in the morning, which was the first update slot
+# after midnight when there were only four a day. There are now one hundred
+# and forty four, so the first one after the window closes is minutes old
+# rather than hours, and nothing is gained by sitting on it.
 
 # Summaries are a few paragraphs. This is a deliberately short output, not a
 # guess - a longer cap would only invite a longer answer.
@@ -500,19 +503,18 @@ def summarise_player(database, config, player, window, force=False):
 def due_periods(database, now=None):
     """Which summaries today owes, on the calendar the schedule runs on.
 
-    Every morning covers the day just gone. Mondays add the week behind them,
-    and the first of the month adds the month. The "or overdue" arms cover a
-    machine that was off on the day it should have run: a weekly is not lost
-    just because the PC was asleep all Monday.
+    The first update after midnight covers the day just gone. Mondays add the
+    week behind them, and the first of the month adds the month. Nothing is
+    time-gated beyond that: a window is owed from the moment it closes until
+    something writes it, which is also what catches up a machine that was off
+    on the day it should have run.
 
-    Everything is judged in Eastern time so it lines up with the 6am update
-    slot rather than drifting against the user's own clock.
+    Everything is judged in Eastern time so it lines up with the update
+    schedule rather than drifting against the viewer's own clock.
     """
     from .scheduler import EASTERN
     from datetime import datetime, timezone
     now = (now or datetime.now(timezone.utc)).astimezone(EASTERN)
-    if now.hour < SUMMARY_HOUR:
-        return []           # the morning slot has not come round yet
 
     # A period is owed when its newest complete window has not been written
     # yet. That is what catches up a machine asleep on the day itself: the
@@ -538,7 +540,7 @@ def _missing(database, period, window_key):
 def maybe_write_summaries(database, config, now=None):
     """Write whatever summaries the calendar owes, after an update pass.
 
-    Updates run every six hours; summaries do not. Returns how many were
+    Updates run every ten minutes; summaries do not. Returns how many were
     actually written - zero when the feature is off, when today's are already
     done, or when nothing a summary describes has changed.
     """

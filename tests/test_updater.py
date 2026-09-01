@@ -114,3 +114,20 @@ def test_a_callback_that_raises_does_not_break_the_run(db):
 
     results = update_all(FakeClient(), db, ["zezima"], progress=explode)
     assert results[0].ok
+
+
+def test_the_roster_spelling_of_a_name_is_the_one_shown():
+    """Wise Old Man holds some names in lower case; the roster is where a
+    person wrote them out properly."""
+    from wom.updater import _spelled_as_asked
+    assert _spelled_as_asked({"displayName": "and salad"}, "And Salad") \
+        ["displayName"] == "And Salad"
+    # Neither source is authoritative, so it upgrades the other way too
+    # rather than flattening a name the API had spelled properly.
+    assert _spelled_as_asked({"displayName": "NogginWhack"}, "nogginwhack") \
+        ["displayName"] == "NogginWhack"
+    # A name that genuinely changed is a different name, not a reshaped one.
+    assert _spelled_as_asked({"displayName": "New Name"}, "Old Name") \
+        ["displayName"] == "New Name"
+    # And nothing is invented where the API said nothing.
+    assert _spelled_as_asked({}, "And Salad") == {}

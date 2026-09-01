@@ -1,4 +1,4 @@
-"""Background thread that fires the update run every six hours, Eastern time."""
+"""Background thread that fires the update run on a fixed interval, Eastern time."""
 
 import logging
 import threading
@@ -6,8 +6,17 @@ from datetime import datetime, timedelta, timezone, tzinfo
 
 log = logging.getLogger(__name__)
 
-# Update slots, in US Eastern hours: midnight, 6am, noon, 6pm.
-SLOT_HOURS = (0, 6, 12, 18)
+# Minutes between update runs. Ten is a long way inside what Wise Old Man
+# allows - a run is twelve requests against a limit of twenty a minute, spaced
+# out to about forty seconds, so this is a seven per cent duty cycle - and it
+# cuts the blind spot a daily figure is measured across from six hours to ten
+# minutes. Anything under a minute is refused by the API's own per-player
+# cooldown, which holds a repeat update open rather than declining it.
+SLOT_MINUTES = 10
+
+# Achievements move rarely and cost a request per player, so they are not
+# fetched on every run. On the hour is often enough and halves the traffic.
+ACHIEVEMENT_MINUTE = 0
 
 # How often the thread wakes to re-check the clock. Short enough that a slot is
 # never missed by much, long enough to stay idle.
@@ -60,21 +69,26 @@ def _eastern():
 EASTERN = _eastern()
 
 
-def previous_slot(now=None):
-    """The most recent slot at or before `now`, as an Eastern-time datetime."""
+def previous_slot(now=None, minutes=SLOT_MINUTES):
+    """The most recent slot at or before `now`, as an Eastern-time datetime.
+
+    Slots sit on wall-clock boundaries rather than counting from whenever the
+    process happened to start, so they stay predictable across a restart and a
+    missed one is still recognisably missed.
+    """
     east = (now or datetime.now(timezone.utc)).astimezone(EASTERN)
-    hour = max(h for h in SLOT_HOURS if h <= east.hour)
-    return east.replace(hour=hour, minute=0, second=0, microsecond=0)
+    return east.replace(minute=east.minute - east.minute % minutes,
+                        second=0, microsecond=0)
 
 
-def next_slot(now=None):
+def next_slot(now=None, minutes=SLOT_MINUTES):
     """The first slot strictly after `now`, as an Eastern-time datetime."""
-    east = (now or datetime.now(timezone.utc)).astimezone(EASTERN)
-    for hour in SLOT_HOURS:
-        if east.hour < hour:
-            return east.replace(hour=hour, minute=0, second=0, microsecond=0)
-    tomorrow = east + timedelta(days=1)
-    return tomorrow.replace(hour=SLOT_HOURS[0], minute=0, second=0, microsecond=0)
+    return previous_slot(now, minutes) + timedelta(minutes=minutes)
+
+
+def wants_achievements(now=None, minutes=SLOT_MINUTES):
+    """Whether this run should also re-read everyone's milestones."""
+    return previous_slot(now, minutes).minute == ACHIEVEMENT_MINUTE
 
 
 class SlotScheduler:
@@ -132,7 +146,7 @@ class SlotScheduler:
 
         The flag exists so a scheduled run and a manual one cannot overlap. The
         hosted admin page runs its own jobs on its own threads rather than
-        through run_now, and has to take the same flag or the six-hourly slot
+        through run_now, and has to take the same flag or a scheduled slot
         can fire straight into the middle of a manual update - two passes over
         the same players, two sets of API calls, and for summaries two sets of
         paid-for Claude calls.

@@ -7,7 +7,7 @@
 The public pages are read-only; everything that changes anything lives under
 /admin behind WOM_ADMIN_PASSWORD, and is not registered at all without one.
 
-Pass --with-scheduler to have this process run the six-hourly updates and the
+Pass --with-scheduler to have this process run the updates and the
 summaries as well as serve the pages. That is how it runs hosted, and it is
 the only thing that should be running the schedule - two of them would update
 the same database twice.
@@ -17,6 +17,7 @@ import argparse
 import logging
 import socket
 import sys
+from datetime import datetime, timezone
 
 from wom.config import Config
 from wom.logs import setup_logging
@@ -36,10 +37,33 @@ def local_addresses(port):
                   if not ip.startswith("127.")]
 
 
+# How much recent history stays at full resolution. Beyond it, each day keeps
+# its last reading and each metric its last change of that day.
+COMPACT_KEEP_DAYS = 30
+
+
+def _thin_history(database, settings):
+    """Compact old history once a day, on the first run after midnight.
+
+    Six readings an hour is the right resolution for this week and far more
+    than a month-wide chart can draw. Nothing had ever called this: it was a
+    command somebody had to remember, which is a thing that does not happen.
+    """
+    from wom.scheduler import EASTERN
+    today = datetime.now(timezone.utc).astimezone(EASTERN).strftime("%Y-%m-%d")
+    if settings.get("last_compact") == today:
+        return
+    result = database.compact_snapshots(keep_days=COMPACT_KEEP_DAYS)
+    settings["last_compact"] = today
+    settings.save()
+    if result.get("removed"):
+        log.info("thinned %d old readings", result["removed"])
+
+
 def start_scheduler(app):
-    """Run the six-hourly update from inside the server process."""
+    """Run the update schedule from inside the server process."""
     from wom.api import WomClient
-    from wom.scheduler import SlotScheduler
+    from wom.scheduler import SlotScheduler, wants_achievements
     from wom.summaries import maybe_write_summaries
     from wom.updater import update_all
 
@@ -50,14 +74,21 @@ def start_scheduler(app):
         client = WomClient(settings.get("api_key", ""),
                            settings.get("user_agent_contact", ""))
         database = app.config["DATABASE"]
+        # Milestones move rarely and cost a request per player. At a run every
+        # ten minutes that is worth doing on the hour rather than six times an
+        # hour, which halves what the run asks of Wise Old Man.
         update_all(client, database, settings.get("usernames", []),
-                   trigger=trigger)
-        # The summaries the calendar owes ride on the back of an update, so
+                   trigger=trigger, achievements=wants_achievements())
+        # The summaries a closed window owes ride on the back of an update, so
         # this has to happen here or they never get written at all.
         try:
             maybe_write_summaries(database, settings)
         except Exception:
             log.exception("writing the scheduled summaries failed")
+        try:
+            _thin_history(database, settings)
+        except Exception:
+            log.exception("thinning old history failed")
 
     scheduler = SlotScheduler(config, job)
     # The admin page's buttons take the same "something is running" flag, so a
@@ -75,7 +106,7 @@ def main(argv=None):
                         help="0.0.0.0 to allow other machines on your network")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--with-scheduler", action="store_true",
-                        help="also run the six-hourly update from this process")
+                        help="also run the update schedule from this process")
     parser.add_argument("--debug", action="store_true",
                         help="Flask's dev server with tracebacks, localhost only")
     args = parser.parse_args(argv)

@@ -153,6 +153,13 @@ def _player_days(states, boundaries):
     out = []
     index = 0
     carried = None                       # (stamp, {skill: experience})
+    # Everything before the first boundary settles first. Left in the loop it
+    # was consumed during the first day's own iteration, so that day had no
+    # reading behind it and was measured from its first reading instead of
+    # from the day before's close - wrong for the 1st of every month.
+    while index < len(states) and states[index][0] <= _stamp(boundaries[0]):
+        carried = states[index]
+        index += 1
     for position in range(len(boundaries) - 1):
         opens, closes = boundaries[position], boundaries[position + 1]
         before = carried

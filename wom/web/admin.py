@@ -213,7 +213,7 @@ def run(action):
     config = Config()
 
     def exclusive(body):
-        """Wrap a job so it cannot overlap the six-hourly run.
+        """Wrap a job so it cannot overlap a scheduled run.
 
         JobRunner only stops two admin jobs colliding; the scheduler is a
         separate thread in this same process, and both touch the API and the

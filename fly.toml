@@ -1,7 +1,7 @@
 # Fly.io deployment for the WOM tracker.
 #
 # One machine, always on, with a volume for the database. Always on is
-# deliberate: the six-hourly update runs inside this process, and a machine
+# deliberate: the update schedule runs inside this process, and a machine
 # that Fly has stopped cannot wake itself to do it.
 
 app = "wom-tracker"

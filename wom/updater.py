@@ -23,13 +23,16 @@ class PlayerResult:
 
 
 def update_all(client, database, usernames, trigger="manual", progress=None,
-               starting=None, cancelled=None):
+               starting=None, cancelled=None, achievements=True):
     """Refresh every username in turn, saving each result as it arrives.
 
     `starting(index, total, username)` fires before each player and
     `progress(index, total, PlayerResult)` after it, so a UI can show live
     feedback across the slow bits - importing history takes several calls.
-    `cancelled()` is polled to allow an early stop. Returns the results.
+    `cancelled()` is polled to allow an early stop. `achievements=False` skips
+    the milestone fetch, which is a request per player for something that
+    moves rarely - at a run every ten minutes it is worth doing hourly rather
+    than every time. Returns the results.
     """
     usernames = list(usernames)
     total = len(usernames)
@@ -45,7 +48,7 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
                 starting(index, total, username)
             except Exception:
                 log.exception("starting callback failed")
-        result = update_one(client, database, username)
+        result = update_one(client, database, username, achievements)
         results.append(result)
         if progress is not None:
             try:
@@ -71,7 +74,7 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
     return results
 
 
-def update_one(client, database, username):
+def update_one(client, database, username, achievements=True):
     """Ask the API to refresh one player, then store whatever we get back.
 
     A failed refresh still gets a GET, so a player who was updated moments ago
@@ -93,6 +96,11 @@ def update_one(client, database, username):
             log.warning("fetch failed for %s: %s", username, exc2)
             return PlayerResult(username, False, str(exc2))
 
+    # Wise Old Man hands back whatever capitalisation it holds, which for some
+    # accounts is all lower case. The roster is where a person wrote the name
+    # out, so where the two differ only in case, theirs is the one to show.
+    details = _spelled_as_asked(details, username)
+
     try:
         player_id = database.save_player_details(details)
     except Exception as exc:
@@ -105,12 +113,37 @@ def update_one(client, database, username):
         if backfill_note:
             message = "{}, {}".format(message, backfill_note)
 
-    milestones = sync_achievements(client, database, username, player_id)
+    milestones = (sync_achievements(client, database, username, player_id)
+                  if achievements else 0)
     if milestones:
         message = "{}, {} new milestone{}".format(
             message, milestones, "" if milestones == 1 else "s")
 
     return PlayerResult(username, True, message, imported, milestones)
+
+
+def _spelled_as_asked(details, username):
+    """Settle the capitalisation of a name between the roster and the API.
+
+    Neither is authoritative: Wise Old Man holds some names entirely in lower
+    case, and a roster entry can be typed in lower case just as easily. So the
+    more specific spelling wins - the one carrying more capitals - which
+    upgrades either from the other and downgrades neither.
+
+    Only where the two are the same name. A display name that has genuinely
+    changed is a different string, not a differently shaped one, and that
+    change has to come through.
+    """
+    shown = (details or {}).get("displayName") or ""
+    if not shown or not username or shown == username:
+        return details
+    if shown.lower() != username.lower():
+        return details
+    if sum(c.isupper() for c in username) <= sum(c.isupper() for c in shown):
+        return details
+    details = dict(details)
+    details["displayName"] = username
+    return details
 
 
 def sync_achievements(client, database, username, player_id):

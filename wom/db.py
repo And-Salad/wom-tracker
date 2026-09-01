@@ -198,13 +198,13 @@ class Database:
                 SELECT player_id, kind, metric, captured_at, value, rank, level, efficiency
                 FROM (
                     SELECT m.*,
-                           LAG(m.value) OVER w AS pv, LAG(m.rank) OVER w AS pr,
+                           LAG(m.value) OVER w AS pv,
                            LAG(m.level) OVER w AS pl, LAG(m.efficiency) OVER w AS pe,
                            ROW_NUMBER() OVER w AS rn
                     FROM metrics m
                     WINDOW w AS (PARTITION BY m.player_id, m.kind, m.metric
                                  ORDER BY m.captured_at))
-                WHERE rn = 1 OR value IS NOT pv OR rank IS NOT pr
+                WHERE rn = 1 OR value IS NOT pv
                    OR level IS NOT pl OR efficiency IS NOT pe""")
             conn.execute("DROP TABLE metrics")
             conn.execute("ALTER TABLE metrics_sparse RENAME TO metrics")
@@ -307,11 +307,14 @@ class Database:
             conn.execute(
                 "UPDATE snapshots SET payload='' WHERE player_id=? AND id<>?",
                 (player_id, snapshot_id))
-            # Only what moved. The reading before this one is what "moved" is
-            # measured against, and a metric that matches it is not written.
+            # Only what moved, and rank moving is not the player moving: a
+            # hiscore position drifts because strangers played, and 83% of
+            # every row ever written was that drift. Rank is still stored on
+            # the rows that are written, so it reads as the rank they held
+            # when the metric last actually changed.
             before = self._state_before(conn, player_id, captured_at)
             changed = [row for row in _flatten(player_id, captured_at, data)
-                       if before.get((row[1], row[2])) != row[4:]]
+                       if before.get((row[1], row[2])) != (row[4], row[6], row[7])]
             conn.executemany(
                 "INSERT OR REPLACE INTO metrics (player_id, kind, metric,"
                 " captured_at, value, rank, level, efficiency)"
@@ -328,13 +331,13 @@ class Database:
         assuming the newest row is the one to compare against.
         """
         rows = conn.execute(
-            "SELECT kind, metric, value, rank, level, efficiency FROM metrics m"
+            "SELECT kind, metric, value, level, efficiency FROM metrics m"
             " WHERE player_id=? AND captured_at<? AND captured_at = ("
             "   SELECT MAX(captured_at) FROM metrics x WHERE x.player_id=m.player_id"
             "     AND x.kind=m.kind AND x.metric=m.metric AND x.captured_at<?)",
             (player_id, when, when)).fetchall()
         return {(r["kind"], r["metric"]):
-                (r["value"], r["rank"], r["level"], r["efficiency"]) for r in rows}
+                (r["value"], r["level"], r["efficiency"]) for r in rows}
 
     def save_snapshots(self, player_id, snapshots):
         """Store many snapshots, skipping any already held. Returns how many were new."""
