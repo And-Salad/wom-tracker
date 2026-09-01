@@ -19,6 +19,7 @@ below that says "local" means that zone, not the server's.
 
 from datetime import datetime, timedelta, timezone
 
+from .periods import coverage_slack
 from .scheduler import zone
 from .util import parse_api_time
 
@@ -183,15 +184,16 @@ def _player_days(states, boundaries):
         baseline = before
         if before is None:
             baseline = inside
-        elif inside is not None and _gap(inside[0], _stamp(opens)) <                 _gap(before[0], _stamp(opens)):
+        elif inside is not None and (_gap(inside[0], _stamp(opens))
+                                     < _gap(before[0], _stamp(opens))):
             baseline = inside
         if baseline is None:
             out.append(None)
             continue
-        # Short only when the day was measured from well into itself. Updates
-        # land every six hours, so the nearer reading is often a little after
-        # midnight - the schedule working, not thin coverage.
-        short = _gap(baseline[0], _stamp(opens)) > 86400 * 0.1
+        # Short only when the day was measured from well into itself. A
+        # reading a little after midnight is the schedule working, not thin
+        # coverage; see periods.coverage_slack for where the line sits.
+        short = _gap(baseline[0], _stamp(opens)) > coverage_slack(86400)
         out.append((measure(baseline[1], carried[1]), short))
     return out
 

@@ -33,6 +33,45 @@ PERIODS = (
 
 DEFAULT_PERIOD = "week"
 
+
+# -- how late a reading may be before the figures are "short" --------------
+#
+# Gains are measured from the last reading at or before the window opened. It
+# is never exactly on the boundary, so some lateness is the schedule working
+# rather than missing data - and past some point it is genuinely missing data,
+# which is what the coverage notes on the pages exist to say.
+#
+# Three places asked that question with a bare `> asked * 0.1`, written when
+# updates ran every six hours and a tenth of the window was about one update.
+# At a reading every ten minutes a tenth is enormous: it let a Week hide
+# sixteen hours and a Month three whole days behind "fully covered", which is
+# the exact failure the notes were added to prevent.
+#
+# So: a floor for short windows, a proportion for long ones, whichever is
+# larger.
+#
+# The floor is what one update cadence costs plus room for an ordinary
+# interruption - a slot is ten minutes and a pass over a group takes a few
+# more, so a deploy or a restart can eat half an hour without anything being
+# wrong. Two hours is comfortably past that and still well short of an
+# outage worth reporting.
+#
+# The proportion keeps long windows from crying wolf: a baseline a day late
+# into a year is a third of a per cent of it, and flagging that would make
+# the note meaningless by making it constant.
+COVERAGE_FLOOR_SECONDS = 2 * 3600
+COVERAGE_FRACTION = 0.01
+
+
+def coverage_slack(window_seconds):
+    """How late the baseline may be before a window counts as short.
+
+    Day 2h, Week 2h, Month ~7h, Year ~3.6d - against a cadence that lands a
+    reading every ten minutes, so anything past these means readings are
+    actually missing rather than merely not instantaneous.
+    """
+    return max(COVERAGE_FLOOR_SECONDS, (window_seconds or 0) * COVERAGE_FRACTION)
+
 _BY_KEY = {p.key: p for p in PERIODS}
 _BY_LABEL = {p.label: p for p in PERIODS}
 

@@ -11,6 +11,7 @@ from ..catalog import (BY_KEY, CHOICE_METRICS, COLLECTION_LOG, LOG_METRICS,
                        TOP_BOSSES, TOTAL_LEVEL, chart, specs)
 from ..icons import SKILL_ORDER
 from ..context import ViewContext
+from ..periods import coverage_slack
 from ..util import parse_api_time, pretty_metric
 
 log = logging.getLogger(__name__)
@@ -186,8 +187,7 @@ def _coverage(ctx, series):
         if start is None:
             continue
         measured = parse_api_time(start["captured_at"])
-        # A tenth of the window is slop for the six-hourly update cadence.
-        if (measured - opened).total_seconds() <= asked * 0.1:
+        if (measured - opened).total_seconds() <= coverage_slack(asked):
             continue
         notes.append({"name": entry["name"], "color": entry["color"],
                       "since": measured.strftime("%d %b %Y"),

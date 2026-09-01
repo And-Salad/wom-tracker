@@ -196,8 +196,8 @@ def coverage_note(baseline, since):
     measured = parse_api_time(baseline["captured_at"])
     now = datetime.now(timezone.utc)
     asked = (now - opened).total_seconds()
-    if (measured - opened).total_seconds() <= asked * 0.1:
-        return {"short": False}          # slop for the six-hourly cadence
+    if (measured - opened).total_seconds() <= periods.coverage_slack(asked):
+        return {"short": False}
     covered = max(1, int((now - measured).total_seconds() // 86400))
     return {"short": True, "days": covered,
             "since": fmt_datetime(baseline["captured_at"], "%d %b %Y"),

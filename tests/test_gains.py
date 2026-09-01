@@ -94,3 +94,36 @@ def test_one_snapshot_measures_nothing(db, player):
 def test_no_snapshots_at_all(db, player):
     assert db.metric_gains(player["id"], "2026-08-01T00:00:00.000Z", "boss") == {}
     assert db.snapshot_bounds(player["id"], "2026-08-01T00:00:00.000Z") == (None, None)
+
+
+# -- how late a baseline may be before the figures are called short --------
+
+def test_a_reading_just_after_the_boundary_is_not_short():
+    """Some lateness is the schedule working, not missing data.
+
+    Updates land every ten minutes and a pass over a group takes a few more,
+    so the first reading of a window is always a little inside it.
+    """
+    from wom.periods import coverage_slack
+    assert coverage_slack(86400) > 20 * 60, (
+        "a reading twenty minutes after midnight is an ordinary run")
+
+
+def test_a_week_measured_from_most_of_a_day_in_is_short():
+    """The regression this pins.
+
+    The rule was a flat tenth of the window, written for six-hourly updates.
+    On a Week that let a baseline sixteen hours late pass as full coverage,
+    which is most of a day of the week silently missing.
+    """
+    from wom.periods import coverage_slack
+    week = 7 * 86400
+    assert coverage_slack(week) < 16 * 3600, "sixteen hours of a week is not slop"
+    assert week * 0.1 > 16 * 3600, "which the old flat tenth allowed"
+
+
+def test_long_windows_keep_a_proportional_allowance():
+    """A day late into a year is not worth a warning on every chart."""
+    from wom.periods import coverage_slack
+    assert coverage_slack(365 * 86400) > 86400
+    assert coverage_slack(365 * 86400) < 7 * 86400, "but a week late is"
