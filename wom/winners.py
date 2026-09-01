@@ -111,7 +111,17 @@ def key(shown):
 
 
 def moved(shown):
-    return bool(shown["nines"] or shown["raw"])
+    """Whether this counts as having done anything the rule recognises.
+
+    Deliberately the same test the ranking uses, not "gained any experience
+    at all". An account that spent the day past 99 in everything has a big
+    raw number and a score of nothing - and if that is all that happened, the
+    day has no winner. Judged on raw experience here and on capped experience
+    there, the calendar crowned somebody the round-up beside it called an
+    empty day.
+    """
+    nines, tiebreak = key(shown)
+    return bool(nines or tiebreak)
 
 
 def _player_days(states, boundaries):

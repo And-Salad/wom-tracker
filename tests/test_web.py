@@ -698,8 +698,29 @@ def test_a_ninety_nine_takes_the_day_off_a_bigger_number(app):
     day = winners.daily_winners(database, players, start, end)["2026-08-20"]
     assert day["winner"] == "climber", "one experience point, and a 99, beats 10m"
 
-    scores = winners.gains_by_day(database, players, start, end)["2026-08-20"]["scores"]
-    assert scores["climber"]["nines"] == 1
-    assert scores["maxed"]["nines"] == 0
-    assert scores["maxed"]["capped"] == 0, "none of it counted toward a 99"
-    assert scores["maxed"]["raw"] == 10000000
+    found = winners.gains_by_day(database, players, start, end)["2026-08-20"]
+    assert found["scores"]["climber"]["nines"] == 1
+    # Ten million, all of it past 99, is not a score at all - and it must be
+    # judged the same way here as in the standings, or the calendar crowns
+    # somebody the round-up beside it calls an empty day.
+    assert "maxed" not in found["scores"]
+    assert "maxed" in found["measured"], "tracked, and scored nothing"
+
+
+def test_a_day_spent_entirely_past_99_has_no_winner(app):
+    from wom import winners
+    from datetime import datetime, timezone
+    database = app.config["DATABASE"]
+    database.save_player_details({"id": 1, "username": "maxed",
+                                  "displayName": "Maxed", "type": "regular"})
+    edge = winners.NINETY_NINE
+    database.save_snapshot(1, snapshot("2026-08-19T23:00:00.000Z",
+                                       skills={"attack": (edge * 2, 99)}))
+    database.save_snapshot(1, snapshot("2026-08-20T23:00:00.000Z",
+                                       skills={"attack": (edge * 3, 99)}))
+    players = database.players()
+    start, end = winners.month_range(
+        datetime(2026, 8, 25, tzinfo=timezone.utc), back=0)
+    day = winners.daily_winners(database, players, start, end)["2026-08-20"]
+    assert day["winner"] is None
+    assert day["reason"] == "nobody gained anything"
