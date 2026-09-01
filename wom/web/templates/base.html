@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}WOM Tracker{% endblock %}</title>
+{# Nothing breaks if assets/favicon.png is not there; the tab just keeps the
+   browser's blank page icon. #}
+<link rel="icon" type="image/png" href="/assets/favicon.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <style>
   /* Dark throughout, from one palette (wom/theme.py): the same variables
      the D3 charts read for their axes, gridlines and tooltips. */

@@ -81,3 +81,20 @@ def icon(kind, metric):
 @pages.route("/assets/<path:name>")
 def asset(name):
     return send_from_directory(ASSET_DIR, name)
+
+
+FAVICON = os.path.join(ASSET_DIR, "favicon.png")
+
+
+@pages.route("/favicon.ico")
+def favicon():
+    """Browsers ask for this by name whatever the page links to.
+
+    A PNG under an .ico name is what every browser since IE11 wants anyway,
+    and serving it here keeps a 404 a request out of every log.
+    """
+    if not os.path.exists(FAVICON):
+        abort(404)
+    response = send_file(FAVICON, mimetype="image/png")
+    response.headers["Cache-Control"] = "public, max-age=604800"
+    return response

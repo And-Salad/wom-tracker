@@ -768,3 +768,15 @@ def test_a_day_nobody_was_polled_on_is_blank(app):
     assert watched["2026-08-28"]["winner"] == "zezima"
     # And only that day: the others still have nobody vouching for them.
     assert watched["2026-08-29"]["reason"] == "the tracker was not watching that day"
+
+
+def test_the_tab_icon_is_linked_and_survives_its_file_being_absent(client, app):
+    """The link is always in the head; the route 404s rather than 500s when
+    nobody has put a favicon.png in assets yet."""
+    seed(app)
+    head = client.get("/").get_data(as_text=True)
+    assert 'rel="icon" type="image/png" href="/assets/favicon.png"' in head
+    import os
+    from wom.web.pages import FAVICON
+    expected = 200 if os.path.exists(FAVICON) else 404
+    assert client.get("/favicon.ico").status_code == expected
