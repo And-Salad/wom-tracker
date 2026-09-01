@@ -113,6 +113,19 @@
         </select>
       </label>
       <label class="field">
+        <span>Effort</span>
+        <select name="summary_effort">
+          {% for effort in efforts %}
+            <option value="{{ effort }}"
+              {{ 'selected' if effort == config.get('summary_effort') }}>{{ effort }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="hint">
+        How hard the model thinks before writing. Higher costs more per
+        round-up; low is enough to turn a table of figures into prose.
+      </p>
+      <label class="field">
         <span>Anthropic API key {% if config.is_from_env('anthropic_api_key') %}
           <em>set by the environment</em>{% endif %}</span>
         {% if config.is_from_env('anthropic_api_key') %}

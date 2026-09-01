@@ -19,7 +19,7 @@ from flask import (Blueprint, current_app, flash, redirect, render_template,
 from .. import periods, scheduler, summaries as core
 from ..colors import normalise, player_color, set_player_color
 from ..config import Config, ENV_KEYS, normalise_usernames
-from ..summaries import SUMMARY_MODELS
+from ..summaries import SUMMARY_EFFORTS, SUMMARY_MODELS
 from .limits import client_address
 
 log = logging.getLogger(__name__)
@@ -125,7 +125,8 @@ def settings():
     tripwire = current_app.config["LIMITS"].api_tripwire
     return render_template(
         "admin.html", page="admin", config=config, roster=roster,
-        models=SUMMARY_MODELS, env_keys=ENV_KEYS, zones=COMMON_ZONES,
+        models=SUMMARY_MODELS, efforts=SUMMARY_EFFORTS,
+        env_keys=ENV_KEYS, zones=COMMON_ZONES,
         job=current_app.config["JOBS"].status(),
         tripwire=tripwire.status() if tripwire else None,
         periods=[p.key for p in periods.PERIODS])
@@ -142,6 +143,8 @@ def save_settings():
     # then fails on every future API call, visible only in the log.
     model = request.form.get("summary_model", "")
     config["summary_model"] = model if model in SUMMARY_MODELS else "claude-sonnet-5"
+    effort = request.form.get("summary_effort", "")
+    config["summary_effort"] = effort if effort in SUMMARY_EFFORTS else "low"
     config["user_agent_contact"] = request.form.get("user_agent_contact", "").strip()
     # A zone this machine cannot resolve would move every day boundary to UTC
     # without saying so, which is a strange way to find out you typed it wrong.
@@ -215,24 +218,107 @@ def resume():
     return redirect(url_for("admin.settings"))
 
 
+KINDS = (("player", "Per-player"), ("group", "Group round-up"))
+
+
+def _prompt_rows(config):
+    """Every prompt file there is to edit: the two bases, then any override.
+
+    A period-specific file wins over the base for that period, and dropping
+    one in is the supported way to say something different in a yearly note
+    than in a daily one. They were editable only over SSH, which meant the
+    prompts actually driving the quarterly and yearly round-ups could not be
+    read - never mind changed - from the page whose whole job is the prompts.
+    """
+    rows = []
+    for kind, label in KINDS:
+        rows.append({"kind": kind, "period": "", "title": label + " prompt",
+                     "text": core.load_prompt(config, None, kind=kind),
+                     "override": False})
+        for key in periods.SUMMARY_PERIODS:
+            path = core.period_prompt_path(key, kind=kind)
+            if not os.path.exists(path):
+                continue
+            with open(path, "r", encoding="utf-8") as handle:
+                rows.append({"kind": kind, "period": key,
+                             "title": "{} prompt for {}".format(label, key),
+                             "text": handle.read().strip(), "override": True})
+    return rows
+
+
+def _seed_override(config, choice):
+    """Create a period's own prompt file, copied from the base it overrides.
+
+    Seeded rather than blank: an override is nearly always the base prompt
+    with a paragraph changed, and starting from an empty box invites losing
+    the instructions that make the digest readable.
+    """
+    kind, _, period = choice.partition(":")
+    if kind not in ("player", "group") or period not in periods.SUMMARY_PERIODS:
+        flash("That is not a prompt to add.")
+        return redirect(url_for("admin.prompts"))
+    path = core.period_prompt_path(period, kind=kind)
+    if os.path.exists(path):
+        flash("There is already a {} prompt for {}.".format(kind, period))
+        return redirect(url_for("admin.prompts"))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(core.load_prompt(config, None, kind=kind).strip() + "\n")
+    flash("Added a {} prompt for {}, copied from the base one.".format(
+        kind, period))
+    return redirect(url_for("admin.prompts"))
+
+
+def _missing_overrides(config):
+    """The (kind, period) pairs that have no file yet, for the add control."""
+    out = []
+    for kind, label in KINDS:
+        for key in periods.SUMMARY_PERIODS:
+            if not os.path.exists(core.period_prompt_path(key, kind=kind)):
+                out.append({"kind": kind, "period": key,
+                            "label": "{} - {}".format(label, key)})
+    return out
+
+
 @admin.route("/admin/prompts", methods=["GET", "POST"])
 @requires_login
 def prompts():
     config = Config()
-    kinds = (("player", "Per-player prompt"), ("group", "Group round-up prompt"))
     if request.method == "POST":
+        if request.form.get("seed"):
+            return _seed_override(config, request.form.get("add", ""))
         kind = request.form.get("kind")
-        if kind in ("player", "group"):
-            path = core.prompt_path(config, None, kind=kind)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as handle:
-                handle.write(request.form.get("text", "").strip() + "\n")
-            flash("Saved the {} prompt.".format(kind))
+        period = (request.form.get("period") or "").strip()
+        if kind not in ("player", "group"):
+            flash("Unknown prompt.")
+        elif period and period not in periods.SUMMARY_PERIODS:
+            flash("There is no {} period.".format(period))
+        else:
+            # A period names its own file; no period means the base one. Both
+            # go through period_prompt_path/base_prompt_path rather than
+            # prompt_path, which answers "which file would be *used*" and so
+            # falls back to the base - saving an override through it would
+            # quietly write the base file instead.
+            path = (core.period_prompt_path(period, kind=kind) if period
+                    else core.base_prompt_path(kind=kind))
+            text = request.form.get("text", "").strip()
+            if request.form.get("delete") and period:
+                if os.path.exists(path):
+                    os.remove(path)
+                flash("Removed the {} override for {}; it falls back to the "
+                      "base prompt.".format(kind, period))
+            elif not text:
+                flash("A prompt cannot be empty.")
+            else:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(text + "\n")
+                flash("Saved the {} prompt{}.".format(
+                    kind, " for " + period if period else ""))
         return redirect(url_for("admin.prompts"))
-    loaded = [{"kind": kind, "title": title,
-               "text": core.load_prompt(config, None, kind=kind)}
-              for kind, title in kinds]
-    return render_template("admin_prompts.html", page="admin", prompts=loaded)
+    return render_template("admin_prompts.html", page="admin",
+                           prompts=_prompt_rows(config),
+                           missing=_missing_overrides(config))
 
 
 # -- things that take a while ---------------------------------------------

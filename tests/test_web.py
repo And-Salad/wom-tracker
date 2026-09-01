@@ -1,6 +1,7 @@
 """The HTTP surface: what is public, what is not, and what is refused."""
 
 import json
+import os
 
 from conftest import snapshot
 
@@ -1080,3 +1081,104 @@ def test_wins_are_split_by_how_the_day_was_taken(app):
                             when=datetime(2026, 8, 15))["today"]["rows"]}
     assert rows["Climber"]["nine_wins"] == 1 and rows["Climber"]["xp_wins"] == 0
     assert rows["Grinder"]["nine_wins"] == 0 and rows["Grinder"]["xp_wins"] == 1
+
+
+# -- the prompts page ------------------------------------------------------
+
+def _prompt_files():
+    """Every prompt file currently on disk, by name."""
+    from wom.config import DATA_DIR
+    return {name for name in os.listdir(DATA_DIR) if name.endswith(".txt")}
+
+
+def test_every_prompt_that_drives_a_round_up_can_be_edited(signed_in, app):
+    """A period override was reachable only over SSH.
+
+    Per-period files are the supported way to ask a yearly note for something
+    a daily one should not say. The page offered the two base prompts and
+    nothing else, so the prompts actually driving the quarterly and yearly
+    round-ups could not be read from it, let alone changed.
+    """
+    from wom import summaries as core
+    path = core.period_prompt_path("year", kind="group")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("Say something only a year would want said.\n")
+    try:
+        body = signed_in.get("/admin/prompts").get_data(as_text=True)
+        assert "Say something only a year would want said." in body
+    finally:
+        os.remove(path)
+
+
+def test_saving_an_override_writes_that_period_not_the_base(signed_in, app):
+    """prompt_path answers "which file would be used", which falls back to the
+    base - so saving through it would silently overwrite the base prompt."""
+    from wom import summaries as core
+    base = core.base_prompt_path(kind="player")
+    with open(base, "r", encoding="utf-8") as handle:
+        before = handle.read()
+    override = core.period_prompt_path("quarter", kind="player")
+    try:
+        signed_in.post("/admin/prompts", data={
+            "kind": "player", "period": "quarter", "text": "Only for quarters."})
+        assert os.path.exists(override), "the override was written"
+        with open(override, "r", encoding="utf-8") as handle:
+            assert handle.read().strip() == "Only for quarters."
+        with open(base, "r", encoding="utf-8") as handle:
+            assert handle.read() == before, "and the base was left alone"
+    finally:
+        if os.path.exists(override):
+            os.remove(override)
+
+
+def test_an_override_can_be_seeded_and_then_removed(signed_in, app):
+    from wom import summaries as core
+    override = core.period_prompt_path("day", kind="group")
+    assert not os.path.exists(override)
+    try:
+        signed_in.post("/admin/prompts", data={"seed": "1", "add": "group:day"})
+        assert os.path.exists(override), "seeded from the base prompt"
+        with open(override, "r", encoding="utf-8") as handle:
+            assert handle.read().strip(), "and not left empty"
+
+        signed_in.post("/admin/prompts", data={
+            "kind": "group", "period": "day", "delete": "1", "text": "ignored"})
+        assert not os.path.exists(override), "removed, falling back to the base"
+    finally:
+        if os.path.exists(override):
+            os.remove(override)
+
+
+def test_a_prompt_cannot_be_saved_empty(signed_in, app):
+    """An empty system prompt is not an edit, it is a broken round-up."""
+    from wom import summaries as core
+    base = core.base_prompt_path(kind="player")
+    with open(base, "r", encoding="utf-8") as handle:
+        before = handle.read()
+    signed_in.post("/admin/prompts", data={"kind": "player", "text": "   "})
+    with open(base, "r", encoding="utf-8") as handle:
+        assert handle.read() == before
+
+
+def test_a_made_up_period_is_refused(signed_in, app):
+    """The period names a file path, so nothing but a known period reaches it."""
+    before = _prompt_files()
+    signed_in.post("/admin/prompts", data={
+        "kind": "player", "period": "../../etc/passwd", "text": "no"})
+    assert _prompt_files() == before
+
+
+def test_the_effort_setting_is_on_the_page_and_is_checked(signed_in, app):
+    """It moves the bill on every round-up, and was reachable only by editing
+    config.json on the volume - which for a hosted deployment is not at all."""
+    from wom.config import Config
+    seed(app)
+    form = {"usernames": "zezima", "summary_model": "claude-sonnet-5"}
+    assert 'name="summary_effort"' in signed_in.get("/admin").get_data(as_text=True)
+
+    signed_in.post("/admin/settings", data=dict(form, summary_effort="high"))
+    assert Config().get("summary_effort") == "high"
+
+    signed_in.post("/admin/settings", data=dict(form, summary_effort="colossal"))
+    assert Config().get("summary_effort") == "low", "an unknown effort falls back"

@@ -44,6 +44,12 @@ PRICING = {"claude-opus-5": (5.0, 25.0), "claude-opus-4-8": (5.0, 25.0),
 # Offered in the Options dialog, cheapest last.
 SUMMARY_MODELS = ("claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5")
 
+# How hard the model works before answering, which moves both the bill and the
+# quality. Offered beside the model because it is the same kind of decision:
+# it was a setting only reachable by hand-editing config.json on the volume,
+# which for a hosted deployment meant it was not reachable at all.
+SUMMARY_EFFORTS = ("low", "medium", "high")
+
 DEFAULT_PROMPT = """\
 You write short progress notes about Old School RuneScape players for a small
 group of friends who track each other's accounts.

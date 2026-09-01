@@ -10,25 +10,61 @@
 
   <p><a href="/admin" class="accent">&larr; back to admin</a></p>
 
+  <p class="hint">
+    Two base prompts cover every period. A period may override its own with a
+    file of its own, which is what the quarterly and yearly round-ups use to
+    ask for something a daily note should not say. Editing any of these does
+    not rewrite what is already written &mdash; the next scheduled run uses it.
+  </p>
+
   {% for prompt in prompts %}
     <div class="card">
       <h3>{{ prompt.title }}</h3>
       <p class="hint">
         {% if prompt.kind == 'player' %}
           Used for each player's own note. The digest it is given opens with a
-          "Data coverage" line, which this prompt tells it how to read.
+          &ldquo;Data coverage&rdquo; line, which this prompt tells it how to
+          read.
         {% else %}
           Used for the group round-up, which is given every player's figures
           side by side.
         {% endif %}
-        Editing this does not rewrite anything already written - the next
-        scheduled run uses it.
+        {% if prompt.override %}
+          Overrides the base prompt for the <strong>{{ prompt.period }}</strong>
+          window only.
+        {% else %}
+          Used by every period that has no override of its own.
+        {% endif %}
       </p>
       <form method="post">
         <input type="hidden" name="kind" value="{{ prompt.kind }}">
+        <input type="hidden" name="period" value="{{ prompt.period }}">
         <textarea name="text" rows="20" spellcheck="false">{{ prompt.text }}</textarea>
-        <p><button type="submit">Save this prompt</button></p>
+        <p>
+          <button type="submit">Save this prompt</button>
+          {% if prompt.override %}
+            <button type="submit" name="delete" value="1" class="quiet">
+              Remove this override</button>
+          {% endif %}
+        </p>
       </form>
     </div>
   {% endfor %}
+
+  {% if missing %}
+    <div class="card">
+      <h3>Add an override</h3>
+      <p class="hint">
+        Starts from the matching base prompt, which you can then edit above.
+      </p>
+      <form method="post">
+        <select name="add">
+          {% for option in missing %}
+            <option value="{{ option.kind }}:{{ option.period }}">{{ option.label }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" name="seed" value="1">Create it</button>
+      </form>
+    </div>
+  {% endif %}
 {% endblock %}
