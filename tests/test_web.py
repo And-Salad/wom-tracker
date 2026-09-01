@@ -859,8 +859,53 @@ def test_the_day_in_progress_leads_but_has_not_won(app):
     assert winners.month_points(database, players, start, end).get("zezima", 0) == 0
     palette = {"zezima": "#fff"}
     calendar = winner_calendar(database, players, palette)
-    assert calendar["today"]["rows"][0]["won"] == 0
+    leader = calendar["today"]["rows"][0]
+    assert leader["place"] == 1
+    assert leader["nine_wins"] == 0 and leader["xp_wins"] == 0
     square = [d for m in calendar["months"] for d in m["days"]
               if d["winner"] and d["live"]]
     assert len(square) == 1, "one square is live, and it is coloured"
     assert "the day is not over" in square[0]["note"]
+
+
+def test_wins_are_split_by_how_the_day_was_taken(app):
+    """A day is taken either by reaching a 99 or, where nobody did, on
+    experience - so the tallies are kept apart."""
+    from wom import winners
+    from wom.web.views import winner_calendar
+    from datetime import datetime, timedelta
+    database = app.config["DATABASE"]
+    for pid, name in ((1, "Climber"), (2, "Grinder")):
+        database.save_player_details({"id": pid, "username": name.lower(),
+                                      "displayName": name, "type": "regular"})
+    edge = winners.NINETY_NINE
+
+    def reading(pid, day, hour, attack, level):
+        database.save_snapshot(pid, snapshot(
+            "{}T{}:00:00.000Z".format(day, hour),
+            skills={"attack": (attack, level)}))
+
+    # Experience only ever goes up, so each reading carries the last one
+    # forward - a dip would look like a second crossing of 99.
+    reading(1, "2026-08-09", "05", edge - 500000, 90)
+    reading(2, "2026-08-09", "05", 100000, 90)
+    reading(1, "2026-08-10", "05", edge - 500000, 90)
+    reading(2, "2026-08-10", "05", 100000, 90)
+    # The 10th: Climber crosses 99, so it is a 99 win.
+    reading(1, "2026-08-10", "23", edge, 99)
+    reading(2, "2026-08-10", "23", 100000, 90)
+    # The 11th: nobody crosses - Climber is already past it - and Grinder
+    # simply gains the most, so it is an experience win.
+    reading(1, "2026-08-11", "05", edge, 99)
+    reading(2, "2026-08-11", "05", 100000, 90)
+    reading(1, "2026-08-11", "23", edge + 10, 99)
+    reading(2, "2026-08-11", "23", 900000, 95)
+    _polled(database, 2, ["2026-08-10", "2026-08-11"])
+
+    players = database.players()
+    palette = {p["username"]: "#fff" for p in players}
+    rows = {row["name"]: row for row in
+            winner_calendar(database, players, palette,
+                            when=datetime(2026, 8, 15))["today"]["rows"]}
+    assert rows["Climber"]["nine_wins"] == 1 and rows["Climber"]["xp_wins"] == 0
+    assert rows["Grinder"]["nine_wins"] == 0 and rows["Grinder"]["xp_wins"] == 1

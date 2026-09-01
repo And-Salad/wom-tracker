@@ -45,20 +45,22 @@
       <h4>Today so far</h4>
       <table>
         <tr>
+          <th></th>
           <th>Player</th>
           <th class="num" title="Experience toward a 99 since midnight, which is what the day is judged on">XP Towards 99</th>
           <th class="num" title="Ninety-nines reached today">99s Today</th>
-          <th class="num" title="Ninety-nines reached in {{ calendar.today.month }}">99s This Month</th>
-          <th class="num" title="Days won in {{ calendar.today.month }}. Today is not one until it is over">Won this Month</th>
+          <th class="num" title="Days of {{ calendar.today.month }} taken by reaching a 99">99 Wins {{ calendar.today.month }}</th>
+          <th class="num" title="Days of {{ calendar.today.month }} taken on experience, nobody having reached a 99. Today is not one until it is over">XP Wins {{ calendar.today.month }}</th>
         </tr>
         {% for row in calendar.today.rows %}
           <tr class="{{ 'moved' if row.moved }}">
+            <td class="rank">{{ row.place }}</td>
             <td class="name"><span class="swatch" style="background: {{ row.color }};
                   display:inline-block; margin-right:6px"></span>{{ row.name }}</td>
             <td class="num">{{ row.capped if row.moved else '-' }}</td>
             <td class="num {{ '' if row.nines else 'dim' }}">{{ row.nines or '-' }}</td>
-            <td class="num {{ '' if row.month_nines else 'dim' }}">{{ row.month_nines or '-' }}</td>
-            <td class="num dim">{{ row.won or '-' }}</td>
+            <td class="num {{ '' if row.nine_wins else 'dim' }}">{{ row.nine_wins or '-' }}</td>
+            <td class="num {{ '' if row.xp_wins else 'dim' }}">{{ row.xp_wins or '-' }}</td>
           </tr>
         {% endfor %}
       </table>

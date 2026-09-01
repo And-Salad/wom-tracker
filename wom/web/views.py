@@ -296,21 +296,18 @@ def _today_rows(database, players, palette, when=None):
     start, end = winners.month_range(when, back=0)
     days = winners.gains_by_day(database, players, start, end)
     won = winners.daily_winners(database, players, start, end)
-    tally = {}
-    for found in won.values():
+    # A day is taken either by reaching a ninety-nine or, where nobody did, on
+    # experience - so the days somebody won are worth splitting the same way.
+    by_nine, by_xp = {}, {}
+    for day, found in won.items():
         # Leading at four in the afternoon is not a day won.
-        if found["winner"] and not found["live"]:
-            tally[found["winner"]] = tally.get(found["winner"], 0) + 1
+        if not found["winner"] or found["live"]:
+            continue
+        scored = days.get(day, {}).get("scores", {}).get(found["winner"])
+        tally = by_nine if scored and scored["nines"] else by_xp
+        tally[found["winner"]] = tally.get(found["winner"], 0) + 1
 
     scores = days.get(winners.today_key(when), {}).get("scores", {})
-    # Ninety-nines are the month's headline, so they are counted across it as
-    # well as for today - including today, which counts for a milestone even
-    # though the day itself has not been won yet.
-    month_nines = {}
-    for found in days.values():
-        for username, shown in found["scores"].items():
-            month_nines[username] = month_nines.get(username, 0) + shown["nines"]
-
     nothing = {"nines": 0, "raw": 0.0, "capped": 0.0}
     rows = []
     for player in players:
@@ -319,16 +316,18 @@ def _today_rows(database, players, palette, when=None):
             "name": player["display_name"],
             "color": palette.get(player["username"], theme.MUTED),
             "nines": shown["nines"],
-            "month_nines": month_nines.get(player["username"], 0),
             "capped": fmt_int(round(shown["capped"])),
             "moved": winners.moved(shown),
-            "won": tally.get(player["username"], 0),
+            "nine_wins": by_nine.get(player["username"], 0),
+            "xp_wins": by_xp.get(player["username"], 0),
             # Ordered by the same rule the squares are, so the table reads as
             # the day's standings rather than as a second opinion.
             "rank": winners.key(shown),
         })
     rows.sort(key=lambda row: (row["rank"], row["name"]), reverse=True)
-    return {"rows": rows, "month": start.strftime("%B")}
+    for place, row in enumerate(rows, start=1):
+        row["place"] = place
+    return {"rows": rows, "month": start.strftime("%B %Y")}
 
 
 WINNER_RULE = (
