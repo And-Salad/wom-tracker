@@ -1,11 +1,14 @@
 """Thin client for the Wise Old Man v2 API (https://docs.wiseoldman.net/api)."""
 
+import logging
 import threading
 import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 
 import requests
+
+log = logging.getLogger(__name__)
 
 BASE_URL = "https://api.wiseoldman.net/v2"
 
@@ -88,6 +91,18 @@ class WomClient:
             if 500 <= resp.status_code < 600:
                 last = WomError("server error {}".format(resp.status_code), resp.status_code)
                 time.sleep(2 ** attempt)
+                continue
+
+            # A key the API rejects is worse than no key at all: it answers
+            # 403 to every request and the tracker goes quiet, while the same
+            # request without it is served. So it is dropped, loudly, and the
+            # run carries on at the anonymous rate - which is ample here.
+            if resp.status_code == 403 and self.api_key and                     "api key" in _error_message(resp).lower():
+                log.warning("Wise Old Man rejected the configured API key; "
+                            "continuing without it. Clear or correct it under "
+                            "/admin - anonymous is 20 requests a minute, and a "
+                            "run of six players is twelve every ten.")
+                self.api_key = ""
                 continue
 
             if resp.status_code >= 400:

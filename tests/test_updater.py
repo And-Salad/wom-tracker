@@ -131,3 +131,40 @@ def test_the_roster_spelling_of_a_name_is_the_one_shown():
         ["displayName"] == "New Name"
     # And nothing is invented where the API said nothing.
     assert _spelled_as_asked({}, "And Salad") == {}
+
+
+def test_a_rejected_api_key_is_dropped_rather_than_taking_the_tracker_down():
+    """A key the API refuses answers 403 to every request while the same
+    request without it is served, so the tracker goes quiet holding a key."""
+    import wom.api as api
+
+    class Reply:
+        def __init__(self, code, body):
+            self.status_code = code
+            self.headers = {}
+            self._body = body
+
+        def json(self):
+            return self._body
+
+        @property
+        def text(self):
+            import json as _json
+            return _json.dumps(self._body)
+
+    class Session:
+        def __init__(self):
+            self.keys_sent = []
+
+        def request(self, method, url, params=None, headers=None, timeout=None):
+            self.keys_sent.append(headers.get("x-api-key"))
+            if headers.get("x-api-key"):
+                return Reply(403, {"message": "Invalid API Key. Please check ..."})
+            return Reply(200, {"displayName": "Zezima"})
+
+    session = Session()
+    client = api.WomClient("not-a-real-key", session=session)
+    assert client.get_player("zezima")["displayName"] == "Zezima"
+    assert session.keys_sent == ["not-a-real-key", None], \
+        "tried once with it, then dropped it"
+    assert client.api_key == "", "and stops sending it for the rest of the run"

@@ -28,7 +28,15 @@ def log_path_for(role):
 DEFAULTS = {
     # Player names to keep updated, in display order.
     "usernames": [],
-    # Optional Wise Old Man API key. Without one the API allows 20 req/min.
+    # The Eastern day history was last thinned on. Anything the app writes has
+    # to be declared here: save() keeps only the keys it knows, so a key that
+    # is not listed is written and then dropped on the next read - which had
+    # this compacting, and vacuuming, on every ten-minute run.
+    "last_compact": "",
+    # Optional Wise Old Man API key. Without one the API allows 20 req/min,
+    # which is ample here - a run of six players is twelve requests every ten
+    # minutes. A key that the API rejects is worse than none: it answers 403
+    # to every request, so the client drops it and carries on without.
     "api_key": "",
     # Contact string sent in the User-Agent header, as the API docs ask for.
     "user_agent_contact": "",
