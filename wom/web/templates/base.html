@@ -99,8 +99,12 @@
      Two months of squares, each the colour of whoever took that day. */
   .months { display: flex; gap: 28px; flex-wrap: wrap; margin: 12px 0 4px; }
   .month h4 { margin: 0 0 8px; font-size: 14px; }
-  .month h4 .won { color: var(--muted); font-weight: 400; font-size: 12px;
-                   margin-left: 6px; }
+  /* Inherits the heading's colour, which is the month winner's own: the name
+     and the month are saying the same thing, so they say it in one colour.
+     Lighter and smaller keeps the month itself the thing you read first.
+     (Not .won - that is the day squares, and this is not one.) */
+  .month h4 .took { font-weight: 400; font-size: 12px; margin-left: 6px;
+                    opacity: .85; }
   .grid-days { display: grid; grid-template-columns: repeat(7, 30px);
                gap: 4px; }
   .grid-days .dow { font-size: 11px; color: var(--muted); text-align: center;
