@@ -610,7 +610,7 @@ def test_the_round_up_overrules_the_figures_only_for_the_whole_group(app):
 def test_the_calendar_names_a_winner_for_the_month_too(app, client):
     _calendar_seed(app)
     body = client.get("/summaries").get_data(as_text=True)
-    assert "Who won each day" in body
+    assert "Winner Calendar" in body
     assert body.count('class="month"') == 2, "last month and this one"
 
 

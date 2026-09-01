@@ -8,15 +8,12 @@
 
 {% block content %}
   <div class="card">
-    <h3>Who won each day</h3>
-    <p class="hint">Every day of last month and this one, in the colour of
-      whoever gained the most experience. The month's own name is in the
-      colour of whoever took the month.
+    <h3>Winner Calendar</h3>
+    <p class="hint">Last month and this one, each day in the colour of whoever
+      gained the most experience and each month in the colour of whoever took
+      it. Days before every account was being tracked are blank.
       {% if not calendar.whole_group %}Measured across the players ticked
-      beside it.{% endif %}
-      A day is only answered once every included account was being tracked
-      through it, so the early ones are blank: an account nobody was watching
-      yet cannot lose a day.</p>
+      beside it.{% endif %}</p>
 
     <div class="months">
       {% for month in calendar.months %}
