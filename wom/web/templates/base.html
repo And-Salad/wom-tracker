@@ -375,7 +375,8 @@
 </header>
 <main>
   {% if not bare %}
-  <form class="side" method="get" id="filters">
+  <form class="side" method="get" id="filters"
+        data-reload="{{ '1' if reloads else '0' }}">
     <div class="side-head">
       <h2>Players</h2>
       <button type="button" id="all-none" class="link">All</button>
@@ -399,13 +400,17 @@
       </select>
       <input type="hidden" name="tzoffset" id="tzoffset" value="">
       <div class="dates" id="dates">
+        {# No name= on either: sidebar.js puts the dates in the query itself,
+           and only when the period is Custom. Submitted by the form they went
+           along with every preset too, and the server honours any date it is
+           given - so the noscript Apply below turned Week into Custom. #}
         <label class="field">
           <span>From</span>
-          <input type="date" id="from" name="from" value="{{ span['from'] }}">
+          <input type="date" id="from" value="{{ span['from'] }}">
         </label>
         <label class="field">
           <span>To</span>
-          <input type="date" id="to" name="to" value="{{ span['to'] }}">
+          <input type="date" id="to" value="{{ span['to'] }}">
         </label>
         <button type="button" id="unlock" class="clear" title="Back to the period"
                 aria-label="Clear these dates and follow the period"
@@ -415,7 +420,12 @@
 
     {% block sidebar_extra %}{% endblock %}
     <p class="live-note">{{ live_note or "Everything updates as you change these." }}</p>
-    <noscript><p style="margin:12px 0 0"><button type="submit">Apply</button></p></noscript>
+    {# Without JavaScript the ticks and the period still work; the dates do
+       not, which is why they carry no name and this says so. #}
+    <noscript>
+      <p style="margin:12px 0 0"><button type="submit">Apply</button></p>
+      <p class="live-note">The dates need JavaScript; the period does not.</p>
+    </noscript>
   </form>
   {% endif %}
   <div class="content">

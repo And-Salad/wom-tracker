@@ -435,3 +435,75 @@ def test_the_roster_can_be_refetched_without_a_reload(client, app):
     body = client.get("/api/players?period=Week").get_json()
     assert [row["name"] for row in body["rows"]] == ["Zezima"]
     assert body["span"]["choice"] == "Week"
+
+
+# -- what the review found ------------------------------------------------
+
+def test_a_bad_date_is_refused_on_a_page_not_a_500(client, app):
+    """The window is resolved before a page renders too, and a typo in the
+    query string used to reach Flask as an unhandled exception."""
+    seed(app)
+    for path in ("/", "/players", "/export", "/milestones", "/summaries"):
+        response = client.get(path + "?from=notadate")
+        assert response.status_code == 400, path
+        assert b"not a date" in response.data
+
+
+def test_a_backwards_range_is_refused_rather_than_read_as_quiet(client, app):
+    """Every gain clamps to zero across an inverted window, so it read as a
+    period where nobody did anything."""
+    seed(app)
+    response = client.get("/api/table?from=2026-08-30&to=2026-08-01&tzoffset=0")
+    assert response.status_code == 400
+    assert b"comes after" in response.data
+    # A single day is a window, not a mistake.
+    same = client.get("/api/table?from=2026-08-25&to=2026-08-25&tzoffset=0")
+    assert same.status_code == 200
+
+
+def test_unticking_everyone_survives_a_change_of_tab(client, app):
+    """The page and the JSON behind it used to disagree about the same URL:
+    one showed the whole roster back, re-ticked, the other showed nobody."""
+    database = seed(app)
+    database.save_player_details({"id": 2, "username": "other",
+                                  "displayName": "Other", "type": "regular"})
+    from wom.config import Config
+    settings = Config()
+    settings["usernames"] = ["Zezima", "Other"]
+    settings.save()
+
+    empty = "?picked=1&period=Week"
+    page = client.get("/players" + empty).get_data(as_text=True)
+    assert "checked" not in page, "no box may come back ticked"
+    assert 'class="player-row"' not in page, "and no player may come back listed"
+    assert client.get("/api/players" + empty).get_json()["rows"] == []
+
+
+def test_round_ups_ticks_reload_the_page_rather_than_doing_nothing(client, app):
+    """It has no JSON endpoint, so its ticks have to reload or they are inert."""
+    seed(app)
+    body = client.get("/summaries").get_data(as_text=True)
+    assert 'data-reload="1"' in body
+    for path in ("/", "/players", "/export", "/milestones"):
+        assert 'data-reload="0"' in client.get(path).get_data(as_text=True), path
+
+
+def test_the_sidebar_dates_are_not_submitted_by_the_no_script_form(client, app):
+    """They are pre-filled with whatever the preset resolved to, and the
+    server honours any date it is given - so Apply turned Week into Custom."""
+    seed(app)
+    body = client.get("/").get_data(as_text=True)
+    dates = body[body.index('id="dates"'):body.index("</div>", body.index('id="dates"'))]
+    assert 'name="from"' not in dates and 'name="to"' not in dates
+    # The controls that do work without JavaScript keep their names.
+    assert 'id="period" name="period"' in body
+    assert 'name="player"' in body
+
+
+def test_every_data_endpoint_refuses_to_be_cached(client, app):
+    """An update lands while the page is open; the reader has to see it."""
+    seed(app)
+    for path in ("/api/chart/standings", "/api/table", "/api/players",
+                 "/api/milestones", "/api/history?kind=skill&metric=attack"):
+        response = client.get(path)
+        assert response.headers.get("Cache-Control") == "no-cache", path

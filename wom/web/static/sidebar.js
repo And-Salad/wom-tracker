@@ -68,12 +68,23 @@
     if (span.to) { toBox.value = span.to; }
   }
 
+  /* A page with nothing to refetch reloads instead. Round-ups is a document,
+     not a dashboard - its tree is server-rendered text - and rebuilding it in
+     JavaScript would duplicate the template and lose which folders are open.
+     Reloading is the honest way for its ticks to mean something; without it
+     they moved the address bar and changed nothing on screen. */
+  var reloads = form.dataset.reload === "1";
+
   function announce() {
     // Changing several ticks in a row should cost one round of requests, not
     // one per tick, so let the clicks settle first.
     clearTimeout(queued);
     queued = setTimeout(function () {
       var q = query();
+      if (reloads) {
+        window.location.search = q;
+        return;
+      }
       // Keep the address bar in step, so a view can be linked or reloaded.
       history.replaceState(null, "", window.location.pathname + "?" + q);
       followNav(q);

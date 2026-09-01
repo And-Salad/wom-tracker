@@ -37,20 +37,25 @@ def roster(config):
     return ordered
 
 
-def chosen(players, strict=False):
+def chosen(players):
     """The players this request asks for.
 
-    A bare URL with no ?player= means everyone, so a shared link works.
-    `strict` turns that fallback off for the data endpoints, where an empty
-    list means the viewer really has unticked every box and should be told so
-    rather than shown the whole roster back.
+    A bare URL with no ?player= means everyone, so a shared link works. The
+    `picked` marker says the ticks are a real choice, and then an empty list
+    means nobody - the sidebar sends it on every request it builds.
+
+    This used to answer differently for pages and for data endpoints, which
+    meant one URL could mean two things: unticking everyone and moving tab
+    handed back the whole roster, re-ticked, while the JSON behind the same
+    query said nobody was included.
     """
     wanted = request.args.getlist("player")
+    marked = bool(request.args.get("picked"))
     if not wanted:
-        return [] if strict and request.args.get("picked") else players
+        return [] if marked else players
     wanted = {name.lower() for name in wanted}
     picked = [p for p in players if p["username"] in wanted]
-    return picked if strict else (picked or players)
+    return picked if marked else (picked or players)
 
 
 def colors(config, players):
@@ -84,12 +89,12 @@ def status(config):
     }
 
 
-def page_context(strict=False):
+def page_context():
     """Everything a page needs about the current request, resolved once."""
     from .timespan import labels
     config = settings()
     players = roster(config)
-    selected = chosen(players, strict=strict)
+    selected = chosen(players)
     return {
         "config": config,
         "players": players,

@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% set page = 'summaries' %}
 {% set no_window = true %}
-{% set live_note = "Round-ups are written per calendar window, so dates do not apply here." %}
+{# No JSON behind this page, so the ticks reload it rather than doing nothing. #}
+{% set reloads = true %}
+{% set live_note = "Round-ups are written per calendar window, so dates do not apply here. The page reloads when you change who is included." %}
 {% block title %}Round-ups - WOM Tracker{% endblock %}
 
 {% block content %}

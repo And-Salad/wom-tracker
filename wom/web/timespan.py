@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from flask import request
 
 from .. import periods
-from .dates import day_bound, local_day, offset_minutes
+from .dates import BadRequest, day_bound, local_day, offset_minutes
 
 CUSTOM = "Custom"
 ALL_TIME = "All time"
@@ -86,6 +86,13 @@ def current_timespan(database=None, players=None):
     since = day_bound(asked_from, offset_minutes=offset)
     until = day_bound(asked_to, end_of_day=True, offset_minutes=offset)
     if asked.lower() == CUSTOM.lower() or since or until:
+        # Backwards is not a window. Left alone it reads as a quiet period:
+        # every gain clamps to zero, the figures come from the earlier date,
+        # and nothing on the page says the range was impossible.
+        if since and until and since >= until:
+            raise BadRequest(
+                "{} comes after {}. Swap the dates, or clear them with the x."
+                .format(_pretty(asked_from), _pretty(asked_to)))
         opened = since or _earliest(database, players) or _rolling().start_iso()
         # The label reads back the days that were asked for. `until` is the
         # exclusive start of the day after, and naming that would report every

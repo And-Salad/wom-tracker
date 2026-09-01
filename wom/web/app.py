@@ -9,7 +9,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
-from flask import Flask, request, session
+from flask import Flask, Response, request, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .. import theme
@@ -17,6 +17,7 @@ from ..config import DB_PATH
 from ..db import Database
 from .admin import PASSWORD_ENV, admin as admin_blueprint, admin_enabled
 from .api import api as api_blueprint
+from .dates import BadRequest
 from .exporting import exporting as exporting_blueprint
 from .jobs import JobRunner
 from .limits import Limits
@@ -49,7 +50,21 @@ def create_app(limits=None):
     app.register_blueprint(exporting_blueprint)
     _add_hardening(app)
     _add_template_globals(app)
+    _refuse_bad_dates(app)
     return app
+
+
+def _refuse_bad_dates(app):
+    """Answer an unusable date with the reason, on every route at once.
+
+    The window is resolved before a page renders as well as before a JSON
+    endpoint answers, so a typed date reaches routes that have no business
+    each catching it. Handled here they all answer alike - and a 500 for a
+    mistyped query string was the alternative.
+    """
+    @app.errorhandler(BadRequest)
+    def bad_date(exc):
+        return Response(str(exc), status=400, mimetype="text/plain")
 
 
 def _configure_admin(app):

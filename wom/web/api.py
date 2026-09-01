@@ -13,7 +13,6 @@ from . import data as web_data
 from . import views
 from ..context import ViewContext
 from ..util import parse_api_time, pretty_metric
-from .dates import BadRequest
 from .selection import (chosen, colors, current_span, database, roster,
                         settings)
 
@@ -25,6 +24,18 @@ METRIC_NAME = re.compile(r"^[a-z0-9_]{1,40}$")
 
 PAUSED = ("The dashboard has paused its data endpoints after a burst of "
           "automated traffic. An admin needs to resume it.")
+
+
+def _fresh(payload):
+    """A JSON answer the browser must not keep.
+
+    Only an update changes these numbers, but when one lands the reader has
+    to see it: without this a heuristic cache can serve pre-update figures
+    for the same URL all session.
+    """
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 def _paused():
@@ -57,7 +68,11 @@ def guard():
 
 
 def _span(players):
-    """The window this request asks about, or a 400 explaining why not."""
+    """The window this request asks about.
+
+    An unusable date raises BadRequest, which the app answers with a 400 on
+    every route at once - see wom/web/app.py.
+    """
     return current_span(players)
 
 
@@ -67,11 +82,8 @@ def chart_data(key):
     if refused is not None:
         return refused
     config = settings()
-    players = chosen(roster(config), strict=True)
-    try:
-        span = _span(players)
-    except BadRequest as exc:
-        return Response(str(exc), status=400, mimetype="text/plain")
+    players = chosen(roster(config))
+    span = _span(players)
     payload = web_data.build(database(), config, key, span, players,
                              request.args.get("choice"))
     if payload is None:
@@ -79,10 +91,7 @@ def chart_data(key):
     # The sidebar's date inputs show whatever the period resolved to, so every
     # answer says what window it was answering over.
     payload["span"] = span.as_dict()
-    response = jsonify(payload)
-    # Only an update changes these numbers; a reload should still re-ask.
-    response.headers["Cache-Control"] = "no-cache"
-    return response
+    return _fresh(payload)
 
 
 @api.route("/api/player/<username>")
@@ -94,10 +103,7 @@ def player_detail(username):
     if player is None:
         abort(404)
     config = settings()
-    try:
-        span = _span(chosen(roster(config), strict=True))
-    except BadRequest as exc:
-        return Response(str(exc), status=400, mimetype="text/plain")
+    span = _span(chosen(roster(config)))
     return jsonify(views.player_detail(database(), player, span))
 
 
@@ -109,14 +115,11 @@ def player_rows():
         return refused
     config = settings()
     players = roster(config)
-    picked = chosen(players, strict=True)
-    try:
-        span = _span(picked)
-    except BadRequest as exc:
-        return Response(str(exc), status=400, mimetype="text/plain")
-    return jsonify({"rows": views.player_rows(database(), picked,
-                                              colors(config, players)),
-                    "span": span.as_dict()})
+    picked = chosen(players)
+    span = _span(picked)
+    return _fresh({"rows": views.player_rows(database(), picked,
+                                             colors(config, players)),
+                   "span": span.as_dict()})
 
 
 @api.route("/api/milestones")
@@ -127,14 +130,11 @@ def milestones():
         return refused
     config = settings()
     players = roster(config)
-    picked = chosen(players, strict=True)
-    try:
-        span = _span(picked)
-    except BadRequest as exc:
-        return Response(str(exc), status=400, mimetype="text/plain")
+    picked = chosen(players)
+    span = _span(picked)
     feed = views.milestone_feed(database(), picked, colors(config, players),
                                 since=span.since, until=span.until)
-    return jsonify({"feed": feed, "span": span.as_dict()})
+    return _fresh({"feed": feed, "span": span.as_dict()})
 
 
 @api.route("/api/table")
@@ -149,20 +149,15 @@ def metric_table():
         return refused
     config = settings()
     players = roster(config)
-    picked = chosen(players, strict=True)
+    picked = chosen(players)
     if not picked:
         return jsonify({"rows": [],
                         "empty": "Include at least one player using the "
                                  "sidebar swatches."})
-    try:
-        span = _span(picked)
-    except BadRequest as exc:
-        return Response(str(exc), status=400, mimetype="text/plain")
+    span = _span(picked)
     rows = views.metric_table(database(), picked, span.since, span.until,
                               colors(config, players))
-    response = jsonify({"rows": rows, "span": span.as_dict()})
-    response.headers["Cache-Control"] = "no-cache"
-    return response
+    return _fresh({"rows": rows, "span": span.as_dict()})
 
 
 UNITS = {"skill": "experience", "boss": "kills", "activity": "score"}
@@ -187,14 +182,11 @@ def metric_history():
 
     config = settings()
     players = roster(config)
-    picked = chosen(players, strict=True)
+    picked = chosen(players)
     if not picked:
         return jsonify({"empty": "Include at least one player using the "
                                  "sidebar swatches."})
-    try:
-        span = _span(picked)
-    except BadRequest as exc:
-        return Response(str(exc), status=400, mimetype="text/plain")
+    span = _span(picked)
 
     context = ViewContext(database(), config, players, selected=picked, span=span)
     series = web_data.trend_series(
@@ -203,7 +195,7 @@ def metric_history():
     if not series:
         return jsonify({"empty": "No readings of {} in {}.".format(
             pretty_metric(metric), span.phrase)})
-    response = jsonify({
+    return _fresh({
         "type": "trend",
         "ylabel": "{} {}".format(pretty_metric(metric), UNITS[kind]),
         "tooltip": {"style": "count", "unit": UNITS[kind]},
@@ -217,8 +209,6 @@ def metric_history():
         "until": _epoch_ms(span.until) if span.until else None,
         "series": series,
     })
-    response.headers["Cache-Control"] = "no-cache"
-    return response
 
 
 def _epoch_ms(iso):

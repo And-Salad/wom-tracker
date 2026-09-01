@@ -460,19 +460,15 @@
   Chart.prototype.trend = function () {
     var data = this.data;
     var shown = this.visible();
-    // A second axis on the right needs room the default margin has not got.
-    var f = this.frame(330, data.levelAxis ? {right: 52} : null);
-    var svg = f.svg;
-    makeRoom(f, this.legend(svg, f));
 
-    if (!shown.length) { return; }
-    // A window with a chosen end date stops there; one that is still running
-    // stops now.
-    var ends = data.until || Date.now();
-    var x = d3.scaleUtc().domain([new Date(data.since), new Date(ends)])
-      .range([0, f.inner]);
-    // Scale to what the window actually shows: an old baseline reading can
-    // sit far below the window and would otherwise flatten the whole line.
+    /* The vertical extent is settled before the frame is, because whether
+       there is a second axis decides how much room the right margin needs -
+       and levelAxis can be asked for and still not be drawable, when the
+       whole window sits above level 99 and holds no level boundary. Reserving
+       the room first left an empty gutter in exactly that case.
+
+       Scale to what the window actually shows: an old baseline reading can
+       sit far below it and would otherwise flatten the whole line. */
     var values = [];
     shown.forEach(function (s) {
       s.points.forEach(function (p) {
@@ -486,7 +482,20 @@
     }
     var lo = d3.min(values), hi = d3.max(values);
     if (lo === hi) { lo -= 1; hi += 1; }
-    var y = d3.scaleLinear().domain([lo, hi]).nice().range([f.tall, 0]);
+    var domain = d3.scaleLinear().domain([lo, hi]).nice().domain();
+    var levels = (data.levelAxis && shown.length) ? levelTicks(domain) : null;
+
+    var f = this.frame(330, levels ? {right: 52} : null);
+    var svg = f.svg;
+    makeRoom(f, this.legend(svg, f));
+
+    if (!shown.length) { return; }
+    // A window with a chosen end date stops there; one that is still running
+    // stops now.
+    var ends = data.until || Date.now();
+    var x = d3.scaleUtc().domain([new Date(data.since), new Date(ends)])
+      .range([0, f.inner]);
+    var y = d3.scaleLinear().domain(domain).range([f.tall, 0]);
 
     var g = svg.append("g")
       .attr("transform", "translate(" + f.m.left + "," + f.top + ")");
@@ -494,7 +503,6 @@
     // experience. The line is still drawn on experience: it is what moves
     // continuously, and a line of levels is a staircase that hides a week's
     // work inside one step.
-    var levels = data.levelAxis ? levelTicks(y.domain()) : null;
     if (levels) { levelAxis(g, f, y, levels); }
     else { valueAxis(g, f, y, data.ylabel); }
 

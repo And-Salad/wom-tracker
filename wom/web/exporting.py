@@ -53,7 +53,7 @@ def export_data(fmt):
         return Response(str(exc), status=400, mimetype="text/plain")
 
     rows = database().export_rows(
-        [p["id"] for p in chosen(roster(config), strict=True)],
+        [p["id"] for p in chosen(roster(config))],
         kinds=kinds, since=since, until=until)
     name = "wom-export-{}.{}".format(datetime.now().strftime("%Y%m%d"), fmt)
     stream = csv_stream(rows) if fmt == "csv" else json_stream(rows)
