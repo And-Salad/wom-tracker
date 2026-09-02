@@ -28,6 +28,13 @@ admin = Blueprint("admin", __name__)
 
 PASSWORD_ENV = "WOM_ADMIN_PASSWORD"
 
+# What a wrong guess costs before the answer comes back. Small enough not to
+# be noticed by someone who mistyped, large enough that guessing at speed is
+# not worth attempting. A name rather than a literal so the tests can set it
+# to zero: at half a second a guess they were spending a third of the suite's
+# runtime asleep, which is a real cost for no extra coverage.
+WRONG_PASSWORD_DELAY = 0.5
+
 
 # Enough to cover a group without making the box a menu: anything else can be
 # typed, and is checked before it is stored.
@@ -95,7 +102,7 @@ def login():
             return redirect(request.args.get("next") or url_for("admin.settings"))
         else:
             # A wrong guess should cost real time even before the lockout.
-            time.sleep(0.5)
+            time.sleep(WRONG_PASSWORD_DELAY)
             error = "That is not the password."
             log.warning("failed admin sign-in from %s via %s", address, source)
     return render_template("admin_login.html", error=error, page="admin")

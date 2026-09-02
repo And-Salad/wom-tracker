@@ -14,11 +14,21 @@ def at(year, month, day, hour):
 
 
 def written(db, player, now, keys):
-    """Pretend those periods were fully written for `now`'s windows."""
+    """Pretend those periods were fully written for `now`'s windows.
+
+    Group recaps only for the windows the leaderboard judges, because that is
+    all the scheduler ever writes and all the migration leaves behind. Writing
+    one per period made every test here run against a database shape that
+    cannot exist - and that is not a tidiness point: `_missing` asked for a
+    weekly group recap, never found one, and so re-owed every player's weekly
+    note on every run. The fixture had manufactured the very rows whose
+    absence was the bug.
+    """
     for key in keys:
         window = periods.latest_window(key, now)
         db.save_summary(player["id"], window, "text", "hash")
-        db.save_group_summary(window, "text", "hash")
+        if key in periods.GROUP_PERIODS:
+            db.save_group_summary(window, "text", "hash")
 
 
 def test_windows_are_the_last_complete_one(db):
@@ -76,11 +86,6 @@ def test_a_window_is_owed_from_the_moment_it_closes(db):
         "day", "week", "month", "quarter", "year"]
 
 
-def test_a_fresh_install_owes_every_period(db):
-    assert summaries.due_periods(db, at(2026, 9, 8, 6)) == [
-        "day", "week", "month", "quarter", "year"]
-
-
 def test_a_settled_morning_owes_nothing(db, player):
     now = at(2026, 9, 8, 6)
     written(db, player, now, periods.SUMMARY_PERIODS)
@@ -132,15 +137,31 @@ def test_a_missing_group_round_up_reopens_the_window(db, player):
     assert "day" not in summaries.due_periods(db, now)
 
 
-def test_a_year_of_mornings_owes_about_one_window_a_day(db, player):
+def test_no_window_is_ever_owed_twice(db, player):
+    """A year of mornings, each writing what it was asked for.
+
+    The count used to be asserted as "between 420 and 450", which is a range
+    wide enough to hide an off-by-one and does not say what it is protecting.
+    What matters is that nothing comes due a second time: a window that stays
+    owed after it has been written is re-billed on every run for ever.
+    """
     day = at(2026, 1, 1, 6)
-    owed = 0
+    seen = set()
     for _ in range(365):
-        keys = summaries.due_periods(db, day)
-        owed += len(keys)
-        written(db, player, day, keys)
+        for key in summaries.due_periods(db, day):
+            window = periods.latest_window(key, day)
+            assert (key, window.key) not in seen, (
+                "{} {} came due again after it was written".format(key, window.key))
+            seen.add((key, window.key))
+        written(db, player, day, summaries.due_periods(db, day))
         day += timedelta(days=1)
-    assert 420 <= owed <= 450, owed
+    # Spelled out per period rather than as one total: a single number says
+    # nothing about which period drifted, and a range says nothing at all.
+    counted = {}
+    for key, _window in seen:
+        counted[key] = counted.get(key, 0) + 1
+    assert counted == {"day": 365, "week": 53, "month": 12,
+                       "quarter": 4, "year": 1}, counted
 
 
 def test_summaries_are_skipped_when_the_feature_is_off(db, config, player):

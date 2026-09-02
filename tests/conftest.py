@@ -83,3 +83,15 @@ def client(app):
 def signed_in(client):
     client.post("/admin/login", data={"password": "test-password"})
     return client
+
+
+@pytest.fixture(autouse=True)
+def _no_wrong_password_delay(monkeypatch):
+    """Wrong guesses cost half a second in production, and nothing here.
+
+    The delay is real and deliberate, but paying it in tests bought no
+    coverage and cost a third of the suite's runtime - two tests alone spent
+    six and a half seconds asleep.
+    """
+    from wom.web import admin
+    monkeypatch.setattr(admin, "WRONG_PASSWORD_DELAY", 0)

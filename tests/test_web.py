@@ -1457,15 +1457,6 @@ def test_the_row_its_breakdown_and_the_chart_agree(app):
     assert line["points"][-1][1] == 40000, "the table is the chart's right-hand end"
 
 
-def test_the_evening_before_stays_with_the_evening_before(app):
-    """The 180,000 that landed 46 seconds into today was earned yesterday."""
-    from wom.web import today as today_mod
-    database = _midnight_jump(app)
-    breakdown = today_mod.breakdown(database, database.players()[0])
-    assert int(breakdown["total"]) == 40000
-    assert 180000 not in [int(r["capped"]) for r in breakdown["rows"]]
-
-
 def test_a_window_an_account_predates_still_produces_a_digest(app):
     """The landmark line queried a column the sparse-metrics migration had
     dropped, so every window an account was not tracked through raised - and

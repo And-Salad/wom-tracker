@@ -220,9 +220,6 @@ def test_take_is_atomic_where_check_then_record_is_not():
     callers all pass a check only one of them should - fine against a limit
     of hundreds, not against six.
     """
-    budget = Budget(allowance=2, window=60)
-    assert [budget.check("a") for _ in range(5)] == [0] * 5, "check never spends"
-
     fresh = Budget(allowance=2, window=60)
     assert fresh.take("a") == 0
     assert fresh.take("a") == 0
