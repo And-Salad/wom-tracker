@@ -263,3 +263,63 @@ def test_a_quiet_key_is_eventually_forgotten():
     budget.record("fresh")
     assert "addr-0" not in budget._seen, "an address seen once and abandoned"
     assert len(budget._seen) == 1, "only the live one is left"
+
+
+# -- the one-at-a-time guard on admin jobs --------------------------------
+
+def test_a_second_job_is_refused_while_one_is_running():
+    """Two update passes over the same rows is twice the API traffic for the
+    same answer, and for summaries twice the Claude bill."""
+    from wom.web.jobs import JobRunner
+    import threading
+
+    runner = JobRunner()
+    holding, release = threading.Event(), threading.Event()
+
+    def slow(job):
+        holding.set()
+        release.wait(5)
+
+    assert runner.start("update", slow) is not None
+    holding.wait(5)
+    assert runner.busy is True
+    assert runner.start("summarise", lambda job: None) is None, "refused"
+
+    release.set()
+    for _ in range(500):
+        if not runner.busy:
+            break
+        time.sleep(0.01)
+    assert runner.busy is False
+    assert runner.start("summarise", lambda job: None) is not None, "and free after"
+
+
+def test_a_job_that_raises_is_recorded_as_failed_not_lost():
+    from wom.web.jobs import JobRunner
+
+    runner = JobRunner()
+    runner.start("update", lambda job: 1 / 0)
+    for _ in range(500):
+        if not runner.busy:
+            break
+        time.sleep(0.01)
+    status = runner.status()
+    assert status["failed"] is True
+    assert "failed" in status["note"]
+
+
+def test_progress_lines_are_kept_but_bounded():
+    """A run is bounded, but nothing should be able to grow without limit."""
+    from wom.web.jobs import Job
+
+    job = Job("update")
+    for n in range(500):
+        job.say("line {}".format(n), keep=True)
+    assert len(job.lines) == 200
+    assert job.lines[-1] == "line 499", "the newest are the ones kept"
+
+
+def test_nothing_having_run_yet_is_a_status_not_a_crash():
+    from wom.web.jobs import JobRunner
+    status = JobRunner().status()
+    assert status["running"] is False and status["name"] is None

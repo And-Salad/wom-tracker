@@ -97,7 +97,8 @@ class WomClient:
             # 403 to every request and the tracker goes quiet, while the same
             # request without it is served. So it is dropped, loudly, and the
             # run carries on at the anonymous rate - which is ample here.
-            if resp.status_code == 403 and self.api_key and                     "api key" in _error_message(resp).lower():
+            if (resp.status_code == 403 and self.api_key
+                    and "api key" in _error_message(resp).lower()):
                 log.warning("Wise Old Man rejected the configured API key; "
                             "continuing without it. Clear or correct it under "
                             "/admin - anonymous is 20 requests a minute, and a "
