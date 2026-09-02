@@ -238,3 +238,90 @@ def test_history_is_thinned_once_a_day_not_every_run(db, player, tmp_path):
     web_app._thin_history(db, Config())
     assert len(db.observations(player["id"], "2020-01-02", "2020-01-03")) == 1, \
         "still there: today's compaction already happened"
+
+
+# -- the thing that decides whether an update happens at all ---------------
+#
+# Twenty-one tests above this line and not one of them touched the scheduler
+# object. `due()` decides whether a pass runs; `claim()` is the flag that stops
+# a scheduled run landing on top of a manual one - two passes over the same
+# players, two sets of API calls, and two sets of paid-for Claude calls.
+
+class _Settings(dict):
+    """A Config stand-in: the scheduler only reads keys and calls save()."""
+
+    def save(self):
+        return self
+
+
+def _scheduler(job=None, **settings):
+    from wom.scheduler import SlotScheduler
+    config = _Settings({"usernames": ["zezima"], "last_run": ""})
+    config.update(settings)
+    return SlotScheduler(config, job or (lambda trigger: None)), config
+
+
+def test_nothing_is_due_before_anyone_is_tracked():
+    """An empty roster is not an overdue run; it is nothing to run."""
+    slots, _config = _scheduler(usernames=[])
+    assert slots.due(at(2026, 9, 8, 6)) is False
+
+
+def test_a_tracker_that_has_never_run_is_due_at_once():
+    """Catching up beats waiting for the next boundary on a fresh install."""
+    slots, _config = _scheduler()
+    assert slots.due(at(2026, 9, 8, 6)) is True
+
+
+def test_a_run_inside_this_slot_is_not_due_again():
+    from wom import scheduler
+    now = at(2026, 9, 8, 6)
+    slots, _config = _scheduler(
+        last_run=scheduler.previous_slot(now).isoformat(timespec="seconds"))
+    assert slots.due(now) is False, "this slot has already been served"
+    assert slots.due(now + timedelta(minutes=scheduler.SLOT_MINUTES)) is True
+
+
+def test_a_slot_missed_while_the_machine_was_off_is_still_due():
+    """The whole point of anchoring to the wall clock: a gap is recognisably
+    a gap rather than being counted from whenever the process restarted."""
+    slots, _config = _scheduler(last_run=at(2026, 9, 8, 6).isoformat())
+    assert slots.due(at(2026, 9, 9, 6)) is True
+
+
+def test_the_busy_flag_is_taken_once_and_given_back():
+    slots, _config = _scheduler()
+    assert slots.claim() is True
+    assert slots.claim() is False, "a second caller must not get it too"
+    slots.release()
+    assert slots.claim() is True, "and it is available again afterwards"
+
+
+def test_a_manual_run_is_refused_while_one_is_already_going():
+    """The admin page's buttons take this same flag. Without it a scheduled
+    slot fires into the middle of a manual update."""
+    slots, _config = _scheduler()
+    slots.claim()
+    assert slots.run_now("manual") is False
+    slots.release()
+
+
+def test_a_finished_run_stamps_last_run_and_frees_the_flag():
+    seen = []
+    slots, config = _scheduler(job=lambda trigger: seen.append(trigger))
+    slots._run_job("scheduled")
+    assert seen == ["scheduled"]
+    assert config["last_run"], "the slot is recorded so it is not run twice"
+    assert slots.claim() is True, "the flag is given back"
+
+
+def test_a_job_that_raises_still_gives_the_flag_back():
+    """Otherwise one failure wedges the scheduler for the life of the process."""
+    def explode(trigger):
+        raise RuntimeError("the API fell over")
+
+    slots, config = _scheduler(job=explode)
+    slots.claim()
+    slots._run_job("scheduled")
+    assert slots.claim() is True, "released even though the job raised"
+    assert not config["last_run"], "and a failed pass is not recorded as done"
