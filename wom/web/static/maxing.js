@@ -125,6 +125,10 @@
     /* Always the day in progress, never the sidebar's period - so this asks
        its own endpoint rather than pretending to be a catalogue entry. */
     chart.endpoint = function () { return "/api/maxing/trend?" + window.Sidebar.query(); };
+    /* The only thing on this page the ticks move. The calendar and the
+       standings above judge every account whatever is ticked, so the page
+       has nothing to reload - this redraws and they stay as they are. */
+    window.Sidebar.onChange(function (query) { chart.load(query); });
     chart.load(window.Sidebar.query());
   });
 })();

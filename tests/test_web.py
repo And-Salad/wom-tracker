@@ -603,9 +603,11 @@ def test_unticking_everyone_survives_a_change_of_tab(client, app):
 def test_recaps_ticks_reload_the_page_rather_than_doing_nothing(client, app):
     """It has no JSON endpoint, so its ticks have to reload or they are inert."""
     seed(app)
-    for path in ("/recaps", "/maxing"):
-        assert 'data-reload="1"' in client.get(path).get_data(as_text=True), path
-    for path in ("/", "/players", "/export", "/milestones"):
+    assert 'data-reload="1"' in client.get("/recaps").get_data(as_text=True)
+    # Maxing has nothing to reload: the calendar and the standings ignore the
+    # ticks entirely, and the one thing that honours them - the chart - fetches
+    # its own JSON.
+    for path in ("/", "/players", "/export", "/milestones", "/maxing"):
         assert 'data-reload="0"' in client.get(path).get_data(as_text=True), path
 
 
@@ -1351,3 +1353,55 @@ def test_the_old_round_ups_link_still_arrives(client, app):
     assert moved.status_code == 301
     assert "/recaps" in moved.headers["Location"]
     assert "player=zezima" in moved.headers["Location"], "and keeps the ticks"
+
+
+def test_the_leaderboard_ignores_the_ticks(app, client):
+    """One competition with one answer.
+
+    Narrowed to some of the accounts it silently becomes a different
+    competition, and the squares recolour to a result nobody was playing for.
+    """
+    _calendar_seed(app)
+    everyone = client.get("/maxing").get_data(as_text=True)
+    narrowed = client.get("/maxing?picked=1&player=zezima").get_data(as_text=True)
+
+    def squares(body):
+        start = body.index('class="months"')
+        return body[start:body.index("Today so far", start)]
+
+    assert squares(everyone) == squares(narrowed), "the calendar is unmoved"
+
+    def standings(body):
+        start = body.index("Today so far")
+        return body[start:body.index("Experience toward 99", start)]
+
+    assert standings(everyone) == standings(narrowed), (
+        "and so is the table that tallies the same days")
+
+
+def test_unticking_everyone_still_leaves_a_leaderboard(app, client):
+    """A page whose whole subject is the group cannot be emptied by the ticks."""
+    _calendar_seed(app)
+    body = client.get("/maxing?picked=1").get_data(as_text=True)
+    assert "No players are ticked." not in body
+    assert 'class="today-row' in body, "every account is still ranked"
+
+
+def test_a_recap_verdict_is_the_leaderboards_whatever_is_ticked(app, client):
+    """The chip quotes the calendar, so it has to be asked the calendar's
+    question - not a narrower one that answers differently."""
+    from datetime import datetime, timezone
+
+    from wom import periods
+    from wom.web.views import recap_feed
+
+    database = _calendar_seed(app)
+    window = periods.latest_window("day", datetime(2026, 8, 31, 12,
+                                                   tzinfo=timezone.utc))
+    database.save_group_summary(window, "A day.", "hash")
+
+    everyone = database.players()
+    palette = {p["username"]: "#123456" for p in everyone}
+    one = [p for p in everyone if p["username"] == "zezima"]
+    assert (recap_feed(database, everyone, palette)[0]["winner"]
+            == recap_feed(database, one, palette)[0]["winner"])

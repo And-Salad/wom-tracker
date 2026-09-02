@@ -1,10 +1,12 @@
 {% extends "base.html" %}
 {% set page = 'maxing' %}
 {% set no_window = true %}
-{# Days are calendar days, so the sidebar's period does not apply. The ticks
-   do, and there is a calendar to redraw, so they reload the page. #}
-{% set reloads = true %}
-{% set live_note = "The leaderboard runs on calendar days, so dates do not apply here. The page reloads when you change who is included." %}
+{# Days are calendar days, so the sidebar's period does not apply. Neither do
+   the ticks, for the leaderboard: it judges every tracked account or it is
+   judging a different competition. They do apply to the chart, which is a
+   line per account, and that redraws itself - so nothing here reloads. #}
+{% set reloads = false %}
+{% set live_note = "The leaderboard always judges every tracked account, so the ticks change only the chart. Days are calendar days, so dates do not apply here." %}
 {% block title %}Maxing - WOM Tracker{% endblock %}
 
 {% block content %}
@@ -15,9 +17,8 @@
     <p class="hint rules" title="{{ calendar.rule }}">Last month and this one,
       each day in the colour of whoever won it and each month in the colour of
       whoever took it. Today shows who is ahead, dashed until the day is over.
-      Days before every account was being tracked are blank.
-      {% if not calendar.whole_group %}Measured across the players ticked
-      beside it.{% endif %}</p>
+      Days before every account was being tracked are blank. Always judged
+      across every tracked account, whatever the ticks say.</p>
 
     <div class="months">
       {% for month in calendar.months %}

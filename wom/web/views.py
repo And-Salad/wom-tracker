@@ -28,7 +28,7 @@ def paragraphs(text):
     return [block.strip() for block in (text or "").split("\n\n") if block.strip()]
 
 
-def group_verdicts(database, players, rows):
+def group_verdicts(database, rows):
     """{(period, window_key): what the Maxing Leaderboard said}, for every row.
 
     The group recap is the leaderboard's feed, so every entry carries what the
@@ -37,14 +37,18 @@ def group_verdicts(database, players, rows):
     on the rule - and where they differ the difference is the interesting
     part rather than something to paper over.
 
+    Judged across every tracked account, never the ticked ones, because that
+    is how the calendar judges it. Given a subset this answered a different
+    question from the page it is quoting, so ticking two names off changed
+    who a chip said had won a day back in August.
+
     Every day in range is settled in one pass. Asked window by window this
     walked a month of readings per row, which across a year of daily recaps
     is the same work three hundred times over.
     """
     from .. import winners
-    from .today import is_whole_group
 
-    whole_group = is_whole_group(database, players)
+    players = database.players()
     days = [row["window_key"] for row in rows if row["period"] == "day"]
     months = sorted({row["window_key"] for row in rows if row["period"] == "month"})
     local = winners.zone()
@@ -55,13 +59,13 @@ def group_verdicts(database, players, rows):
         closes = (datetime.strptime(max(days), "%Y-%m-%d").replace(tzinfo=local)
                   + timedelta(days=1))
         for key, won in winners.daily_winners(database, players, opens, closes,
-                                              whole_group=whole_group).items():
+                                              whole_group=True).items():
             found[("day", key)] = won["winner"]
     for key in months:
         start = datetime.strptime(key, "%Y-%m-%d").replace(tzinfo=local)
         end = (start + timedelta(days=32)).replace(day=1)
         found[("month", key)] = winners.month_winner(database, players, start,
-                                                     end, whole_group=whole_group)
+                                                     end, whole_group=True)
 
     out = {}
     for row in rows:
@@ -107,8 +111,11 @@ def recap_feed(database, players, palette):
             pairs.append((title, found[0]))
     if not pairs:
         return []
-    verdicts = group_verdicts(database, players, [row for _title, row in pairs])
-    by_name = {p["username"]: p["display_name"] for p in players}
+    verdicts = group_verdicts(database, [row for _title, row in pairs])
+    # Named from the roster, not the ticks: the account a chip names is
+    # whoever the calendar says won, and they need not be one of the ticked
+    # ones - looked up in `players` an unticked winner had no name to show.
+    by_name = {p["username"]: p["display_name"] for p in database.players()}
     return [dict(_recap(row, verdicts[(row["period"], row["window_key"])],
                         palette, by_name), title=title)
             for title, row in pairs]
@@ -139,8 +146,8 @@ def recap_tree(database, players, palette):
             group_folders.append((period, title, rows))
             everything.extend(rows)
     if group_folders:
-        verdicts = group_verdicts(database, players, everything)
-        by_name = {p["username"]: p["display_name"] for p in players}
+        verdicts = group_verdicts(database, everything)
+        by_name = {p["username"]: p["display_name"] for p in database.players()}
         tree.append(_branch("Group", "__group__", theme.ACCENT, [
             {"period": period, "title": title, "count": len(rows),
              "entries": [_recap(row,

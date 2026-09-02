@@ -35,12 +35,27 @@ def dashboard():
 
 @pages.route("/maxing")
 def maxing():
+    """The leaderboard, which is the whole group's or it is nothing.
+
+    Both the calendar and the standings are given every tracked account, not
+    the ticked ones. It is one competition with one answer: narrowed to three
+    of six it silently becomes a different competition, and the squares would
+    recolour to a result nobody was playing for.
+
+    The two have to be given the same set as each other, too. The standings
+    tally each account's wins this month from the same daily verdicts the
+    squares are coloured by, so a calendar judged across everyone beside a
+    table judged across three would credit different days on one page.
+
+    The chart below them does follow the ticks - it is a line per account,
+    and thinning it is what the ticks are for.
+    """
     scope = page_context()
+    everyone = scope["players"]
     return render_template(
         "maxing.html",
-        calendar=views.winner_calendar(database(), scope["selected"],
-                                       scope["palette"]),
-        today=today.standings(database(), scope["selected"], scope["palette"]),
+        calendar=views.winner_calendar(database(), everyone, scope["palette"]),
+        today=today.standings(database(), everyone, scope["palette"]),
         **_shell(scope))
 
 

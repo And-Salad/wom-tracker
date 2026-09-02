@@ -79,7 +79,8 @@ fly ssh console -C "python /app/wom_tracker.py --compact"
 ## The pages
 
 Six public pages, with the player ticks and the period in a sidebar that drives
-all of them, plus **Admin** behind the password.
+all of them, plus **Admin** behind the password. The one exception is the
+leaderboard, which always judges every tracked account - see below.
 
 - **Overview** - the standings and the charts: experience gained by skill, by
   player, and over time. Hovering reads off the figures; clicking a legend entry
@@ -114,6 +115,20 @@ midnight to midnight, so the axis is the whole day rather than however much of
 it has happened. Opening an account gives the skills behind its day, including
 the experience past 99 that the rule does not count. The prose lives on the
 Recaps tab; this page is figures.
+
+The calendar and the standings under it **ignore the sidebar's ticks**, and
+judge every tracked account whatever is ticked. It is one competition with one
+answer: narrowed to three of six it silently becomes a different competition,
+and the squares would recolour to a result nobody was playing for. The two are
+given the same set as each other for the same reason - the standings tally each
+account's wins this month from the very verdicts the squares are coloured by, so
+a calendar judged across everyone beside a table judged across three would
+credit different days on one page. The verdict chips on the Recaps tab quote the
+calendar, so they are asked the same question too.
+
+The chart below them does follow the ticks - it is a line per account, and
+thinning it is what the ticks are for. Nothing on this page reloads when they
+change; the chart simply redraws.
 
 ## Recaps
 
