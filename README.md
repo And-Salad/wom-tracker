@@ -110,7 +110,10 @@ on the page gives the whole rule.
 
 Below the calendar, in its own card, is the day still running - ranked by the
 same measure and deliberately not a verdict, since today has not been polled to
-its end. Below that again the same figures are drawn as a line per account,
+its end. The row, the skills behind it and the line under it all open the day
+at the same reading (`winners.day_span`): Wise Old Man stamps a reading when
+the hiscores move, so an evening's last hour arrives seconds into the next day,
+and which reading opens the day decides whose day it counts toward. Below that again the same figures are drawn as a line per account,
 midnight to midnight, so the axis is the whole day rather than however much of
 it has happened. Opening an account gives the skills behind its day, including
 the experience past 99 that the rule does not count. The prose lives on the

@@ -869,9 +869,11 @@ class Database:
     def metric_gains(self, player_id, since, kind="skill", bounds=None, until=None):
         """How much each metric moved between `since` and now, as {metric: gained}.
 
-        Only metrics present in both snapshots are reported, and negative
-        differences (rank shuffles, hiscore corrections) are clamped to zero.
-        Pass `bounds` from `snapshot_bounds` to reuse one lookup across kinds.
+        A metric missing from the opening state counts from zero rather than
+        being dropped - see the comment below, which is the bug this docstring
+        used to describe as the behaviour. Negative differences (rank
+        shuffles, hiscore corrections) are clamped to zero. Pass `bounds` from
+        `snapshot_bounds` to reuse one lookup across kinds.
         """
         start, end = bounds if bounds is not None else self.snapshot_bounds(
             player_id, since, until)

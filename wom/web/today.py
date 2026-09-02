@@ -106,7 +106,12 @@ def breakdown(database, player, when=None):
     so the parts add up to the total rather than approximating it.
     """
     opens, closes = winners.today_range(when)
-    before, after = _day_edges(database, player["id"], opens, closes)
+    # winners.day_span, not a baseline of our own: the row above this
+    # breakdown is measured by that rule, and a breakdown that opens the day
+    # somewhere else explains a figure it disagrees with.
+    baseline, latest = winners.day_span(database, player["id"], opens, closes)
+    before = baseline[1] if baseline else None
+    after = latest[1] if latest else None
     if before is None or after is None:
         return {"rows": [], "total": 0, "beyond": 0, "nines": 0,
                 "note": "Nothing has been read for this account today."}
@@ -147,12 +152,14 @@ def trend(database, players, color_for, when=None):
                                       _stamp(opens), _stamp(closes))
         if not states:
             continue
-        # Where the account stood at midnight. Only readings inside the day
-        # are plotted, but the first of them is not the baseline: measuring
-        # from it would credit the day with nothing until the second one.
-        base = _state_before(database, player["id"], opens)
-        if base is None:
-            base = states[0][1]
+        # The same reading the row and its breakdown open the day from. Given
+        # a baseline of its own this line ended somewhere the table beside it
+        # did not, which for a chart whose caption says "the table is this
+        # chart's right-hand end" is the one thing it must not do.
+        baseline, _latest = winners.day_span(database, player["id"], opens, closes)
+        if baseline is None:
+            continue
+        base = baseline[1]
         points = []
         for stamp, state in states:
             at = parse_api_time(stamp)
@@ -191,35 +198,6 @@ def trend(database, players, color_for, when=None):
         "offset": int(opens.utcoffset().total_seconds() // 60),
         "series": series,
     }
-
-
-def _day_edges(database, player_id, opens, closes):
-    """The two skill readings today is measured between.
-
-    The same pair the calendar uses: where the account stood at midnight, and
-    where it stands now. A reading from before midnight is the honest start -
-    an account first read at nine in the morning did not begin its day then.
-    """
-    states = winners.skill_states(database, player_id, _stamp(opens),
-                                 _stamp(closes))
-    if not states:
-        return None, None
-    before = _state_before(database, player_id, opens)
-    if before is None:
-        before = states[0][1]
-    return before, states[-1][1]
-
-
-def _state_before(database, player_id, opens):
-    """Skills as they stood at the last reading at or before `opens`."""
-    rows = database.query(
-        "SELECT metric, value FROM metrics m WHERE player_id=? AND kind='skill'"
-        "  AND value IS NOT NULL AND captured_at<=?"
-        "  AND captured_at=(SELECT MAX(captured_at) FROM metrics x"
-        "     WHERE x.player_id=m.player_id AND x.kind='skill'"
-        "       AND x.metric=m.metric AND x.captured_at<=?)",
-        (player_id, _stamp(opens), _stamp(opens)))
-    return {row["metric"]: row["value"] for row in rows} or None
 
 
 def _stamp(when):

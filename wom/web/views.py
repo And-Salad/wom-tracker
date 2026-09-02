@@ -8,7 +8,8 @@ plain functions of (database, ...) so a test can call them without a request.
 from datetime import datetime, timedelta, timezone
 
 from .. import periods, theme
-from ..util import fmt_ago, fmt_datetime, fmt_int, parse_api_time, pretty_metric
+from ..util import (fmt_ago, fmt_datetime, fmt_hours, fmt_int,
+                    parse_api_time, pretty_metric)
 
 # A player's own notes cover every window, named the same way everywhere.
 SUMMARY_FOLDERS = (("day", "Daily"), ("week", "Weekly"), ("month", "Monthly"),
@@ -231,8 +232,8 @@ def player_rows(database, players, palette):
             "combat": fmt_int(player["combat_level"]),
             "total_level": fmt_int(overall["level"] if overall else None),
             "exp": fmt_int(player["exp"]),
-            "ehp": fmt_int(player["ehp"]),
-            "ehb": fmt_int(player["ehb"]),
+            "ehp": fmt_hours(player["ehp"]),
+            "ehb": fmt_hours(player["ehb"]),
             "updated": fmt_ago(database.last_change(player["id"])),
             "snapshots": fmt_int(database.snapshot_count(player["id"])),
         })
@@ -407,7 +408,10 @@ WINNER_RULE = (
     "than that.\n\n"
     "Each day is measured between the two readings bracketing it, taking "
     "whichever of them sits nearer the boundary - the same rule the written "
-    "round-ups use, so the two never disagree."
+    "round-ups use, so the two never disagree. Wise Old Man stamps a reading "
+    "when the hiscores move, so an evening's last hour often arrives seconds "
+    "into the next day: taking the nearer reading is what keeps that work "
+    "with the evening it was done in."
 )
 
 

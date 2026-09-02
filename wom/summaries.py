@@ -16,7 +16,8 @@ import re
 
 from . import periods
 from .icons import SKILL_ORDER
-from .util import fmt_int, fmt_datetime, parse_api_time, pretty_metric
+from .util import (fmt_datetime, fmt_hours, fmt_int, parse_api_time,
+                   pretty_metric)
 
 log = logging.getLogger(__name__)
 
@@ -149,7 +150,7 @@ def build_digest(database, config, player, window):
         lines.append("Total level now: {}   Total XP now: {}".format(
             fmt_int(overall["level"]), fmt_int(overall["value"])))
     lines.append("Efficient hours: {} played, {} bossed".format(
-        fmt_int(player["ehp"]), fmt_int(player["ehb"])))
+        fmt_hours(player["ehp"]), fmt_hours(player["ehb"])))
 
     skills = database.metric_gains(player["id"], since, "skill", until=until)
     total_xp = sum(v for k, v in skills.items() if k != "overall")
@@ -390,9 +391,15 @@ def _nearest_reading(database, player, window):
             if abs((edge - parse_api_time(before["captured_at"])).total_seconds())
             <= abs((parse_api_time(after["captured_at"]) - edge).total_seconds())
             else (after, "after"))
+    # Keyed by when the reading was taken, not by a snapshot id: the metrics
+    # table stopped carrying one when it went to storing only what changed, so
+    # this query had been raising on every window an account was not tracked
+    # through - which is precisely the case this whole function exists for.
     overall = database.query_one(
-        "SELECT level, value FROM metrics WHERE snapshot_id=? AND kind='skill'"
-        " AND metric='overall'", (chosen["id"],))
+        "SELECT level, value FROM metrics WHERE player_id=? AND kind='skill'"
+        " AND metric='overall' AND captured_at<=?"
+        " ORDER BY captured_at DESC LIMIT 1",
+        (player["id"], chosen["captured_at"]))
     if overall is None:
         return None
     return ("Nearest reading {} this period: {} - total level {}, {} XP."

@@ -54,6 +54,22 @@ def fmt_int(value, dash="-"):
         return dash
 
 
+def fmt_hours(value, dash="-"):
+    """Efficient hours, which are a decimal figure and were being flattened.
+
+    EHP and EHB are stored as they arrive - 500.5 hours, not 500 - and went
+    through fmt_int, which threw the half away and, on an exact half, rounded
+    to even: 500.5 displayed as 500 while 500.6 displayed as 501. One decimal
+    is what the figure is worth and all it is ever quoted to.
+    """
+    if value is None:
+        return dash
+    try:
+        return "{:,.1f}".format(float(value))
+    except (TypeError, ValueError):
+        return dash
+
+
 def pretty_metric(metric):
     """'chambers_of_xeric' -> 'Chambers of Xeric'."""
     words = str(metric).replace("-", "_").split("_")

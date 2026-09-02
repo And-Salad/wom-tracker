@@ -124,8 +124,13 @@ def measure(before, after):
     for metric, end in after.items():
         if metric == "overall":
             continue
-        start = before.get(metric)
-        if start is None or end <= start:
+        # A skill with no reading behind it was below the hiscore cutoff, so
+        # it counts from zero rather than being dropped - the same rule
+        # db.metric_gains follows. Skipped, the day a new skill first ranks
+        # counts for nothing here while the Overview chart credits every
+        # point of it, and the two pages disagree about the same afternoon.
+        start = before.get(metric) or 0.0
+        if end <= start:
             continue
         raw += end - start
         if start < NINETY_NINE <= end:
@@ -150,8 +155,8 @@ def measure_by_skill(before, after):
     for metric, end in after.items():
         if metric == "overall":
             continue
-        start = before.get(metric)
-        if start is None or end <= start:
+        start = before.get(metric) or 0.0     # unranked counts from zero, as above
+        if end <= start:
             continue
         capped = max(0.0, min(end, NINETY_NINE) - min(start, NINETY_NINE))
         out[metric] = {
@@ -196,6 +201,74 @@ def moved(shown):
     return bool(nines or tiebreak)
 
 
+def opening_reading(before, inside, boundary):
+    """Which of the two readings bracketing a boundary opens the span.
+
+    `before` is the last reading at or before it, `inside` the first after;
+    either may be None. Both are (stamp, state) pairs, and the nearer of the
+    two wins - measured from the far side, an account first seen at 17:44
+    after seven quiet weeks had all seven folded into that one day.
+
+    Its own function because three things ask it about the same day - the
+    standings row, the skills behind that row, and the line under it - and
+    two of them used to answer with "the last reading before midnight"
+    instead. That is not a rounding difference: a reading landing seconds
+    after midnight carries the last ten minutes of the previous evening, so
+    the row said 40,991 while the breakdown that was supposed to explain it
+    said 399,457.
+    """
+    if before is None:
+        return inside
+    if inside is None:
+        return before
+    if _gap(inside[0], boundary) < _gap(before[0], boundary):
+        return inside
+    return before
+
+
+def reading_at_or_before(database, player_id, boundary):
+    """(stamp, {skill: experience}) as it stood at the last reading by then.
+
+    Only changes are stored, so the state is the newest row per skill at or
+    before the boundary, and the stamp is the reading those rows belong to.
+    """
+    rows = database.query(
+        "SELECT captured_at, metric, value FROM metrics m"
+        " WHERE player_id=? AND kind='skill' AND value IS NOT NULL"
+        "   AND captured_at<=?"
+        "   AND captured_at=(SELECT MAX(captured_at) FROM metrics x"
+        "      WHERE x.player_id=m.player_id AND x.kind='skill'"
+        "        AND x.metric=m.metric AND x.captured_at<=?)",
+        (player_id, boundary, boundary))
+    if not rows:
+        return None
+    state = {row["metric"]: row["value"] for row in rows}
+    seen = database.query_one(
+        "SELECT MAX(captured_at) AS at FROM snapshots"
+        " WHERE player_id=? AND captured_at<=?", (player_id, boundary))
+    return ((seen["at"] if seen and seen["at"] else max(r["captured_at"] for r in rows)),
+            state)
+
+
+def day_span(database, player_id, opens, closes):
+    """The two skill readings one day is measured between, by the group's rule.
+
+    Returns ((stamp, state), (stamp, state)) or (None, None). Every figure
+    about a day in progress comes through here, so the row, its breakdown and
+    the chart cannot disagree about where the day started.
+    """
+    states = skill_states(database, player_id, _stamp(opens), _stamp(closes))
+    if not states:
+        return None, None
+    boundary = _stamp(opens)
+    inside = next((state for state in states if state[0] > boundary), None)
+    baseline = opening_reading(reading_at_or_before(database, player_id, boundary),
+                               inside, boundary)
+    if baseline is None:
+        return None, None
+    return baseline, states[-1]
+
+
 def _player_days(states, boundaries):
     """One account's (score, gained, short) for each day, or None if unseen.
 
@@ -229,12 +302,7 @@ def _player_days(states, boundaries):
         if carried is None:
             out.append(None)             # never seen by the end of this day
             continue
-        baseline = before
-        if before is None:
-            baseline = inside
-        elif inside is not None and (_gap(inside[0], _stamp(opens))
-                                     < _gap(before[0], _stamp(opens))):
-            baseline = inside
+        baseline = opening_reading(before, inside, _stamp(opens))
         if baseline is None:
             out.append(None)
             continue
