@@ -232,7 +232,7 @@ def _log_and_clues(ctx, choice):
                else "{} completed".format(choice),
         tooltip={"style": "count", "unit": "slots" if log_slots else "completed"},
         gained_ylabel="Slots gained" if log_slots
-                      else "{} completed".format(choice),
+                      else "{} gained".format(choice),
         gained_tooltip={"style": "count",
                         "unit": "slots" if log_slots else "completed"},
         empty="No {} history for the included players in {{}}.".format(

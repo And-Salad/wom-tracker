@@ -191,24 +191,46 @@
     this.draw();
   };
 
-  /* The same series expressed as the change since the window opened.
+  /* Which of the two readings bracketing the window's opening a gain is
+     measured from: whichever sits nearer to it. The same rule
+     winners.opening_reading and db.baseline_snapshot follow on the server,
+     so a card measures a period the way the rest of the site does.
 
-     The baseline is the reading the window starts from, which deliberately
-     sits *before* `since` - the server sends it so a line can start at the
-     left edge rather than at whenever the account was next read. So it is
-     the last point at or before the boundary, and only the first point of
-     all when the account was not being watched yet. Measured from the first
-     point unconditionally, an account whose history begins mid-window would
-     report its own late start as a gain of zero and flatten from there. */
+     Taking the one before unconditionally reads as obviously right - it is
+     the reading the window opens on, and the server sends it so a line can
+     start at the left edge. But Wise Old Man's history has holes, and
+     "before" can be years before: an account last seen in 2022 and next seen
+     inside the window had four years of progress counted as this month's.
+     Wrong on its own, and being enormous it stretched the axis and squashed
+     every well-covered account's real month into the floor of the card.
+
+     Both horns need handling, which is why it is this rule and not "measure
+     from the first point in the window" - an account whose history begins
+     mid-window would then report its own late start as a gain of zero. */
+  function openingReading(points, since) {
+    var before = null, inside = null;
+    for (var i = 0; i < points.length; i++) {
+      if (points[i][0] <= since) { before = points[i]; }
+      else { inside = points[i]; break; }
+    }
+    if (before === null) { return inside; }
+    if (inside === null) { return before; }
+    return (inside[0] - since) < (since - before[0]) ? inside : before;
+  }
+
+  /* The same series expressed as the change since that reading. */
   function rebased(series, since) {
     return series.map(function (s) {
-      var base = s.points[0][1];
-      for (var i = 0; i < s.points.length && s.points[i][0] <= since; i++) {
-        base = s.points[i][1];
-      }
+      var opening = openingReading(s.points, since);
+      if (opening === null) { return s; }
+      var base = opening[1];
       return {
         username: s.username, name: s.name, color: s.color,
-        points: s.points.map(function (p) { return [p[0], p[1] - base, p[2]]; })
+        // Readings before the one a gain is measured from would draw a
+        // negative tail into the window, so the line starts where the
+        // measurement does.
+        points: s.points.filter(function (p) { return p[0] >= opening[0]; })
+          .map(function (p) { return [p[0], p[1] - base, p[2]]; })
       };
     });
   }
