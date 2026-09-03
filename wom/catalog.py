@@ -106,6 +106,12 @@ SUMMARY_CHARTS = (
     ChartSpec("skill_gains", "Experience gained by skill", "stacked",
               description="Each column is a skill; each slice is one of the "
                           "included players."),
+    # Directly under the bar chart, and deliberately: that one says what the
+    # group trained this period, this one says when and how much. Read as a
+    # pair, a climb in the line has its explanation in the columns above it.
+    ChartSpec("xp_trend", "Experience gained over time", "trend",
+              description="Every skill, uncapped, counted from the start of "
+                          "the period."),
     ChartSpec("boss_gains", "Top 20 boss kills", "stacked",
               description="The twenty bosses the included players killed most "
                           "this period."),

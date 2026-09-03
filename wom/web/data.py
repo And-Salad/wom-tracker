@@ -191,6 +191,66 @@ def _skill_gains(ctx, _choice):
                     "No experience gained by the included players in {}.")
 
 
+@chart("xp_trend")
+def _xp_trend(ctx, _choice):
+    """Every point of experience gained, counted from the start of the period.
+
+    The only line on the site that plots experience over time is the Maxing
+    tab's, and it measures experience *toward* ninety-nine - the right rule
+    for the competition, since an account with everything maxed should not be
+    able to take a day off people still climbing, and the wrong one for the
+    question "how much did we actually do". An account training a maxed skill
+    scores nothing there and draws a flat line through a real day's work.
+
+    So this is the other number, and Overview is where it belongs: the
+    standings card at the top of this tab already totals it per player, and
+    nothing until now has plotted it.
+    """
+    payload = _trend(
+        ctx, kind="skill", metric="overall", field="value",
+        ylabel="XP gained",
+        tooltip={"style": "count", "unit": "XP"},
+        empty="No experience gained by the included players in {}.")
+    if "series" in payload:
+        found = {player["username"]: player for player in ctx.selected}
+        payload["series"] = [_from_zero(ctx, found[s["username"]], s)
+                             for s in payload["series"]]
+    return payload
+
+
+def _from_zero(ctx, player, series):
+    """One player's line re-expressed as the change over the window.
+
+    Total experience is not comparable between accounts - six of them here
+    span 6.7M to 265M, so plotted raw the lines are six flat rows in reading
+    order and the chart says nothing a sorted list would not. The gain is
+    what the card is about, so every line starts at zero and the question
+    becomes who moved, which is answerable by looking.
+
+    Measured from the reading bounds_for already chose, which is the one the
+    standings card at the top of this tab is measured from, so the two agree
+    by construction rather than by coincidence. Subtracting the last reading
+    at or before the boundary instead looks equivalent and is not: Wise Old
+    Man's history has holes, and for an account whose previous reading is
+    from 2022 that folds four years into "this month" - eighteen times the
+    standings figure beside it, and enough to reorder the group.
+    """
+    start, _end = ctx.bounds_for(player)
+    if start is None:
+        return series
+    opened = int(parse_api_time(start["captured_at"]).timestamp() * 1000)
+    base = _skill_state(ctx, player["id"], start["captured_at"]).get("overall")
+    if base is None:
+        return series
+    series = dict(series)
+    # Readings before the one the gain is measured from would draw a negative
+    # tail into the window, so the line starts where the measurement does.
+    series["points"] = [[stamp, value - base, raw]
+                        for stamp, value, raw in series["points"]
+                        if stamp >= opened]
+    return series
+
+
 @chart("boss_gains")
 def _boss_gains(ctx, _choice):
     gains = {p["id"]: ctx.gains(p, "boss") for p in ctx.selected}

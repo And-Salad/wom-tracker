@@ -307,6 +307,84 @@ def test_a_trend_payload_names_the_axis_for_both_readings(client, app):
     assert body["tooltipGained"] == {"style": "count", "unit": "levels"}
 
 
+def test_experience_gained_is_counted_from_the_start_of_the_window(client, app):
+    """Every line starts at zero, so accounts spanning 6.7M to 265M total
+    experience are comparable at all. The reading a gain is measured from
+    sits before the window, which is exactly what makes the first plotted
+    point non-zero if it is used as-is rather than subtracted."""
+    database = app.config["DATABASE"]
+    database.save_player_details({"id": 1, "username": "zezima",
+                                  "displayName": "Zezima", "type": "regular"})
+    # The opening reading sits before the window on purpose: it is the one a
+    # gain is measured from, and using it as-is is the mistake under test.
+    for day, xp in (("2026-08-25", 1000), ("2026-08-28", 3000),
+                    ("2026-08-31", 5000)):
+        database.save_snapshot(1, snapshot(day + "T12:00:00.000Z",
+                                           skills={"overall": (xp, 40)}))
+
+    body = client.get("/api/chart/xp_trend"
+                      "?from=2026-08-26&to=2026-09-01&tzoffset=0").get_json()
+
+    assert "empty" not in body, body.get("empty")
+    points = body["series"][0]["points"]
+    assert points[0][1] == 0, "the line has to open on zero"
+    assert points[-1][1] == 4000, "5,000 measured from the 1,000 it opened on"
+    assert body["ylabel"] == "XP gained"
+
+
+def test_a_years_old_reading_does_not_become_this_period_s_gain(client, app):
+    """Wise Old Man's history has holes, so the reading before a window can be
+    years before it. Measured from there an account reports four years of
+    experience as this month's - eighteen times the standings figure on the
+    same page, and enough to reorder the group. The shape here is a real one:
+    an account last read in 2022 and next read inside the window."""
+    database = app.config["DATABASE"]
+    database.save_player_details({"id": 1, "username": "zezima",
+                                  "displayName": "Zezima", "type": "regular"})
+    for day, xp in (("2022-05-21", 5830826), ("2026-08-06", 92203156),
+                    ("2026-08-31", 97332768)):
+        database.save_snapshot(1, snapshot(day + "T12:00:00.000Z",
+                                           skills={"overall": (xp, 2021)}))
+
+    body = client.get("/api/chart/xp_trend"
+                      "?from=2026-08-02&to=2026-09-02&tzoffset=0").get_json()
+
+    points = body["series"][0]["points"]
+    assert points[0][1] == 0
+    assert points[-1][1] == 5129612, "the month, not the four years before it"
+
+
+def test_the_experience_line_ends_where_the_standings_row_says(client, app):
+    """The two cards sit six inches apart on the same page answering the same
+    question, so they measure from the same reading rather than each picking
+    one. They agree by construction: both go through bounds_for."""
+    database = app.config["DATABASE"]
+    database.save_player_details({"id": 1, "username": "zezima",
+                                  "displayName": "Zezima", "type": "regular"})
+    for day, xp in (("2022-05-21", 5830826), ("2026-08-06", 92203156),
+                    ("2026-08-31", 97332768)):
+        database.save_snapshot(1, snapshot(day + "T12:00:00.000Z",
+                                           skills={"overall": (xp, 2021),
+                                                   "attack": (xp, 99)}))
+
+    window = "?from=2026-08-02&to=2026-09-02&tzoffset=0"
+    line = client.get("/api/chart/xp_trend" + window).get_json()
+    standings = client.get("/api/chart/standings" + window).get_json()
+
+    assert line["series"][0]["points"][-1][1] == standings["rows"][0]["xp"]
+
+
+def test_the_experience_line_sits_under_the_bar_chart_it_explains(client, app):
+    """Placement is the point of the card, not a detail of it: the columns
+    say what the group trained and the line says when, so they are read as a
+    pair. Display order is this tuple's order, so the position is the code."""
+    from wom import catalog
+
+    order = [s.key for s in catalog.SUMMARY_CHARTS]
+    assert order.index("xp_trend") == order.index("skill_gains") + 1
+    assert order.index("xp_trend") < order.index("boss_gains")
+
+
 def test_a_builder_for_an_unknown_chart_is_refused():
     from wom.catalog import chart
 
