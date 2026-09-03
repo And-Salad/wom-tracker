@@ -312,11 +312,17 @@ def test_a_json_array_is_refused(signed_in, app):
     assert signed_in.post(url, json=[1, 2, 3]).status_code == 400
 
 
-def test_an_oversized_body_is_refused(signed_in, app):
+def test_an_oversized_body_is_refused(signed_in, app, caplog):
+    """And says so. Every way out of this endpoint has to leave a line, or a
+    request that was thrown away looks exactly like one that never came."""
+    import logging
     url = issue(signed_in)
-    response = signed_in.post(url, json=body(padding="x" * 70000))
+    with caplog.at_level(logging.INFO):
+        response = signed_in.post(url, json=body(padding="x" * 70000))
     assert response.status_code == 413
     assert app.config["DATABASE"].session_events("zezima") == []
+    assert any("over" in r.getMessage() and "bytes" in r.getMessage()
+               for r in caplog.records), "the reason has to be in the log"
 
 
 def test_a_multipart_with_no_payload_is_refused(signed_in, app):

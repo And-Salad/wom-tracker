@@ -119,6 +119,12 @@ def dink(token):
 
     body, too_big = _body()
     if too_big:
+        # Every other way out of here says why in the log. This one used to be
+        # inferable from the byte count on the arrival line and no further
+        # word, which is the same shape of gap as the logout this endpoint
+        # once accepted and dropped in silence.
+        log.warning("dink: refused a body over %d bytes from %s",
+                    MAX_BODY, username)
         return Response("Body too large.", status=413, mimetype="text/plain")
     if not isinstance(body, dict):
         log.warning("dink: unreadable body from %s", username)
