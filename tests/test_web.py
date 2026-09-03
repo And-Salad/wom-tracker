@@ -1683,3 +1683,48 @@ def test_efficient_hours_keep_their_decimal(app):
                                   "ehp": 500.5, "ehb": 20.4})
     row = views.player_rows(database, database.players(), {"zezima": "#fff"})[0]
     assert row["ehp"] == "500.5" and row["ehb"] == "20.4"
+
+
+def test_the_standings_row_carries_what_the_group_tiles_do(client, app):
+    """One card answers "what did we do" and the other "who did what", so a
+    reader goes from a tile to the account that carried it without changing
+    card. Both come from _player_totals, so they cannot answer differently
+    about the same account over the same window."""
+    database = seed(app)
+    database.save_player_details({"id": 2, "username": "other",
+                                  "displayName": "Other", "type": "regular"})
+    for day, n in (("2026-08-25", 500), ("2026-08-31", 2500)):
+        database.save_snapshot(2, snapshot(
+            day + "T12:00:00.000Z", skills={"attack": (n, 30)},
+            bosses={"zulrah": n // 100},
+            activities={"collections_logged": n // 250,
+                        "clue_scrolls_hard": n // 500}))
+
+    rows = {r["username"]: r for r in
+            client.get("/api/chart/standings?period=Week").get_json()["rows"]}
+    tiles = {t["key"]: t for t in
+             client.get("/api/chart/group_totals?period=Week").get_json()["tiles"]}
+
+    for key in ("levels", "xp", "xp99", "kills", "collections", "clues"):
+        assert key in rows["other"], "the row is missing {}".format(key)
+        split = {r["username"]: r["value"] for r in tiles[key]["rows"]}
+        for username, row in rows.items():
+            assert row[key] == split[username], "{} for {}".format(key, username)
+        # And the tile's headline is still those same rows added up.
+        assert tiles[key]["total"] == sum(split.values()), key
+
+
+def test_the_standings_are_still_sorted_by_experience_gained(client, app):
+    """Six more columns must not move what the table ranks on: XP gained is
+    the first column because it is the one the order means."""
+    database = seed(app)
+    database.save_player_details({"id": 2, "username": "other",
+                                  "displayName": "Other", "type": "regular"})
+    # Fewer kills, far more experience - so the two orders disagree.
+    for day, xp in (("2026-08-25", 1_000_000), ("2026-08-31", 9_000_000)):
+        database.save_snapshot(2, snapshot(day + "T12:00:00.000Z",
+                                           skills={"attack": (xp, 80)},
+                                           bosses={"zulrah": 1}))
+    rows = client.get("/api/chart/standings?period=Week").get_json()["rows"]
+    assert [r["username"] for r in rows] == ["other", "zezima"]
+    assert rows[0]["kills"] < rows[1]["kills"], "and not by kills"

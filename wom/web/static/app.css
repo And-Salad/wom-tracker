@@ -506,6 +506,13 @@
   }
 
   /* -- standings, on the Overview ------------------------------------- */
+  /* Eight columns now it carries the same measures as the group tiles, which
+     is more than a phone has room for. It scrolls inside its own card rather
+     than widening the page - the same treatment every other wide table here
+     gets, and the reason `body` sets `overflow-x: clip`. The header cell of
+     the sorted column is what a reader needs to keep in view, so the name
+     column travels with the scroll rather than being pinned. */
+  .plot:has(> .standings) { overflow-x: auto; }
   .standings { font-size: var(--text-md); }
   .standings th { padding-top: 0; }
   .standings td { padding: 5px 10px; border-bottom: 1px solid var(--line); }
@@ -513,6 +520,13 @@
   .standings td.name { white-space: nowrap; }
   .standings tr.leader td { color: var(--ink); font-weight: 600; }
   .standings tr.leader td.rank { color: var(--accent); }
+
+  @media (max-width: 820px) {
+    /* Tighter cells and a smaller face buy back most of the three new
+       columns before anything has to scroll at all. */
+    .standings { font-size: var(--text-sm); }
+    .standings th, .standings td { padding: 5px 6px; }
+  }
 
   /* -- the Maxing Leaderboard on Round-ups ----------------------------
      Two months of squares, each the colour of whoever took that day, and

@@ -293,9 +293,17 @@
   Chart.prototype.standings = function () {
     var host = this.host;
     host.html("");
+    /* The same six measures as the group tiles above, in an order that keeps
+       XP gained first because the table is sorted by it, and XP toward 99
+       beside it because the gap between the two is why both are shown.
+
+       A zero reads as blank rather than "0" everywhere but the sorted column:
+       seven columns of noughts is a wall to read past, and the absence is the
+       information. XP gained keeps its nought so the sort stays legible. */
     var table = host.append("table").attr("class", "standings");
     var head = table.append("tr");
-    ["", "Player", "XP gained", "Levels", "Boss kills"].forEach(function (label, i) {
+    ["", "Player", "XP gained", "XP toward 99", "Levels", "Boss kills",
+     "Clog", "Clues"].forEach(function (label, i) {
       head.append("th").attr("class", i > 1 ? "num" : null).text(label);
     });
     this.data.rows.forEach(function (row, index) {
@@ -307,10 +315,12 @@
         .style("margin-right", "7px");
       name.append("span").text(row.name);
       tr.append("td").attr("class", "num").text(full.format(row.xp));
-      tr.append("td").attr("class", "num dim")
-        .text(row.levels ? "+" + row.levels : "");
-      tr.append("td").attr("class", "num dim")
-        .text(row.kills ? full.format(row.kills) : "");
+      [["xp99", false], ["levels", true], ["kills", false],
+       ["collections", false], ["clues", false]].forEach(function (pair) {
+        var value = row[pair[0]];
+        tr.append("td").attr("class", "num dim")
+          .text(value ? (pair[1] ? "+" + value : full.format(value)) : "");
+      });
     });
     if (this.data.coverage && this.data.coverage.length) {
       this.coverage(this.data.rows);

@@ -72,6 +72,29 @@ def _levels_gained(ctx, player):
     return max(0, levels[1] - levels[0])
 
 
+def _player_totals(ctx, player):
+    """What one account did this period, by every measure either card shows.
+
+    The standings row and the group tile's per-account split are the same six
+    figures about the same account over the same window, so they come from
+    here rather than being assembled twice. Computed separately they would
+    eventually disagree - which is a thing this codebase has now watched
+    happen three times, most recently across two pull requests that each
+    restated a rule instead of calling it.
+    """
+    skills = ctx.gains(player, "skill")
+    bosses = ctx.gains(player, "boss")
+    activities = ctx.gains(player, "activity")
+    return {
+        "levels": _levels_gained(ctx, player),
+        "xp": round(sum(v for m, v in skills.items() if m != "overall")),
+        "xp99": round(_toward_99(ctx, player)),
+        "kills": round(sum(bosses.values())),
+        "collections": round(activities.get("collections_logged", 0.0)),
+        "clues": round(sum(activities.get(tier, 0.0) for tier in CLUE_TIERS)),
+    }
+
+
 @chart("group_totals")
 def _group_totals(ctx, _choice):
     """What the whole group did this period, as one row of figures.
@@ -103,18 +126,7 @@ def _group_totals(ctx, _choice):
     per_player = {tile["key"]: [] for tile in tiles}
 
     for player in ctx.selected:
-        skills = ctx.gains(player, "skill")
-        bosses = ctx.gains(player, "boss")
-        activities = ctx.gains(player, "activity")
-        found = {
-            "levels": _levels_gained(ctx, player),
-            "xp": round(sum(v for m, v in skills.items() if m != "overall")),
-            "xp99": round(_toward_99(ctx, player)),
-            "kills": round(sum(bosses.values())),
-            "collections": round(activities.get("collections_logged", 0.0)),
-            "clues": round(sum(activities.get(tier, 0.0) for tier in CLUE_TIERS)),
-        }
-        for key, value in found.items():
+        for key, value in _player_totals(ctx, player).items():
             per_player[key].append({
                 "username": player["username"], "name": player["display_name"],
                 "color": ctx.color_for(player), "value": value,
@@ -164,19 +176,19 @@ def _standings(ctx, _choice):
 
     The stacked columns answer "what did they train"; nobody could read "who
     won" off them without summing twenty slices.
+
+    It carries the same six measures as the group tiles above it, so a reader
+    can go from "the group filled 101 collection log slots" to which accounts
+    filled them without changing card. XP toward 99 sits next to XP gained
+    because the gap between the two is the point of having both - but XP
+    gained stays the first column, since it is what the table is sorted by.
     """
     rows = []
     for player in ctx.selected:
-        skills = ctx.gains(player, "skill")
-        bosses = ctx.gains(player, "boss")
-        rows.append({
-            "username": player["username"],
-            "name": player["display_name"],
-            "color": ctx.color_for(player),
-            "xp": round(sum(v for m, v in skills.items() if m != "overall")),
-            "levels": _levels_gained(ctx, player),
-            "kills": round(sum(bosses.values())),
-        })
+        rows.append(dict(_player_totals(ctx, player),
+                         username=player["username"],
+                         name=player["display_name"],
+                         color=ctx.color_for(player)))
     if not any(r["xp"] or r["kills"] for r in rows):
         return _empty("Nobody gained anything in {}.".format(ctx.span.phrase))
     rows.sort(key=lambda r: -r["xp"])
