@@ -191,6 +191,59 @@ def _skill_gains(ctx, _choice):
                     "No experience gained by the included players in {}.")
 
 
+@chart("xp_trend")
+def _xp_trend(ctx, _choice):
+    """Every point of experience gained, counted from the start of the period.
+
+    The only line on the site that plots experience over time is the Maxing
+    tab's, and it measures experience *toward* ninety-nine - the right rule
+    for the competition, since an account with everything maxed should not be
+    able to take a day off people still climbing, and the wrong one for the
+    question "how much did we actually do". An account training a maxed skill
+    scores nothing there and draws a flat line through a real day's work.
+
+    So this is the other number, and Overview is where it belongs: the
+    standings card at the top of this tab already totals it per player, and
+    nothing until now has plotted it.
+    """
+    payload = _trend(
+        ctx, kind="skill", metric="overall", field="value",
+        ylabel="XP gained",
+        tooltip={"style": "count", "unit": "XP"},
+        empty="No experience gained by the included players in {}.")
+    if "series" in payload:
+        payload["series"] = [_from_zero(s, ctx.span.since)
+                             for s in payload["series"]]
+    return payload
+
+
+def _from_zero(series, since):
+    """One player's line re-expressed as the change since the window opened.
+
+    Total experience is not comparable between accounts - six of them here
+    span 6.7M to 265M, so plotted raw the lines are six flat rows in reading
+    order and the chart says nothing a sorted list would not. The gain is
+    what the card is about, so every line starts at zero and the question
+    becomes who moved, which is answerable by looking.
+
+    The reading a gain is measured from deliberately sits *before* the
+    window: trend_series sends it so a line can start at the left edge rather
+    than at whenever the account was next read. So the baseline is the last
+    point at or before the boundary, and the first point of all only for an
+    account that was not being watched yet.
+    """
+    boundary = int(parse_api_time(since).timestamp() * 1000)
+    base = series["points"][0][1]
+    for stamp, value, _raw in series["points"]:
+        if stamp > boundary:
+            break
+        base = value
+    series = dict(series)
+    series["points"] = [[stamp, value - base, raw]
+                        for stamp, value, raw in series["points"]]
+    return series
+
+
 @chart("boss_gains")
 def _boss_gains(ctx, _choice):
     gains = {p["id"]: ctx.gains(p, "boss") for p in ctx.selected}
