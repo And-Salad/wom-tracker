@@ -73,7 +73,19 @@ def specs():
     return [spec for spec in SUMMARY_CHARTS if spec.build is not None]
 
 
+# The clue tiers, without the "all" roll-up that would double-count them.
+CLUE_TIERS = ("clue_scrolls_beginner", "clue_scrolls_easy",
+              "clue_scrolls_medium", "clue_scrolls_hard",
+              "clue_scrolls_elite", "clue_scrolls_master")
+
 SUMMARY_CHARTS = (
+    # Everything else on this tab is per-account. This is the one card that
+    # answers "what did we do" rather than "who did what", which is the
+    # question the group actually asks each other, so it goes first and the
+    # standings below break it down.
+    ChartSpec("group_totals", "The group this period", "totals",
+              description="Summed across every included account. "
+                          "Hover a tile for who contributed what."),
     ChartSpec("standings", "This period", "standings",
               description="Who did what, before the detail below."),
     ChartSpec("skill_gains", "Experience gained by skill", "stacked",

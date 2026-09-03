@@ -7,8 +7,9 @@ swapping a dropdown happen in the page instead of costing a round trip.
 import logging
 from datetime import datetime, timezone
 
-from ..catalog import (BY_KEY, CHOICE_METRICS, COLLECTION_LOG, LOG_METRICS,
-                       TOP_BOSSES, TOTAL_LEVEL, chart, specs)
+from .. import winners
+from ..catalog import (BY_KEY, CHOICE_METRICS, CLUE_TIERS, COLLECTION_LOG,
+                       LOG_METRICS, TOP_BOSSES, TOTAL_LEVEL, chart, specs)
 from ..icons import SKILL_ORDER
 from ..context import ViewContext
 from ..periods import coverage_slack
@@ -69,6 +70,92 @@ def _levels_gained(ctx, player):
             return 0
         levels.append(row["level"])
     return max(0, levels[1] - levels[0])
+
+
+@chart("group_totals")
+def _group_totals(ctx, _choice):
+    """What the whole group did this period, as one row of figures.
+
+    Every other card on this tab is per-account, which answers "who did what"
+    and never "what did we do" - the figure somebody actually puts in the
+    group chat. Each tile carries the per-account split behind it so the
+    headline stays a headline and finding out who carried it is one hover.
+
+    The two experience tiles are deliberately side by side. One is every
+    point gained and the other is the part the leaderboard counts, and the
+    gap between them is the experience that goes into skills already at 99 -
+    invisible everywhere else on the site, and about one point in seven here.
+    """
+    tiles = [
+        {"key": "levels", "label": "Levels gained", "format": "int",
+         "note": "Across every skill"},
+        {"key": "xp", "label": "XP gained", "format": "compact",
+         "note": "Every skill, no 99 cap"},
+        {"key": "xp99", "label": "XP toward 99", "format": "compact",
+         "note": "What the leaderboard counts"},
+        {"key": "kills", "label": "Boss kills", "format": "int",
+         "note": "Every boss on the hiscores"},
+        {"key": "collections", "label": "Collection log", "format": "int",
+         "note": "New slots filled"},
+        {"key": "clues", "label": "Clues completed", "format": "int",
+         "note": "All tiers"},
+    ]
+    per_player = {tile["key"]: [] for tile in tiles}
+
+    for player in ctx.selected:
+        skills = ctx.gains(player, "skill")
+        bosses = ctx.gains(player, "boss")
+        activities = ctx.gains(player, "activity")
+        found = {
+            "levels": _levels_gained(ctx, player),
+            "xp": round(sum(v for m, v in skills.items() if m != "overall")),
+            "xp99": round(_toward_99(ctx, player)),
+            "kills": round(sum(bosses.values())),
+            "collections": round(activities.get("collections_logged", 0.0)),
+            "clues": round(sum(activities.get(tier, 0.0) for tier in CLUE_TIERS)),
+        }
+        for key, value in found.items():
+            per_player[key].append({
+                "username": player["username"], "name": player["display_name"],
+                "color": ctx.color_for(player), "value": value,
+            })
+
+    for tile in tiles:
+        rows = per_player[tile["key"]]
+        tile["total"] = sum(row["value"] for row in rows)
+        # Biggest first: the tooltip is read to find out who carried it, and
+        # display order buries that under whoever happens to be listed first.
+        tile["rows"] = sorted(rows, key=lambda row: -row["value"])
+
+    if not any(tile["total"] for tile in tiles):
+        return _empty("Nobody gained anything in {}.".format(ctx.span.phrase))
+    return {"type": "totals", "tiles": tiles,
+            "coverage": _coverage(ctx, [{"username": p["username"],
+                                         "name": p["display_name"],
+                                         "color": ctx.color_for(p)}
+                                        for p in ctx.selected])}
+
+
+def _toward_99(ctx, player):
+    """Experience gained counted only up to ninety-nine in each skill.
+
+    Measured by winners.measure rather than re-derived here, so this tile and
+    the Maxing tab cannot disagree about the same window - the rule that a
+    skill stops earning at 13,034,431 lives in one place and both read it.
+    """
+    start, end = ctx.bounds_for(player)
+    if start is None or end is None or start["id"] == end["id"]:
+        return 0.0
+    before = _skill_state(ctx, player["id"], start["captured_at"])
+    after = _skill_state(ctx, player["id"], end["captured_at"])
+    return winners.measure(before, after)["capped"]
+
+
+def _skill_state(ctx, player_id, when):
+    """{skill: experience} as it stood at one reading."""
+    return {row["metric"]: row["value"]
+            for row in ctx.db.state_at(player_id, when, "skill")
+            if row["value"] is not None}
 
 
 @chart("standings")

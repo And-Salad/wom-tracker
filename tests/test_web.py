@@ -228,6 +228,52 @@ def test_every_described_chart_has_a_builder():
     assert missing == [], "described but never built: {}".format(missing)
 
 
+def test_the_group_tiles_total_what_the_per_player_split_adds_up_to(client, app):
+    """Each tile is a headline with its own breakdown behind it, and a
+    headline that does not equal its parts is worse than no headline."""
+    database = seed(app)
+    database.save_player_details({"id": 2, "username": "other",
+                                  "displayName": "Other", "type": "regular"})
+    for day, xp in (("2026-08-25", 500), ("2026-08-31", 2500)):
+        database.save_snapshot(2, snapshot(day + "T12:00:00.000Z",
+                                           skills={"attack": (xp, 30)},
+                                           bosses={"zulrah": xp // 100}))
+
+    body = client.get("/api/chart/group_totals?period=Week").get_json()
+
+    assert "empty" not in body, body.get("empty")
+    assert [t["key"] for t in body["tiles"]] == [
+        "levels", "xp", "xp99", "kills", "collections", "clues"]
+    for tile in body["tiles"]:
+        assert tile["total"] == sum(r["value"] for r in tile["rows"]), tile["key"]
+        # Read to find out who carried it, which display order buries.
+        values = [r["value"] for r in tile["rows"]]
+        assert values == sorted(values, reverse=True), tile["key"]
+
+
+def test_experience_toward_99_is_capped_the_way_the_leaderboard_caps_it(client, app):
+    """The tile sits beside one counting every point, and the gap between
+    them is the whole reason both are shown. If it drifted from the Maxing
+    rule the card would be quietly contradicting another page."""
+    from wom.winners import NINETY_NINE
+
+    database = app.config["DATABASE"]
+    database.save_player_details({"id": 1, "username": "zezima",
+                                  "displayName": "Zezima", "type": "regular"})
+    # Opens a hair under 99 and finishes well past it: only the experience
+    # below the cap counts, and the rest is what the leaderboard ignores.
+    for day, xp in (("2026-08-25", NINETY_NINE - 1000),
+                    ("2026-08-31", NINETY_NINE + 5000)):
+        database.save_snapshot(1, snapshot(day + "T12:00:00.000Z",
+                                           skills={"attack": (xp, 99)}))
+
+    tiles = {t["key"]: t for t in
+             client.get("/api/chart/group_totals?period=Week").get_json()["tiles"]}
+
+    assert tiles["xp"]["total"] == 6000, "every point gained"
+    assert tiles["xp99"]["total"] == 1000, "only the part below the cap"
+
+
 def test_a_builder_for_an_unknown_chart_is_refused():
     from wom.catalog import chart
 

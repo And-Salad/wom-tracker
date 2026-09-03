@@ -1,4 +1,4 @@
-/* The chart machinery: one Chart per card, drawn in the browser with D3.
+﻿/* The chart machinery: one Chart per card, drawn in the browser with D3.
  *
  * A card owns one chart. Changing a control refetches only the JSON behind
  * the affected cards and redraws in place - the page never reloads, and
@@ -32,6 +32,10 @@
   }
   var full = new Intl.NumberFormat();
   var compact = d3.format("~s");
+  /* Headline figures, which are arbitrary rather than the round numbers an
+     axis tick lands on: "~s" alone carries six significant digits, so a
+     group total reads 76.1571M where the point of the tile is 76.2M. */
+  var tight = d3.format(".3~s");
   /* Time labels are written in the zone a chart's window is defined in, and
      a payload says which by sending `offset` (minutes east of UTC). Where it
      says nothing, the viewer's own zone is the honest default - the sidebar's
@@ -177,9 +181,54 @@
   Chart.prototype.draw = function () {
     if (!this.data) { return; }
     if (this.data.empty) { this.message(this.data.empty); return; }
-    if (this.data.type === "standings") { this.standings(); }
+    if (this.data.type === "totals") { this.totals(); }
+    else if (this.data.type === "standings") { this.standings(); }
     else if (this.data.type === "stacked") { this.stacked(); }
     else { this.trend(); }
+  };
+
+  /* Not a chart either: six figures about the whole group, each carrying the
+     per-account split on hover. A button rather than a div, because it holds
+     something you have to be able to reach without a mouse. */
+  Chart.prototype.totals = function () {
+    var host = this.host;
+    host.html("");
+    var grid = host.append("div").attr("class", "totals");
+
+    this.data.tiles.forEach(function (tile) {
+      var shown = tile.format === "compact" ? tight(tile.total)
+                                            : full.format(tile.total);
+      var cell = grid.append("button")
+        .attr("type", "button").attr("class", "total")
+        .attr("aria-label", tile.label + ": " + full.format(tile.total));
+      cell.append("span").attr("class", "total-key").text(tile.label);
+      cell.append("span").attr("class", "total-value").text(shown);
+      cell.append("span").attr("class", "total-note").text(tile.note);
+
+      /* The split is built on demand rather than up front: six tiles times
+         however many accounts is a lot of markup for something most of which
+         is never looked at. */
+      var describe = function (event) {
+        var head = d3.create("b");
+        head.text(tile.label);
+        var html = head.node().outerHTML;
+        tile.rows.forEach(function (row) {
+          var value = tile.format === "compact" ? tight(row.value)
+                                                : full.format(row.value);
+          html += '<div class="tip-sub">' + swatch(row.color, row.name) +
+            " &middot; " + value + "</div>";
+        });
+        showTip(event, html);
+      };
+      cell.on("mousemove touchstart", describe)
+        .on("mouseleave", hideTip)
+        .on("focus", function (event) { describe(event); })
+        .on("blur", hideTip);
+    });
+
+    if (this.data.coverage && this.data.coverage.length) {
+      this.coverage(this.data.tiles[0].rows);
+    }
   };
 
   /* Not a chart: the one line per player the columns below make you add up by
