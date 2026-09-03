@@ -92,8 +92,8 @@ means "all" can sit in the list without double counting the tiers under it.
 The stacked charts leave out players who gained nothing, so the legend stays
 honest.
 
-Both trend charts run through one `_trend_by_metric` helper, so a new
-line chart is a metric, a field to plot, and a tooltip caption.
+Both trend charts run through one `_trend` helper, so a new line chart is a
+metric, a field to plot, and a tooltip caption.
 
 ### Chart resolution
 
@@ -234,11 +234,19 @@ Two sources, because RuneLite only ships one of them as files:
   same hiscore sprites as PNGs, already named by metric. All 86 boss and
   activity metrics resolve.
 
-Because these are small pixel sprites, they are padded onto a common
-`ICON_CANVAS_PX` square so tall and wide icons share a baseline, then drawn at
-native size with nearest-neighbour sampling — smooth resampling turns them to
-mush. When a chart gets too narrow for one icon per column they step down to
-3/4 or 1/2 size rather than overlapping.
+Nothing is done to them on the way in: `fetch_icons.py` writes the bytes it
+downloaded and that is the whole of it. The handling that keeps them legible
+is two attributes in the browser, in `Chart.prototype.stacked`:
+`image-rendering: pixelated` so a scaled sprite stays crisp rather than being
+smoothed to mush, and `preserveAspectRatio="xMidYMid meet"` so tall and wide
+icons share a baseline inside their square. The square itself is
+`Math.min(ICON_PX, x.bandwidth())` - a continuous shrink as the columns
+narrow, not a step down through fixed sizes.
+
+(This paragraph used to describe a server-side pipeline: padding onto an
+`ICON_CANVAS_PX` canvas and resampling before saving. That was true when the
+charts were drawn with matplotlib. There is no image library on the server any
+more, and there was no constant by that name to point at.)
 
 If the icons are missing the charts fall back to text labels.
 

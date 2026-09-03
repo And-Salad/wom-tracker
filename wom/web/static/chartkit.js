@@ -417,7 +417,7 @@
         .on("mouseleave", hideTip);
     });
 
-    // Icons stand in for the x tick labels, exactly as on the desktop tab.
+    // Icons stand in for the x tick labels, as the hiscore panel does.
     var slot = Math.min(ICON_PX, x.bandwidth());
     var axis = g.append("g").attr("transform", "translate(0," + f.tall + ")");
     axis.append("line").attr("x2", f.inner).attr("stroke", COLOR.line);

@@ -23,10 +23,6 @@ from .periods import coverage_slack
 from .scheduler import zone
 from .util import parse_api_time
 
-# The round-up judged the whole group. Narrowing to some of them makes its
-# answer a different question, so past that the figures speak for themselves.
-WHOLE_GROUP = object()
-
 
 def month_range(when=None, back=0):
     """[start, end) of a month in local time, `back` months before this one."""

@@ -42,7 +42,7 @@ MAX_TOKENS = 1200
 PRICING = {"claude-opus-5": (5.0, 25.0), "claude-opus-4-8": (5.0, 25.0),
            "claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5": (1.0, 5.0)}
 
-# Offered in the Options dialog, cheapest last.
+# Offered on the admin page, cheapest last.
 SUMMARY_MODELS = ("claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5")
 
 # How hard the model works before answering, which moves both the bill and the

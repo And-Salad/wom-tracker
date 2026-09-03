@@ -1028,7 +1028,6 @@ def test_today_follows_the_grid_in_a_card_of_its_own(app, client):
 def test_today_is_ordered_by_the_same_rule_as_the_squares(app):
     from wom import winners
     from wom.web.today import standings
-    from wom.web.views import winner_calendar
     from datetime import datetime, timedelta
     database = app.config["DATABASE"]
     for pid, name in ((1, "Climber"), (2, "Maxed")):
@@ -1106,7 +1105,6 @@ def test_wins_are_split_by_how_the_day_was_taken(app):
     experience - so the tallies are kept apart."""
     from wom import winners
     from wom.web.today import standings
-    from wom.web.views import winner_calendar
     from datetime import datetime
     database = app.config["DATABASE"]
     for pid, name in ((1, "Climber"), (2, "Grinder")):
