@@ -251,15 +251,19 @@ def test_a_quiet_key_is_eventually_forgotten():
     Pruning only the keys that happen to be looked at never reached the ones
     seen once and abandoned, which is precisely the traffic that fills it.
     """
-    # A generous margin between the window and the wait: Windows' monotonic
-    # clock ticks about every 16ms, so a sleep only just longer than the
-    # window can still measure as shorter than it.
-    budget = Budget(allowance=5, window=0.05)
+    # No sleeping, and no window short enough to expire while the loop below
+    # is still filling it. This used to wait out a 50ms window, which meant
+    # the assertion that nothing had aged out yet was a race against how long
+    # 1030 dict writes took - and on a loaded machine it lost.
+    budget = Budget(allowance=5, window=30)
     for n in range(1030):
         budget.record("addr-{}".format(n))
     assert len(budget._seen) == 1030, "nothing has aged out yet, so nothing goes"
 
-    time.sleep(0.4)
+    # Age every call past the window by hand. What is under test is the
+    # pruning rule, not the clock it reads.
+    budget._seen = {key: [when - budget.window - 1 for when in calls]
+                    for key, calls in budget._seen.items()}
     budget.record("fresh")
     assert "addr-0" not in budget._seen, "an address seen once and abandoned"
     assert len(budget._seen) == 1, "only the live one is left"
