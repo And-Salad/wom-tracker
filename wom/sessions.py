@@ -16,6 +16,7 @@ and how much of it is measured rather than assumed.
 """
 
 import logging
+from datetime import timedelta, timezone
 
 from .util import parse_api_time
 
@@ -137,3 +138,124 @@ def events_for(database, username, since, until):
     """
     rows = database.session_events(username, since=since, until=until)
     return [(row["kind"], parse_api_time(row["received_at"])) for row in rows]
+
+
+def boundary_in(span, zone):
+    """The local midnight inside a span, or None if it does not cross one.
+
+    At most one can exist: MAX_SESSION_HOURS is under a day. Week, month,
+    quarter and year boundaries are local midnights too, so this one answer
+    covers every window the app draws.
+    """
+    local = span.start.astimezone(zone)
+    midnight = (local + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    crossing = midnight.astimezone(timezone.utc)
+    return crossing if span.start < crossing < span.end else None
+
+
+def share_before(span, boundary):
+    """How much of the span sits before the boundary, as a fraction."""
+    total = (span.end - span.start).total_seconds()
+    if total <= 0:
+        return 0.0
+    return max(0.0, min(1.0, (boundary - span.start).total_seconds() / total))
+
+
+def interpolate(opened, closed, fraction, whole=False):
+    """The state part-way through a session, as {metric: value}.
+
+    Linear in time, which assumes an even rate across the session. That is
+    wrong for somebody who logs in, idles an hour and then trains, and it is
+    still far closer than crediting the whole session to the minute it ended.
+
+    Only metrics that moved are returned - anything unchanged is already
+    carried forward by `state_at` and writing it again would be a row saying
+    nothing. `whole` rounds, for the kinds counted in whole numbers: a
+    boundary is no place to invent two thirds of a boss kill.
+    """
+    out = {}
+    for metric, end in closed.items():
+        if end is None:
+            continue
+        start = opened.get(metric)
+        if start is None or end <= start:
+            continue
+        value = start + (end - start) * fraction
+        if whole:
+            value = float(round(value))
+        if value > start:
+            out[metric] = value
+    return out
+
+
+# Which kinds are counted in whole numbers.
+WHOLE_KINDS = ("boss", "activity")
+KINDS = ("skill",) + WHOLE_KINDS
+
+
+def attribute(database, zone, player, since, max_hours=MAX_SESSION_HOURS):
+    """Credit each known session's gain to the time it was earned in.
+
+    Walks the account's readings from `since`, and wherever a gain sits in a
+    session whose edges Dink told us about, and that session crossed a local
+    midnight, writes what the account had earned by that midnight.
+
+    Readings we know nothing about are left alone, which is the whole of the
+    fallback: an account with no session events comes out of this untouched
+    and every number about it stays exactly what it was.
+
+    Existing interpolations in the window are cleared first, so a late
+    logout - or a change to the rule - corrects rather than accumulates.
+    """
+    username = player["username"]
+    if not database.session_events(username, limit=1):
+        return 0
+
+    database.clear_derived_state(player["id"], since)
+    readings = [r["captured_at"] for r in database.query(
+        "SELECT captured_at FROM snapshots WHERE player_id=? AND captured_at>=?"
+        " AND COALESCE(origin,'poll') <> 'derived' ORDER BY captured_at",
+        (player["id"], since))]
+
+    written = 0
+    for previous_at, reading_at in zip(readings, readings[1:]):
+        # Any metric moving means something was earned in that gap. Gating on
+        # `overall` alone would miss a reading that only moved a boss count.
+        moved = database.query_one(
+            "SELECT 1 FROM metrics WHERE player_id=? AND captured_at=? LIMIT 1",
+            (player["id"], reading_at))
+        if moved is None:
+            continue
+        written += _split_one(database, zone, player, previous_at, reading_at,
+                              max_hours)
+    return written
+
+
+def _split_one(database, zone, player, previous_at, reading_at, max_hours):
+    """Write the boundary reading for one gain, if there is one to write."""
+    before = parse_api_time(previous_at) - timedelta(hours=max_hours)
+    span = resolve(parse_api_time(previous_at), parse_api_time(reading_at),
+                   events_for(database, player["username"],
+                              before.strftime("%Y-%m-%dT%H:%M:%S.%fZ"), reading_at),
+                   max_hours=max_hours)
+    if span.start_from == INFERRED and span.end_from == INFERRED:
+        return 0            # nothing was measured; leave it exactly as it was
+    crossing = boundary_in(span, zone)
+    if crossing is None:
+        return 0            # the whole session sits inside one day
+
+    fraction = share_before(span, crossing)
+    rows = []
+    for kind in KINDS:
+        opened = {r["metric"]: r["value"]
+                  for r in database.state_at(player["id"], previous_at, kind)}
+        closed = {r["metric"]: r["value"]
+                  for r in database.state_at(player["id"], reading_at, kind)}
+        for metric, value in interpolate(opened, closed, fraction,
+                                         whole=kind in WHOLE_KINDS).items():
+            rows.append((kind, metric, value))
+    if not rows:
+        return 0
+    stamp = crossing.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return database.record_derived_state(player["id"], stamp, rows)

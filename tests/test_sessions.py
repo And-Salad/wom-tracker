@@ -9,7 +9,9 @@ and the answer has to be exactly what the app did before.
 
 from datetime import datetime, timedelta, timezone
 
-from wom.sessions import INFERRED, MEASURED, Span, resolve
+from conftest import as_polled, snapshot
+from wom.sessions import (
+    INFERRED, MEASURED, Span, resolve)
 
 
 def at(hour, minute=0):
@@ -160,3 +162,202 @@ def test_events_outside_the_window_are_not_read(db):
     events = events_for(db, "zezima", "2026-09-03T00:00:00.000Z",
                         "2026-09-04T00:00:00.000Z")
     assert events == []
+
+
+# -- crediting a gain to the day it was earned on --------------------------
+
+def zone():
+    from zoneinfo import ZoneInfo
+    return ZoneInfo("America/New_York")
+
+
+def test_a_session_that_stays_inside_one_day_crosses_nothing():
+    from wom.sessions import boundary_in
+    span = Span(at(14), at(17), MEASURED, MEASURED)
+    assert boundary_in(span, zone()) is None
+
+
+def test_a_session_across_local_midnight_finds_it():
+    from wom.sessions import boundary_in, share_before
+    # 21:00 to 01:00 New York is 01:00 to 05:00 UTC the next day
+    span = Span(at(1), at(5), MEASURED, MEASURED)
+    crossing = boundary_in(span, zone())
+    assert crossing == at(4), "midnight in New York, in UTC"
+    assert share_before(span, crossing) == 0.75
+
+
+def test_interpolation_only_reports_what_moved():
+    from wom.sessions import interpolate
+    out = interpolate({"attack": 100.0, "magic": 50.0},
+                      {"attack": 500.0, "magic": 50.0}, 0.25)
+    assert out == {"attack": 200.0}, "magic did not move, so it says nothing"
+
+
+def test_whole_kinds_are_not_split_into_fractions():
+    from wom.sessions import interpolate
+    out = interpolate({"zulrah": 0.0}, {"zulrah": 3.0}, 0.5, whole=True)
+    assert out == {"zulrah": 2.0}, "no two thirds of a boss kill"
+
+
+def test_a_crossing_session_is_credited_to_both_days(db, player):
+    """The case this all exists for.
+
+    Three quarters of the session happened before midnight, so three quarters
+    of the experience belongs to the day before.
+    """
+    from wom.sessions import attribute
+    db.save_snapshot(player["id"], snapshot("2026-09-04T00:50:00.000Z",
+                                            skills={"attack": (1000, 40)}))
+    db.save_snapshot(player["id"], snapshot("2026-09-04T05:10:00.000Z",
+                                            skills={"attack": (401000, 60)}))
+    for kind, when in (("login", "2026-09-04T01:00:00.000000Z"),
+                       ("logout", "2026-09-04T05:00:00.000000Z")):
+        db.record_session_event(player["username"], kind, {"total_exp": None},
+                                {}, when=when)
+
+    assert attribute(db, zone(), player, "2026-09-01") > 0
+    midnight = "2026-09-04T04:00:00.000000Z"          # local midnight, in UTC
+    standing = {r["metric"]: r["value"]
+                for r in db.state_at(player["id"], midnight, "skill")}
+    assert standing["attack"] == 301000.0, "three quarters of 400,000 gained"
+
+
+def test_an_account_without_the_plugin_is_left_completely_alone(db, player):
+    """The fallback, asserted on the storage rather than the rule."""
+    from wom.sessions import attribute
+    db.save_snapshot(player["id"], snapshot("2026-09-04T00:50:00.000Z",
+                                            skills={"attack": (1000, 40)}))
+    db.save_snapshot(player["id"], snapshot("2026-09-04T05:10:00.000Z",
+                                            skills={"attack": (401000, 60)}))
+    before = db.query("SELECT * FROM metrics ORDER BY captured_at, metric")
+
+    assert attribute(db, zone(), player, "2026-09-01") == 0
+    after = db.query("SELECT * FROM metrics ORDER BY captured_at, metric")
+    assert [tuple(r) for r in after] == [tuple(r) for r in before]
+    assert db.query_one("SELECT COUNT(*) AS n FROM snapshots"
+                        " WHERE origin='derived'")["n"] == 0
+
+
+def test_running_it_twice_does_not_double_the_correction(db, player):
+    from wom.sessions import attribute
+    db.save_snapshot(player["id"], snapshot("2026-09-04T00:50:00.000Z",
+                                            skills={"attack": (1000, 40)}))
+    db.save_snapshot(player["id"], snapshot("2026-09-04T05:10:00.000Z",
+                                            skills={"attack": (401000, 60)}))
+    for kind, when in (("login", "2026-09-04T01:00:00.000000Z"),
+                       ("logout", "2026-09-04T05:00:00.000000Z")):
+        db.record_session_event(player["username"], kind, {"total_exp": None},
+                                {}, when=when)
+    attribute(db, zone(), player, "2026-09-01")
+    first = db.query("SELECT * FROM metrics")
+    attribute(db, zone(), player, "2026-09-01")
+    assert len(db.query("SELECT * FROM metrics")) == len(first)
+
+
+def test_a_late_logout_corrects_rather_than_accumulates(db, player):
+    """The rule will change, and a correction nobody can withdraw is worse
+    than no correction."""
+    from wom.sessions import attribute
+    db.save_snapshot(player["id"], snapshot("2026-09-04T00:50:00.000Z",
+                                            skills={"attack": (1000, 40)}))
+    db.save_snapshot(player["id"], snapshot("2026-09-04T05:10:00.000Z",
+                                            skills={"attack": (401000, 60)}))
+    db.record_session_event(player["username"], "login", {"total_exp": None},
+                            {}, when="2026-09-04T01:00:00.000000Z")
+    attribute(db, zone(), player, "2026-09-01")
+
+    db.record_session_event(player["username"], "logout", {"total_exp": None},
+                            {}, when="2026-09-04T05:00:00.000000Z")
+    attribute(db, zone(), player, "2026-09-01")
+    midnight = "2026-09-04T04:00:00.000000Z"
+    standing = {r["metric"]: r["value"]
+                for r in db.state_at(player["id"], midnight, "skill")}
+    assert standing["attack"] == 301000.0, "recomputed against the real end"
+
+
+def test_compaction_keeps_an_interpolated_reading(db, player):
+    """Thinning it would silently undo the correction."""
+    db.record_derived_state(player["id"], "2026-01-05T05:00:00.000Z",
+                            [("skill", "attack", 500.0)])
+    db.save_snapshot(player["id"], snapshot("2026-01-05T23:00:00.000Z",
+                                            skills={"attack": (900, 40)}))
+    as_polled(db)
+    conn = db.connect()
+    with conn:
+        conn.execute("UPDATE snapshots SET origin='derived'"
+                     " WHERE captured_at LIKE '2026-01-05T05%'")
+    db.compact_snapshots(keep_days=30)
+    kept = [r["captured_at"] for r in db.query(
+        "SELECT captured_at FROM snapshots WHERE captured_at < '2026-02-01'"
+        " ORDER BY captured_at")]
+    assert "2026-01-05T05:00:00.000Z" in kept
+
+
+def test_a_zero_length_span_does_not_divide_by_it():
+    from wom.sessions import share_before
+    assert share_before(Span(at(3), at(3), MEASURED, MEASURED), at(3)) == 0.0
+
+
+def test_a_metric_with_no_value_is_skipped():
+    from wom.sessions import interpolate
+    assert interpolate({"attack": 1.0}, {"attack": None, "magic": None}, 0.5) == {}
+
+
+def _played(db, player, gain_at, events):
+    db.save_snapshot(player["id"], snapshot("2026-09-04T00:50:00.000Z",
+                                            skills={"attack": (1000, 40)}))
+    db.save_snapshot(player["id"], snapshot("2026-09-04T02:00:00.000Z",
+                                            skills={"attack": (1000, 40)}))
+    db.save_snapshot(player["id"], snapshot(gain_at, skills={"attack": (401000, 60)}))
+    for kind, when in events:
+        db.record_session_event(player["username"], kind, {"total_exp": None},
+                                {}, when=when)
+
+
+def test_a_reading_that_moved_nothing_is_stepped_over(db, player):
+    """The 02:00 reading repeats 00:50 exactly, so there is nothing to place."""
+    from wom.sessions import attribute
+    _played(db, player, "2026-09-04T05:10:00.000Z",
+            [("login", "2026-09-04T01:00:00.000000Z"),
+             ("logout", "2026-09-04T05:00:00.000000Z")])
+    assert attribute(db, zone(), player, "2026-09-01") > 0
+
+
+def test_a_gain_with_no_events_near_it_is_left_alone(db, player):
+    """The account runs Dink, but nothing was reported around this gain.
+
+    It must fall back rather than half-guess, or an account would be corrected
+    only sometimes and nobody could say when.
+    """
+    from wom.sessions import attribute
+    _played(db, player, "2026-09-04T05:10:00.000Z",
+            [("login", "2026-08-20T01:00:00.000000Z")])
+    assert attribute(db, zone(), player, "2026-09-01") == 0
+    assert db.query_one("SELECT COUNT(*) AS n FROM snapshots"
+                        " WHERE origin='derived'")["n"] == 0
+
+
+def test_a_session_inside_one_day_is_not_split(db, player):
+    """Nothing crosses, so nothing is written - the gain already sits on the
+    right day."""
+    from wom.sessions import attribute
+    _played(db, player, "2026-09-04T20:10:00.000Z",
+            [("login", "2026-09-04T17:00:00.000000Z"),
+             ("logout", "2026-09-04T20:00:00.000000Z")])
+    assert attribute(db, zone(), player, "2026-09-01") == 0
+
+
+def test_a_crossing_session_that_gained_nothing_writes_nothing(db, player):
+    """A reading can move a metric we do not interpolate. There is then a
+    boundary and no correction to make, and an empty derived reading would be
+    a row saying nothing."""
+    from wom.sessions import attribute
+    db.save_snapshot(player["id"], snapshot("2026-09-04T00:50:00.000Z",
+                                            skills={"attack": (1000, 40)}))
+    db.save_snapshot(player["id"], snapshot("2026-09-04T05:10:00.000Z",
+                                            skills={"attack": (1000, 41)}))
+    for kind, when in (("login", "2026-09-04T01:00:00.000000Z"),
+                       ("logout", "2026-09-04T05:00:00.000000Z")):
+        db.record_session_event(player["username"], kind, {"total_exp": None},
+                                {}, when=when)
+    assert attribute(db, zone(), player, "2026-09-01") == 0

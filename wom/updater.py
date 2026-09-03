@@ -1,7 +1,9 @@
 """Runs one update pass over the tracked username list."""
 
 import logging
+from datetime import datetime, timedelta, timezone
 
+from . import scheduler, sessions
 from .api import HISTORY_LIMIT, WomError
 
 log = logging.getLogger(__name__)
@@ -20,6 +22,38 @@ class PlayerResult:
 
     def __repr__(self):
         return "<PlayerResult {} {}>".format(self.username, "ok" if self.ok else "failed")
+
+
+# How far back a run reconsiders session attribution. Long enough that a
+# logout arriving late still corrects the reading it belongs to, short enough
+# that this is a handful of rows every ten minutes rather than a sweep.
+SESSION_LOOKBACK_DAYS = 3
+
+
+def _place_sessions(database, usernames):
+    """Credit each session's gain to the time it was earned in.
+
+    Here rather than in the caller because all three entry points - the
+    server, the admin button and the command line - go through update_all,
+    and a correction that only some of them applied would be worse than none.
+
+    Never allowed to break a run. The readings are the thing worth having;
+    this only decides where to file them.
+    """
+    since = (datetime.now(timezone.utc) - timedelta(days=SESSION_LOOKBACK_DAYS)
+             ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    written = 0
+    for username in usernames:
+        player = database.player_by_username(username)
+        if player is None:
+            continue
+        try:
+            written += sessions.attribute(database, scheduler.zone(), player, since)
+        except Exception:
+            log.exception("placing sessions for %s failed", username)
+    if written:
+        log.info("session attribution wrote %d interpolated values", written)
+    return written
 
 
 def update_all(client, database, usernames, trigger="manual", progress=None,
@@ -68,6 +102,7 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
         headline.append("{} new milestone{}".format(
             milestones, "" if milestones == 1 else "s"))
     headline.extend("{}: {}".format(r.username, r.message) for r in failed[:10])
+    _place_sessions(database, usernames)
     database.finish_run(run_id, ok, len(failed), "; ".join(headline))
     log.info("update run finished: %d ok, %d failed, %d imported, %d milestones",
              ok, len(failed), imported, milestones)

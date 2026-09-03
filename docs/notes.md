@@ -402,9 +402,39 @@ A login with no logout stops counting after `MAX_SESSION_HOURS`, or a client
 left running overnight would turn a ten minute gain into a sixteen hour
 session and smear it across two days.
 
-Nothing reads this yet. Wiring it into the windowed totals is a different and
-larger change: every one of them asks "which reading opens this window", and a
-span model has to ask "how much of this gain falls inside it" instead. Note
-what that is worth before doing it - only 1% of experience lands within ten
-minutes of a local midnight, where point attribution can be wrong, but 32%
-lands within three hours of one, which is the band a span model moves.
+### Crediting it to the right day
+
+Every windowed total in the app is a state difference: `metric_gains` and
+`winners.measure` both read the value at two moments and subtract. Neither
+ever sees an individual gain, so neither can divide one across a boundary, and
+teaching them to would mean rewriting the two functions the Overview, the
+recaps, the charts and the leaderboard all stand on.
+
+So the division is written into the data instead. When a known span crosses a
+local midnight, `sessions.attribute` records what the account had earned by
+that midnight, and every total downstream becomes right without changing a
+line of it - they all read `state_at`, and `state_at` now has an answer there.
+
+Three things make that fit:
+
+- A span crosses at most one boundary, because `MAX_SESSION_HOURS` is under a
+  day - and week, month, quarter and year boundaries are all local midnights,
+  so one interpolation covers every window the app draws.
+- It fills a gap rather than contradicting a reading. A session leaves no
+  metric rows behind it at all: the hiscores did not move, so nothing was
+  stored. The interpolated values go where there was nothing.
+- An account with no session events produces nothing and is left byte for
+  byte as it was, which is the whole of the fallback.
+
+The rows are marked `derived` so compaction keeps them and nothing mistakes
+them for something Wise Old Man said, and each run clears and recomputes the
+last few days so a late logout corrects rather than accumulates.
+
+The interpolation is linear in time, which is wrong for someone who logs in,
+idles an hour and then trains. It is still far closer than crediting a
+four-hour session to the minute it ended. EHP could weight it later.
+
+Worth knowing what this is worth: only 1% of experience lands within ten
+minutes of a local midnight, which is all that point attribution could ever
+get wrong - but 32% lands within three hours of one, which is the band this
+moves.

@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
     player_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     captured_at TEXT NOT NULL,                    -- snapshot createdAt, ISO UTC
     fetched_at  TEXT NOT NULL,
-    origin      TEXT,                             -- poll | archive; see save_snapshot
+    origin      TEXT,                             -- poll | archive | derived
     payload     TEXT NOT NULL,                    -- raw snapshot data as JSON
     UNIQUE (player_id, captured_at)
 );
@@ -527,6 +527,59 @@ class Database:
                              (player_id,))
         return row["n"] if row else 0
 
+    def record_derived_state(self, player_id, when, rows):
+        """Write an interpolated reading at `when`. Returns rows written.
+
+        `rows` is [(kind, metric, value)] - what the account had earned by
+        that moment, which is not what the hiscores said. The hiscores do not
+        move until logout, so during a session they under-report, and this is
+        the correction: experience credited to the time it was earned rather
+        than to the minute we found out about it.
+
+        Written as metric rows at a moment that usually already has a
+        snapshot. That is deliberate. Nothing is overwritten, because a
+        session leaves no metric rows behind it at all - every metric was
+        unchanged as far as the hiscores were concerned - so these fill a gap
+        rather than contradict a reading.
+
+        A snapshot is created only if the moment has none, and marked
+        `derived` so compaction keeps it and nothing mistakes it for
+        something Wise Old Man said.
+        """
+        conn = self.connect()
+        written = 0
+        with conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO snapshots (player_id, captured_at,"
+                " fetched_at, origin, payload) VALUES (?,?,?,'derived','{}')",
+                (player_id, when, _utcnow()))
+            for kind, metric, value in rows:
+                cur = conn.execute(
+                    "INSERT OR IGNORE INTO metrics (player_id, kind, metric,"
+                    " captured_at, value) VALUES (?,?,?,?,?)",
+                    (player_id, kind, metric, when, value))
+                written += cur.rowcount
+        return written
+
+    def clear_derived_state(self, player_id, since=None):
+        """Remove interpolated readings, so they can be worked out again.
+
+        The rule that produces them will change, and a correction nobody can
+        withdraw is worse than no correction.
+        """
+        conn = self.connect()
+        where = "player_id=?" + (" AND captured_at>=?" if since else "")
+        params = [player_id] + ([since] if since else [])
+        with conn:
+            conn.execute(
+                "DELETE FROM metrics WHERE " + where + " AND captured_at IN ("
+                "  SELECT captured_at FROM snapshots WHERE " + where +
+                "    AND origin='derived')", params + params)
+            cur = conn.execute(
+                "DELETE FROM snapshots WHERE " + where + " AND origin='derived'",
+                params)
+        return cur.rowcount
+
     def record_session_event(self, username, kind, reading, payload, when=None,
                              dedupe_seconds=SESSION_DEDUPE_SECONDS):
         """Store one login or logout. Returns its row id, or None if a repeat.
@@ -746,7 +799,7 @@ class Database:
         total = self.query_one("SELECT COUNT(*) AS n FROM snapshots")["n"]
         doomed = self.query_one(
             "SELECT COUNT(*) AS n FROM snapshots WHERE captured_at < ?"
-            " AND COALESCE(origin,'poll') <> 'archive'"
+            " AND COALESCE(origin,'poll') = 'poll'"
             " AND id NOT IN (SELECT id FROM ("
             "     SELECT id, MAX(captured_at) FROM snapshots WHERE captured_at < ?"
             "     GROUP BY player_id, substr(captured_at, 1, 10)))",
@@ -789,7 +842,7 @@ class Database:
         with conn:
             cur = conn.execute(
                 "DELETE FROM snapshots WHERE captured_at < ?"
-                " AND COALESCE(origin,'poll') <> 'archive'"
+                " AND COALESCE(origin,'poll') = 'poll'"
                 " AND id NOT IN (SELECT id FROM ("
                 "     SELECT id, MAX(captured_at) FROM snapshots WHERE captured_at < ?"
                 "     GROUP BY player_id, substr(captured_at, 1, 10)))",

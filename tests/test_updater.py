@@ -168,3 +168,42 @@ def test_a_rejected_api_key_is_dropped_rather_than_taking_the_tracker_down():
     assert session.keys_sent == ["not-a-real-key", None], \
         "tried once with it, then dropped it"
     assert client.api_key == "", "and stops sending it for the rest of the run"
+
+
+def test_an_update_run_places_the_sessions_it_just_learned_about(db, monkeypatch):
+    """The correction has to ride on the update, not on a command somebody
+    remembers to run - the same reason compaction was moved onto the schedule."""
+    from conftest import snapshot
+    from wom import updater
+
+    db.save_player_details({"id": 1, "username": "zezima",
+                            "displayName": "Zezima", "type": "regular"})
+    db.save_snapshot(1, snapshot("2026-09-04T00:50:00.000Z",
+                                 skills={"attack": (1000, 40)}))
+    db.save_snapshot(1, snapshot("2026-09-04T05:10:00.000Z",
+                                 skills={"attack": (401000, 60)}))
+    for kind, when in (("login", "2026-09-04T01:00:00.000000Z"),
+                       ("logout", "2026-09-04T05:00:00.000000Z")):
+        db.record_session_event("zezima", kind, {"total_exp": None}, {}, when=when)
+
+    monkeypatch.setattr(updater, "SESSION_LOOKBACK_DAYS", 3650)
+    assert updater._place_sessions(db, ["zezima"]) > 0
+    assert db.query_one("SELECT COUNT(*) AS n FROM snapshots"
+                        " WHERE origin='derived'")["n"] == 1
+
+
+def test_a_failure_to_place_sessions_never_breaks_the_run(db, monkeypatch):
+    from wom import updater
+
+    db.save_player_details({"id": 1, "username": "zezima",
+                            "displayName": "Zezima", "type": "regular"})
+
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("no")
+    monkeypatch.setattr(updater.sessions, "attribute", explode)
+    assert updater._place_sessions(db, ["zezima"]) == 0, "swallowed, not raised"
+
+
+def test_placing_sessions_skips_a_name_we_have_never_stored(db):
+    from wom import updater
+    assert updater._place_sessions(db, ["nobody-here"]) == 0

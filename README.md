@@ -281,9 +281,12 @@ trusting the name in the body, and one that leaks is revoked alone. Whatever
 Dink offers about someone's Discord account or clan is dropped as the body is
 read, never stored.
 
-Nothing on the dashboard reads any of this yet. It is being collected first, so
-that whether to re-attribute gains across a session can be decided against real
-logins rather than in advance.
+Where both ends of a session are known and it crossed a local midnight, the app
+records what the account had earned by that midnight, so a four-hour evening
+session is credited to the evening rather than entirely to the minute after it
+ended. Every total, chart and leaderboard picks that up without special-casing
+it. An account with no session events is untouched and reports exactly what it
+always did.
 
 ## What gets stored
 
@@ -298,9 +301,10 @@ days, compaction thins what is left to one reading a day, which is finer than a
 month-wide chart can draw; it runs once a day, on the first update after
 midnight.
 
-With one exception. Each reading records an `origin`: `poll` when our own
+With two exceptions. Each reading records an `origin`: `poll` when our own
 request caused Wise Old Man to take it, `archive` when it already existed and
-we were only collecting it. Compaction never thins an `archive` reading. A
+we were only collecting it, `derived` when the app worked it out (see Session
+logins). Compaction thins only `poll`. Compaction never thins an `archive` reading. A
 polled one can be taken again tomorrow, so thinning it costs a detail; an
 archive one is a moment recorded without us - a player's client pushing on
 logout, most often - and is the only evidence of when that session ended, so
