@@ -567,7 +567,8 @@ class Database:
                  reading.get("collections"), json.dumps(payload)))
         return cur.lastrowid
 
-    def session_events(self, username=None, kind=None, limit=200):
+    def session_events(self, username=None, kind=None, since=None, until=None,
+                       limit=200):
         """Recorded logins and logouts, newest first."""
         sql = "SELECT * FROM session_events"
         clauses, params = [], []
@@ -577,6 +578,12 @@ class Database:
         if kind:
             clauses.append("kind=?")
             params.append(kind)
+        if since:
+            clauses.append("received_at>=?")
+            params.append(since)
+        if until:
+            clauses.append("received_at<=?")
+            params.append(until)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         return self.query(sql + " ORDER BY received_at DESC LIMIT ?",

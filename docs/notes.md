@@ -375,3 +375,36 @@ it flags are imported history, which is why so many of them carry a change -
 Wise Old Man only makes a snapshot when something moved, so an archive of them
 is a list of changes by construction. `origin` answers the question the phase
 test only appeared to.
+
+
+### Which span a gain belongs to
+
+`wom/sessions.py` turns a recorded gain back into the stretch of time it was
+earned in. `resolve(previous_at, reading_at, events)` returns a `Span` with
+both ends labelled `measured` or `inferred`, so a caller can tell what it is
+being given.
+
+The start, in order of preference:
+
+1. the first login between the two readings - the *first*, because two short
+   sessions inside one polling interval arrive as one gain, and taking the
+   later login would date all of it from the last few minutes;
+2. a login from before the previous reading that was never closed. This is the
+   case the whole exercise exists for: four hours of training crosses several
+   readings without moving any of them, because the hiscores are frozen until
+   logout, and that login is the only record of when it began. A span that
+   starts before the previous reading is therefore correct, not a bug;
+3. the previous reading - exactly what the app did before Dink existed.
+
+The end is the last logout between the two readings, or the reading itself.
+
+A login with no logout stops counting after `MAX_SESSION_HOURS`, or a client
+left running overnight would turn a ten minute gain into a sixteen hour
+session and smear it across two days.
+
+Nothing reads this yet. Wiring it into the windowed totals is a different and
+larger change: every one of them asks "which reading opens this window", and a
+span model has to ask "how much of this gain falls inside it" instead. Note
+what that is worth before doing it - only 1% of experience lands within ten
+minutes of a local midnight, where point attribution can be wrong, but 32%
+lands within three hours of one, which is the band a span model moves.
