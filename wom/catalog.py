@@ -34,21 +34,36 @@ LOG_METRICS = {
 }
 
 
+# The two ways a trend card can be read. "Total" plots the stored value, which
+# is what the card has always shown. "Gained" plots the change since the window
+# opened, and is the only way accounts a thousand levels apart share an axis
+# usefully: on the totals, a month of everyone's progress is a few pixels of
+# wiggle against the gap between the highest account and the lowest.
+#
+# Both readings come out of the same payload - the change is the series minus
+# the reading the window starts from - so switching redraws without refetching.
+TREND_MODES = ["Total", "Gained"]
+
+
 class ChartSpec:
     """One chart on the Overview page: what it shows, and what builds it."""
 
-    def __init__(self, key, title, kind, description="", options=None):
+    def __init__(self, key, title, kind, description="", options=None,
+                 modes=None):
         self.key = key
         self.title = title
         self.kind = kind                  # stacked | trend
         self.description = description
         self.options = list(options) if options else None
+        # How the card may be read, if more than one way. The first is what it
+        # opens on, so it is always the reading the card had before it had any.
+        self.modes = list(modes) if modes else None
         self.build = None                 # set by @chart, below
 
     def as_dict(self):
         return {"key": self.key, "title": self.title,
                 "description": self.description, "kind": self.kind,
-                "options": self.options}
+                "options": self.options, "modes": self.modes}
 
 
 def chart(key):
@@ -96,10 +111,10 @@ SUMMARY_CHARTS = (
                           "this period."),
     ChartSpec("level_trend", "Levels over time", "trend",
               description="One line per included player, over the chosen period.",
-              options=LEVEL_CHOICES),
+              options=LEVEL_CHOICES, modes=TREND_MODES),
     ChartSpec("log_and_clues", "Collection log and clues over time", "trend",
               description="One line per included player, over the chosen period.",
-              options=LOG_CHOICES),
+              options=LOG_CHOICES, modes=TREND_MODES),
 )
 
 BY_KEY = {spec.key: spec for spec in SUMMARY_CHARTS}

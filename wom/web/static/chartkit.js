@@ -106,6 +106,12 @@
     this.data = null;
     this.muted = {};                 // username -> hidden by a legend click
     this.seq = 0;                    // guards against an old reply landing last
+    /* Which reading of this card is showing, for a card that offers more than
+       one. Taken from the markup rather than assumed, so the default lives in
+       one place - the first entry of the spec's modes. Null on every card
+       that has no modes, which is all of them but the two trends. */
+    var pressed = node.querySelector("button.mode[aria-pressed='true']");
+    this.mode = pressed ? pressed.dataset.mode : null;
     var self = this;
     var pending = null;
     window.addEventListener("resize", function () {
@@ -177,6 +183,57 @@
     var self = this;
     return this.data.series.filter(function (s) { return !self.muted[s.username]; });
   };
+
+  /* A mode is a way of reading what has already arrived, not a different
+     question, so it redraws rather than refetching. */
+  Chart.prototype.setMode = function (mode) {
+    this.mode = mode;
+    this.draw();
+  };
+
+  /* Which of the two readings bracketing the window's opening a gain is
+     measured from: whichever sits nearer to it. The same rule
+     winners.opening_reading and db.baseline_snapshot follow on the server,
+     so a card measures a period the way the rest of the site does.
+
+     Taking the one before unconditionally reads as obviously right - it is
+     the reading the window opens on, and the server sends it so a line can
+     start at the left edge. But Wise Old Man's history has holes, and
+     "before" can be years before: an account last seen in 2022 and next seen
+     inside the window had four years of progress counted as this month's.
+     Wrong on its own, and being enormous it stretched the axis and squashed
+     every well-covered account's real month into the floor of the card.
+
+     Both horns need handling, which is why it is this rule and not "measure
+     from the first point in the window" - an account whose history begins
+     mid-window would then report its own late start as a gain of zero. */
+  function openingReading(points, since) {
+    var before = null, inside = null;
+    for (var i = 0; i < points.length; i++) {
+      if (points[i][0] <= since) { before = points[i]; }
+      else { inside = points[i]; break; }
+    }
+    if (before === null) { return inside; }
+    if (inside === null) { return before; }
+    return (inside[0] - since) < (since - before[0]) ? inside : before;
+  }
+
+  /* The same series expressed as the change since that reading. */
+  function rebased(series, since) {
+    return series.map(function (s) {
+      var opening = openingReading(s.points, since);
+      if (opening === null) { return s; }
+      var base = opening[1];
+      return {
+        username: s.username, name: s.name, color: s.color,
+        // Readings before the one a gain is measured from would draw a
+        // negative tail into the window, so the line starts where the
+        // measurement does.
+        points: s.points.filter(function (p) { return p[0] >= opening[0]; })
+          .map(function (p) { return [p[0], p[1] - base, p[2]]; })
+      };
+    });
+  }
 
   Chart.prototype.draw = function () {
     if (!this.data) { return; }
@@ -527,7 +584,13 @@
 
   Chart.prototype.trend = function () {
     var data = this.data;
+    /* "Gained" plots the movement rather than the value. Everything below
+       reads `shown`, so rebasing here is the whole of the difference - bar
+       the axis, which stops being a scale of levels once it is a scale of
+       changes in them. */
+    var gained = this.mode === "Gained";
     var shown = this.visible();
+    if (gained) { shown = rebased(shown, data.since); }
 
     /* The vertical extent is settled before the frame is, because whether
        there is a second axis decides how much room the right margin needs -
@@ -549,9 +612,19 @@
       });
     }
     var lo = d3.min(values), hi = d3.max(values);
+    /* A change is read against nothing having happened, so zero belongs on
+       the axis whether or not anything sits there. It does not arrive on its
+       own: the point holding it is the baseline, which sits before `since`
+       and is exactly what the extent above filters out - so a card of gains
+       between +5 and +22 drew an axis starting at 5 and clipped the opening
+       of every line below it. */
+    if (gained) { lo = Math.min(0, lo); hi = Math.max(0, hi); }
     if (lo === hi) { lo -= 1; hi += 1; }
     var domain = d3.scaleLinear().domain([lo, hi]).nice().domain();
-    var levels = (data.levelAxis && shown.length) ? levelTicks(domain) : null;
+    // A level axis maps experience to the level it buys, which is a statement
+    // about a total. A difference of experience does not sit anywhere on it.
+    var levels = (data.levelAxis && !gained && shown.length)
+      ? levelTicks(domain) : null;
 
     var f = this.frame(330, levels ? {right: 52} : null);
     var svg = f.svg;
@@ -572,7 +645,7 @@
     // continuously, and a line of levels is a staircase that hides a week's
     // work inside one step.
     if (levels) { levelAxis(g, f, y, levels); }
-    else { valueAxis(g, f, y, data.ylabel); }
+    else { valueAxis(g, f, y, gained ? data.ylabelGained : data.ylabel); }
 
     var span = (ends - data.since) / 86400000;
     var inZone = labelZone(data);
@@ -634,7 +707,8 @@
     var rule = g.append("line").attr("y1", 0).attr("y2", f.tall)
       .attr("stroke", COLOR.muted).attr("stroke-dasharray", "3,3").style("opacity", 0);
     var dots = plot.append("g");
-    var fmt = data.tooltip || { style: "count", unit: "" };
+    var fmt = (gained ? data.tooltipGained : data.tooltip)
+      || { style: "count", unit: "" };
 
     g.append("rect").attr("width", f.inner).attr("height", f.tall)
       .attr("fill", "transparent")
@@ -666,9 +740,18 @@
         head.text(span <= 2 ? dayTime(stamp) : day(stamp));
         var html = head.node().outerHTML;
         picks.forEach(function (d) {
-          var value = fmt.style === "level"
-            ? "level " + full.format(d.p[1]) + " (" + full.format(d.p[2]) + " XP)"
-            : full.format(d.p[1]) + " " + escapeHtml(fmt.unit || "");
+          var value;
+          if (gained) {
+            // A signed figure, because zero and "nothing yet" look the same
+            // on a line that starts at zero and the sign is what tells them
+            // apart at a glance.
+            value = (d.p[1] > 0 ? "+" : "") + full.format(d.p[1]) +
+              " " + escapeHtml(fmt.unit || "");
+          } else {
+            value = fmt.style === "level"
+              ? "level " + full.format(d.p[1]) + " (" + full.format(d.p[2]) + " XP)"
+              : full.format(d.p[1]) + " " + escapeHtml(fmt.unit || "");
+          }
           html += '<div class="tip-sub">' + swatch(d.s.color, d.s.name) +
             " &middot; " + value + "</div>";
         });

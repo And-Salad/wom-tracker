@@ -215,6 +215,8 @@ def _level_trend(ctx, choice):
         ylabel="{} level".format("Total" if metric == "overall"
                                  else pretty_metric(metric)),
         tooltip={"style": "level"},
+        gained_ylabel="Levels gained",
+        gained_tooltip={"style": "count", "unit": "levels"},
         empty="No {} history for the included players in {{}}.".format(
             choice.lower()))
 
@@ -229,6 +231,10 @@ def _log_and_clues(ctx, choice):
         ylabel="Collection log slots" if log_slots
                else "{} completed".format(choice),
         tooltip={"style": "count", "unit": "slots" if log_slots else "completed"},
+        gained_ylabel="Slots gained" if log_slots
+                      else "{} gained".format(choice),
+        gained_tooltip={"style": "count",
+                        "unit": "slots" if log_slots else "completed"},
         empty="No {} history for the included players in {{}}.".format(
             choice.lower()))
 
@@ -317,8 +323,16 @@ def trend_series(database, players, color_for, kind, metric, field,
     return series
 
 
-def _trend(ctx, kind, metric, field, ylabel, tooltip, empty):
-    """One line per player, sampled at whatever cadence the period wants."""
+def _trend(ctx, kind, metric, field, ylabel, tooltip, empty,
+           gained_ylabel=None, gained_tooltip=None):
+    """One line per player, sampled at whatever cadence the period wants.
+
+    A card with modes is read two ways off this one payload - see
+    catalog.TREND_MODES. The "Gained" reading is the same series minus the
+    value it opened on, which the browser does; what it cannot do is name the
+    axis, because "Total level" has to become "Levels gained" rather than
+    growing a suffix. So both labels are settled here, next to each other.
+    """
     since = ctx.span.since
     series = trend_series(ctx.db, ctx.selected, ctx.color_for, kind, metric,
                           field, since, ctx.span.until, bucket=ctx.span.bucket)
@@ -327,6 +341,8 @@ def _trend(ctx, kind, metric, field, ylabel, tooltip, empty):
     start = parse_api_time(since)
     return {
         "type": "trend", "ylabel": ylabel, "tooltip": tooltip,
+        "ylabelGained": gained_ylabel or "{} gained".format(ylabel),
+        "tooltipGained": gained_tooltip or {"style": "count", "unit": ""},
         # The baseline reading deliberately sits before the window; pin the
         # axis to the window itself so the line starts at the left edge.
         "since": int(start.timestamp() * 1000),
