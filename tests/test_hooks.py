@@ -327,5 +327,17 @@ def test_a_tripped_wire_does_not_stop_us_collecting(signed_in, app):
     assert len(app.config["DATABASE"].session_events("zezima")) == 1
 
 
+def test_every_attempt_at_the_hook_is_logged(client, caplog):
+    """A call that never routes must still leave a trace, and never the token."""
+    import logging
+    with caplog.at_level(logging.INFO):
+        client.get("/hook/dink/sixteen-chars-xy")
+        client.post("/hook/nonsense")
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("hook:")]
+    assert len(lines) == 2, "both the wrong method and the wrong path"
+    assert "GET" in lines[0] and "16 characters" in lines[0]
+    assert "sixteen-chars-xy" not in " ".join(lines), "the secret is never written"
+
+
 def test_the_endpoint_only_takes_posts(client):
     assert client.get("/hook/dink/whatever").status_code in (404, 405)

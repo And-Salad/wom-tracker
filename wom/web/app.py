@@ -58,6 +58,7 @@ def create_app(limits=None):
     app.register_blueprint(exporting_blueprint)
     app.register_blueprint(hooks_blueprint)
     _add_hardening(app)
+    _note_hook_attempts(app)
     _add_template_globals(app)
     _refuse_bad_dates(app)
     return app
@@ -115,6 +116,27 @@ def _add_hardening(app):
             response.headers.setdefault(
                 "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
+
+
+def _note_hook_attempts(app):
+    """Say that something reached /hook, whatever shape it arrived in.
+
+    hooks.py logs the calls that route correctly. This catches the ones that
+    do not - the wrong method, a stale path, a URL sent over plain HTTP and
+    turned into a GET by the redirect - because otherwise every one of them
+    is silence, and silence looks exactly like a plugin that never sent
+    anything. Which of those two it is has to be answerable from a log.
+
+    The last path segment is a secret, so only its length is written down.
+    """
+    @app.before_request
+    def note():
+        if not request.path.startswith("/hook"):
+            return None
+        head, _, tail = request.path.rpartition("/")
+        log.info("hook: %s %s/<%d characters> ua=%r", request.method, head,
+                 len(tail), (request.headers.get("User-Agent") or "?")[:60])
+        return None
 
 
 def _add_template_globals(app):
