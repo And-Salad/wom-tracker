@@ -16,6 +16,11 @@ from ..util import parse_api_time, pretty_metric
 
 log = logging.getLogger(__name__)
 
+# One wording for "nobody is ticked", shared with the endpoints in api.py -
+# which already imports this module, so it lives here and travels up rather
+# than being written out four times.
+NOBODY_PICKED = "Include at least one player using the sidebar swatches."
+
 
 def catalog():
     """The chart list the page builds its cards and dropdowns from."""
@@ -28,7 +33,7 @@ def build(database, config, key, span, players, choice=None):
     if spec is None or spec.build is None:
         return None
     if not players:
-        return _empty("Include at least one player using the sidebar swatches.")
+        return _empty(NOBODY_PICKED)
     ctx = ViewContext(database, config, players, selected=players,
                       span=span, choice=choice)
     try:

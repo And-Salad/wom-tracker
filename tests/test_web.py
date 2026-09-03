@@ -624,10 +624,24 @@ def test_the_sidebar_dates_are_not_submitted_by_the_no_script_form(client, app):
 
 
 def test_every_data_endpoint_refuses_to_be_cached(client, app):
-    """An update lands while the page is open; the reader has to see it."""
+    """An update lands while the page is open; the reader has to see it.
+
+    Both ways out of every endpoint, not just the one with rows in it. Five
+    early returns handed back a bare jsonify() with no header on it, so a
+    player's own figures were cacheable on their normal path and three
+    endpoints were cacheable whenever nobody was ticked - which is when a
+    reader is most likely to tick somebody and ask again.
+    """
     seed(app)
-    for path in ("/api/chart/standings", "/api/table", "/api/players",
-                 "/api/milestones", "/api/history?kind=skill&metric=attack"):
+    populated = ("/api/chart/standings", "/api/table", "/api/players",
+                 "/api/milestones", "/api/history?kind=skill&metric=attack",
+                 "/api/player/zezima", "/api/maxing/player/zezima",
+                 "/api/maxing/trend")
+    empty = ("/api/chart/standings?picked=1", "/api/table?picked=1",
+             "/api/maxing/trend?picked=1",
+             "/api/history?kind=skill&metric=attack&picked=1",
+             "/api/history?kind=skill&metric=nosuchskill_here")
+    for path in populated + empty:
         response = client.get(path)
         assert response.headers.get("Cache-Control") == "no-cache", path
 

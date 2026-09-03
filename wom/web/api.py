@@ -10,6 +10,7 @@ from flask import (Blueprint, Response, abort, current_app, jsonify, request,
                    session)
 
 from . import data as web_data
+from .data import NOBODY_PICKED
 from . import today, views
 from ..context import ViewContext
 from ..util import parse_api_time, pretty_metric
@@ -24,6 +25,7 @@ METRIC_NAME = re.compile(r"^[a-z0-9_]{1,40}$")
 
 PAUSED = ("The dashboard has paused its data endpoints after a burst of "
           "automated traffic. An admin needs to resume it.")
+
 
 
 def _fresh(payload):
@@ -104,7 +106,7 @@ def player_detail(username):
         abort(404)
     config = settings()
     span = _span(chosen(roster(config)))
-    return jsonify(views.player_detail(database(), player, span))
+    return _fresh(views.player_detail(database(), player, span))
 
 
 @api.route("/api/players")
@@ -155,8 +157,7 @@ def maxing_trend():
     players = roster(config)
     picked = chosen(players)
     if not picked:
-        return jsonify({"empty": "Include at least one player using the "
-                                 "sidebar swatches."})
+        return _fresh({"empty": NOBODY_PICKED})
     context = ViewContext(database(), config, players, selected=picked,
                           span=_span(picked))
     return _fresh(today.trend(database(), picked, context.color_for))
@@ -191,9 +192,7 @@ def metric_table():
     players = roster(config)
     picked = chosen(players)
     if not picked:
-        return jsonify({"rows": [],
-                        "empty": "Include at least one player using the "
-                                 "sidebar swatches."})
+        return _fresh({"rows": [], "empty": NOBODY_PICKED})
     span = _span(picked)
     rows = views.metric_table(database(), picked, span.since, span.until,
                               colors(config, players))
@@ -224,8 +223,7 @@ def metric_history():
     players = roster(config)
     picked = chosen(players)
     if not picked:
-        return jsonify({"empty": "Include at least one player using the "
-                                 "sidebar swatches."})
+        return _fresh({"empty": NOBODY_PICKED})
     span = _span(picked)
 
     context = ViewContext(database(), config, players, selected=picked, span=span)
@@ -233,7 +231,7 @@ def metric_history():
         database(), picked, context.color_for, kind, metric, "value",
         span.since, span.until, bucket=span.bucket)
     if not series:
-        return jsonify({"empty": "No readings of {} in {}.".format(
+        return _fresh({"empty": "No readings of {} in {}.".format(
             pretty_metric(metric), span.phrase)})
     return _fresh({
         "type": "trend",
