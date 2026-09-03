@@ -1,4 +1,4 @@
-"""The HTTP surface: what is public, what is not, and what is refused."""
+﻿"""The HTTP surface: what is public, what is not, and what is refused."""
 
 import json
 import os
@@ -272,6 +272,39 @@ def test_experience_toward_99_is_capped_the_way_the_leaderboard_caps_it(client, 
 
     assert tiles["xp"]["total"] == 6000, "every point gained"
     assert tiles["xp99"]["total"] == 1000, "only the part below the cap"
+def test_the_two_trend_cards_offer_both_readings():
+    """The trend cards are the ones an account's absolute value makes
+    unreadable - six accounts spanning 1,600 total levels put every month of
+    progress inside a few pixels - so they are the two carrying a Gained
+    mode. The stacked cards already plot a change and need no second reading.
+    """
+    from wom import catalog
+
+    assert {s.key for s in catalog.SUMMARY_CHARTS if s.modes} == {
+        "level_trend", "log_and_clues"}
+    for spec in catalog.SUMMARY_CHARTS:
+        if not spec.modes:
+            continue
+        # The first mode is what the card opens on, so it has to be the
+        # reading the card had before it had any - otherwise this is a
+        # redesign of two charts rather than an addition to them.
+        assert spec.modes[0] == "Total"
+        assert spec.as_dict()["modes"] == spec.modes
+
+
+def test_a_trend_payload_names_the_axis_for_both_readings(client, app):
+    """The browser subtracts to get the Gained series but cannot rename the
+    axis for it - "Attack level" has to become "Levels gained" rather than
+    growing a suffix - so both labels travel with the payload."""
+    seed(app)
+    body = client.get("/api/chart/level_trend"
+                      "?from=2026-08-24&to=2026-09-01&tzoffset=0"
+                      "&choice=Attack").get_json()
+
+    assert "empty" not in body, body.get("empty")
+    assert body["ylabel"] == "Attack level"
+    assert body["ylabelGained"] == "Levels gained"
+    assert body["tooltipGained"] == {"style": "count", "unit": "levels"}
 
 
 def test_a_builder_for_an_unknown_chart_is_refused():

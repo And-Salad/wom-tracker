@@ -211,6 +211,25 @@
   }
   .card-head .pick select { margin-left: 6px; }
 
+  /* Two ways to read one card, both worth showing at once - a select would
+     hide whichever is not chosen behind a click, and there are only ever two.
+     Where a card has a dropdown too, that one owns the auto margin and this
+     sits alongside it rather than fighting it for the same free space. */
+  .card-head .modes {
+    display: inline-flex; gap: 2px; margin-left: auto; padding: 2px;
+    background: var(--raised); border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+  .card-head .pick ~ .modes { margin-left: 0; }
+  .card-head .modes .mode {
+    padding: 4px 10px; border: none; border-radius: var(--radius-sm);
+    background: none; color: var(--muted); font-size: var(--text-sm);
+  }
+  .card-head .modes .mode:hover { color: var(--ink); }
+  .card-head .modes .mode[aria-pressed="true"] {
+    background: var(--card); color: var(--ink);
+  }
+
   /* The group's figures: three across, two down. Fixed rather than fitted -
      six tiles fanned across one row read as a strip of labels, and the point
      of the card is that each one is a headline. */
@@ -243,6 +262,7 @@
   @media (max-width: 820px) {
     .card { padding: var(--space-3); border-radius: var(--space-2); }
     .card-head { flex-wrap: wrap; }
+    .card-head .modes, .card-head .pick ~ .modes { margin: 4px 0 0; }
     /* Full width means its own line: left on one line with the word before
        it, a 100%-wide select starts where that word ends and hangs off the
        card by exactly that much. */

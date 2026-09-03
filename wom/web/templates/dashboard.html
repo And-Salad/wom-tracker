@@ -20,6 +20,14 @@
             </select>
           </label>
         {% endif %}
+        {% if item.modes %}
+          <div class="modes" role="group" aria-label="{{ item.title }}: how to read it">
+            {% for mode in item.modes %}
+              <button type="button" class="mode" data-mode="{{ mode }}"
+                      aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ mode }}</button>
+            {% endfor %}
+          </div>
+        {% endif %}
       </div>
       <div class="plot loading"></div>
     </div>
