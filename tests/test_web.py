@@ -299,6 +299,48 @@ def test_experience_gained_is_counted_from_the_start_of_the_window(client, app):
     assert body["ylabel"] == "XP gained"
 
 
+def test_a_years_old_reading_does_not_become_this_period_s_gain(client, app):
+    """Wise Old Man's history has holes, so the reading before a window can be
+    years before it. Measured from there an account reports four years of
+    experience as this month's - eighteen times the standings figure on the
+    same page, and enough to reorder the group. The shape here is a real one:
+    an account last read in 2022 and next read inside the window."""
+    database = app.config["DATABASE"]
+    database.save_player_details({"id": 1, "username": "zezima",
+                                  "displayName": "Zezima", "type": "regular"})
+    for day, xp in (("2022-05-21", 5830826), ("2026-08-06", 92203156),
+                    ("2026-08-31", 97332768)):
+        database.save_snapshot(1, snapshot(day + "T12:00:00.000Z",
+                                           skills={"overall": (xp, 2021)}))
+
+    body = client.get("/api/chart/xp_trend"
+                      "?from=2026-08-02&to=2026-09-02&tzoffset=0").get_json()
+
+    points = body["series"][0]["points"]
+    assert points[0][1] == 0
+    assert points[-1][1] == 5129612, "the month, not the four years before it"
+
+
+def test_the_experience_line_ends_where_the_standings_row_says(client, app):
+    """The two cards sit six inches apart on the same page answering the same
+    question, so they measure from the same reading rather than each picking
+    one. They agree by construction: both go through bounds_for."""
+    database = app.config["DATABASE"]
+    database.save_player_details({"id": 1, "username": "zezima",
+                                  "displayName": "Zezima", "type": "regular"})
+    for day, xp in (("2022-05-21", 5830826), ("2026-08-06", 92203156),
+                    ("2026-08-31", 97332768)):
+        database.save_snapshot(1, snapshot(day + "T12:00:00.000Z",
+                                           skills={"overall": (xp, 2021),
+                                                   "attack": (xp, 99)}))
+
+    window = "?from=2026-08-02&to=2026-09-02&tzoffset=0"
+    line = client.get("/api/chart/xp_trend" + window).get_json()
+    standings = client.get("/api/chart/standings" + window).get_json()
+
+    assert line["series"][0]["points"][-1][1] == standings["rows"][0]["xp"]
+
+
 def test_the_experience_line_sits_under_the_bar_chart_it_explains(client, app):
     """Placement is the point of the card, not a detail of it: the columns
     say what the group trained and the line says when, so they are read as a
