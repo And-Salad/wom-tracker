@@ -147,6 +147,38 @@ def test_the_admin_page_shows_the_url_and_the_last_login(signed_in, app):
         "not merely that something arrived")
 
 
+def test_the_url_handed_out_is_https_even_though_we_cannot_see_it(app):
+    """The exact condition production runs under, and the bug it caused.
+
+    Waitress strips X-Forwarded-Proto, so a request arrives looking like plain
+    HTTP however it was really made - which is what the context below sets up.
+    Building the URL from request.url_root therefore handed players an http://
+    address: the host redirects it, okhttp downgrades the redirected POST to a
+    GET, the body is lost, and the webhook fails where nobody was watching.
+    """
+    from flask import request
+    from wom.web.hooks import public_url
+    with app.test_request_context("/admin", base_url="http://wom-tracker.fly.dev"):
+        assert not request.is_secure, "the condition this is about"
+        assert public_url("abc") == "https://wom-tracker.fly.dev/hook/dink/abc"
+
+
+def test_a_local_run_is_still_given_a_working_link(app):
+    """Forcing https on localhost would only make development painful."""
+    from wom.web.hooks import public_url
+    with app.test_request_context("/admin", base_url="http://localhost:8000"):
+        assert public_url("abc") == "http://localhost:8000/hook/dink/abc"
+
+
+def test_a_downgraded_get_says_the_scheme_is_wrong(signed_in, app):
+    """What an http:// URL turns into, and it must not be a bare 405."""
+    url = issue(signed_in)
+    response = signed_in.get(url)
+    assert response.status_code == 400
+    assert b"https" in response.data, "the answer has to name the cause"
+    assert app.config["DATABASE"].session_events("zezima") == []
+
+
 # -- what it stores -------------------------------------------------------
 
 def test_a_login_is_recorded(signed_in, app):
@@ -390,5 +422,7 @@ def test_every_attempt_at_the_hook_is_logged(client, caplog):
     assert "sixteen-chars-xy" not in " ".join(lines), "the secret is never written"
 
 
-def test_the_endpoint_only_takes_posts(client):
-    assert client.get("/hook/dink/whatever").status_code in (404, 405)
+def test_an_unknown_token_is_a_miss_whatever_the_method(client):
+    """The scheme hint is for people we know; a stranger learns nothing."""
+    assert client.get("/hook/dink/whatever").status_code == 404
+    assert client.put("/hook/dink/whatever").status_code == 405

@@ -14,6 +14,7 @@ from flask import Flask, Response, request, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .. import theme
+from ..util import is_local_host
 from ..config import DB_PATH
 from ..db import Database
 from .admin import PASSWORD_ENV, admin as admin_blueprint, admin_enabled
@@ -112,7 +113,7 @@ def _add_hardening(app):
         # request looks like plain HTTP from inside. Anything not on a local
         # hostname is reached over HTTPS in practice, and pinning HSTS on
         # localhost would only make development painful.
-        if request.is_secure or not _is_local(request.host):
+        if request.is_secure or not is_local_host(request.host):
             response.headers.setdefault(
                 "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
@@ -170,12 +171,6 @@ def _asset_version(folder):
         digest.update("{}:{}:{}".format(name, stat.st_mtime_ns, stat.st_size)
                       .encode("utf-8"))
     return digest.hexdigest()[:8]
-
-
-def _is_local(host):
-    """True for a hostname reached over plain HTTP in normal use."""
-    name = (host or "").split(":")[0].lower()
-    return name in ("localhost", "127.0.0.1", "::1", "") or name.endswith(".local")
 
 
 def _https_only():

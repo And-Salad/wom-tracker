@@ -270,7 +270,12 @@ Setting that one field is all a player has to do; the Discord webhook box beside
 it can stay empty.
 
 Issue and revoke a player's URL from the admin page, which also shows when we
-last heard from them. The plugin cannot send a header, so the URL *is* the
+last heard from them. It must be the **https** one the page prints: waitress
+strips `X-Forwarded-Proto`, so the app cannot tell how it was reached and the
+URL is built as https for any non-local host rather than read off the request.
+An http URL is redirected, okhttp turns the redirected POST into a GET, and the
+body is lost - so the endpoint answers a GET by naming the scheme rather than
+returning a bare 405. The plugin cannot send a header, so the URL *is* the
 credential, and each player gets their own: it says who is calling without
 trusting the name in the body, and one that leaks is revoked alone. Whatever
 Dink offers about someone's Discord account or clan is dropped as the body is

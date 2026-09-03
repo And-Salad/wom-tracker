@@ -22,6 +22,7 @@ from ..colors import normalise, player_color, set_player_color
 from ..config import Config, ENV_KEYS, normalise_usernames
 from ..summaries import SUMMARY_EFFORTS, SUMMARY_MODELS
 from ..util import fmt_ago, fmt_datetime, fmt_int
+from .hooks import public_url
 from .limits import client_address
 
 log = logging.getLogger(__name__)
@@ -137,6 +138,8 @@ def settings():
             "snapshots": database.snapshot_count(row["id"]) if row is not None else 0,
             "updated": row["updated_at"] if row is not None else None,
             "token": tokens.get(name.lower(), ""),
+            "url": public_url(tokens[name.lower()])
+                   if tokens.get(name.lower()) else "",
             "events": database.session_event_count(name.lower()),
             "last_kind": seen["kind"] if seen is not None else "",
             "last_seen": fmt_datetime(seen["received_at"]) if seen is not None else None,
@@ -149,7 +152,6 @@ def settings():
         models=SUMMARY_MODELS, efforts=SUMMARY_EFFORTS,
         env_keys=ENV_KEYS, zones=COMMON_ZONES,
         job=current_app.config["JOBS"].status(),
-        hook_base=request.url_root.rstrip("/") + "/hook/dink/",
         tripwire=tripwire.status() if tripwire else None,
         periods=[p.key for p in periods.PERIODS])
 

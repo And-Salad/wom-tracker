@@ -90,3 +90,14 @@ def pretty_metric(metric):
         lower = word.lower()
         out.append(lower if index and lower in _SMALL_WORDS else lower.capitalize())
     return " ".join(out)
+
+
+def is_local_host(host):
+    """True for a hostname reached over plain HTTP in normal use.
+
+    Lives here because two parts of the web app need it and neither may
+    import the other: app.py decides whether to pin HSTS, and hooks.py
+    decides whether the URL it hands a player says http or https.
+    """
+    name = (host or "").split(":")[0].lower()
+    return name in ("localhost", "127.0.0.1", "::1", "") or name.endswith(".local")

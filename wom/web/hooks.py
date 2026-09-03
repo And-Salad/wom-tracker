@@ -30,6 +30,7 @@ import logging
 from flask import Blueprint, Response, current_app, request
 
 from ..config import Config
+from ..util import is_local_host
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +57,25 @@ KINDS = {"LOGIN": "login", "LOGOUT": "logout"}
 UNWANTED = ("discordUser", "clanName", "groupIronClanName", "dinkAccountHash")
 
 
-@hooks.route("/hook/dink/<token>", methods=["POST"])
+def public_url(token):
+    """The URL to hand a player. It has to say https, and cannot ask.
+
+    Not built from request.url_root. Waitress strips X-Forwarded-Proto along
+    with the other forwarded headers, so every request looks like plain HTTP
+    from in here and url_root hands out an http:// address - which is a
+    working link in a browser and a broken one for the plugin.
+
+    What that cost, once: the host in front of us answers http with a 301 to
+    https; okhttp, which is what the plugin uses, downgrades a redirected POST
+    to a GET; the body does not survive; and a POST-only route answers 405.
+    The plugin retried, gave up, and logged it where nobody was looking.
+    """
+    host = request.host
+    scheme = "http" if is_local_host(host) else "https"
+    return "{}://{}/hook/dink/{}".format(scheme, host, token)
+
+
+@hooks.route("/hook/dink/<token>", methods=["POST", "GET"])
 def dink(token):
     """Accept one metadata push from Dink.
 
@@ -77,6 +96,17 @@ def dink(token):
     if username is None:
         # No hint that the path shape was right, or that another token exists.
         return Response("Not found.", status=404, mimetype="text/plain")
+
+    if request.method != "POST":
+        # Only one thing produces this: an http:// URL, redirected to https,
+        # with the POST downgraded to a GET on the way. Said plainly, because
+        # the alternative was a bare 405 in a log the person configuring it
+        # never sees.
+        log.warning("dink: %s reached us as a %s - the configured URL is "
+                    "http:// and must be https://", username, request.method)
+        return Response("Send this as a POST over https. An http:// URL is "
+                        "redirected, and the body does not survive it.",
+                        status=400, mimetype="text/plain")
 
     limits = current_app.config["LIMITS"]
     if limits.dink_per_token.take(username):
