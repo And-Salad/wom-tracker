@@ -19,6 +19,10 @@ import socket
 import sys
 from datetime import datetime, timezone
 
+from wom.runtime import require as require_python
+
+require_python()
+
 from wom.config import Config
 from wom.logs import setup_logging
 from wom.web import create_app

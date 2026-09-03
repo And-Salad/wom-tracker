@@ -21,6 +21,10 @@ import logging
 import os
 import sys
 
+from wom.runtime import require as require_python
+
+require_python()
+
 from wom.api import WomClient
 from wom.logs import setup_logging
 from wom.config import Config, DB_PATH

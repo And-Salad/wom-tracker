@@ -110,14 +110,17 @@ on the page gives the whole rule.
 
 Below the calendar, in its own card, is the day still running - ranked by the
 same measure and deliberately not a verdict, since today has not been polled to
-its end. The row, the skills behind it and the line under it all open the day
-at the same reading (`winners.day_span`): Wise Old Man stamps a reading when
-the hiscores move, so an evening's last hour arrives seconds into the next day,
-and which reading opens the day decides whose day it counts toward. Below that again the same figures are drawn as a line per account,
+its end. Below that again the same figures are drawn as a line per account,
 midnight to midnight, so the axis is the whole day rather than however much of
 it has happened. Opening an account gives the skills behind its day, including
 the experience past 99 that the rule does not count. The prose lives on the
 Recaps tab; this page is figures.
+
+All three - the row, the skills behind it and the line under it - open the day
+at the same reading, through `winners.day_span`. Wise Old Man stamps a reading
+when the hiscores move, so an evening's last hour often arrives seconds into
+the next day, and which reading opens the day decides whose day that work
+counts toward.
 
 The calendar and the standings under it **ignore the sidebar's ticks**, and
 judge every tracked account whatever is ticked. It is one competition with one
@@ -297,6 +300,7 @@ wom/
   theme.py           the palette, emitted as CSS variables
   icons.py           skill order, and where each sprite lives
   logs.py            one log file per entry point
+  runtime.py         the interpreter version the entry points insist on
   util.py            timestamp parsing and number formatting
   web/
     app.py           the application factory: config, hardening, blueprints
@@ -326,7 +330,17 @@ what the tables and the column names still call it.
 
 ## Requirements
 
-Python 3.10+ with `requests`, `flask` and `waitress`, plus `tzdata` (Windows has
-no IANA time zone database of its own) and `anthropic` for the recaps.
+**Python 3.9 or newer**, with `requests`, `flask` and `waitress`, plus `tzdata`
+(Windows has no IANA time zone database of its own) and `anthropic` for the
+recaps.
+
+The floor is 3.9 because of `zoneinfo`; nothing here needs anything newer, and
+every file parses under 3.7. It cannot live in `requirements.txt` - pip is a
+Python program, so the interpreter is already chosen by the time that file is
+read - so the entry points check it themselves and say so, in `wom/runtime.py`.
+Without that check the failure is quiet: `zoneinfo` is imported inside a
+try/except so a missing time zone *database* degrades rather than crashes, and
+on too old an interpreter that same path turns every zone but US Eastern into
+UTC while the admin page blames the machine.
 Nothing needs a display: the charts are drawn in the browser, so there is no
 image library on the server.

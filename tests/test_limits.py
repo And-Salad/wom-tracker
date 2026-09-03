@@ -323,3 +323,32 @@ def test_nothing_having_run_yet_is_a_status_not_a_crash():
     from wom.web.jobs import JobRunner
     status = JobRunner().status()
     assert status["running"] is False and status["name"] is None
+
+
+# -- what the entry points insist on before anything runs ------------------
+
+def test_an_interpreter_without_zoneinfo_is_refused_loudly():
+    """The failure without this check is quiet, which is the whole problem:
+    zoneinfo is imported inside a try/except so a missing time zone database
+    degrades rather than crashes, and on too old an interpreter that same
+    path turns every zone but US Eastern into UTC."""
+    import io as _io
+    from wom import runtime
+
+    said = _io.StringIO()
+    assert runtime.check((3, 8), said) is False
+    message = said.getvalue()
+    assert "3.9 or newer" in message and "3.8" in message
+    assert "zoneinfo" in message, "and says which missing piece is the reason"
+
+
+def test_the_floor_is_the_one_zoneinfo_needs():
+    from wom import runtime
+    assert runtime.MINIMUM == (3, 9)
+    assert runtime.check((3, 9)) is True
+    assert runtime.check((3, 12)) is True
+
+
+def test_this_interpreter_passes_its_own_check():
+    from wom import runtime
+    assert runtime.check() is True
