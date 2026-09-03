@@ -10,6 +10,7 @@ to set one is not quietly wide open.
 import hmac
 import logging
 import os
+import secrets
 import time
 from functools import wraps
 
@@ -20,6 +21,7 @@ from .. import periods, scheduler, summaries as core
 from ..colors import normalise, player_color, set_player_color
 from ..config import Config, ENV_KEYS, normalise_usernames
 from ..summaries import SUMMARY_EFFORTS, SUMMARY_MODELS
+from ..util import fmt_ago, fmt_datetime, fmt_int
 from .limits import client_address
 
 log = logging.getLogger(__name__)
@@ -123,15 +125,22 @@ def settings():
     database = current_app.config["DATABASE"]
     players = database.players()
     known = {p["username"]: p for p in players}
+    tokens = config.get("dink_tokens") or {}
     roster = []
     for index, name in enumerate(config.get("usernames", [])):
         row = known.get(name.lower())
+        seen = database.last_login(name.lower())
         roster.append({
             "username": name,
             "display_name": row["display_name"] if row is not None else name,
             "color": player_color(config, name, index),
             "snapshots": database.snapshot_count(row["id"]) if row is not None else 0,
             "updated": row["updated_at"] if row is not None else None,
+            "token": tokens.get(name.lower(), ""),
+            "logins": database.login_count(name.lower()),
+            "last_login": fmt_datetime(seen["received_at"]) if seen is not None else None,
+            "last_login_ago": fmt_ago(seen["received_at"]) if seen is not None else "",
+            "last_exp": fmt_int(seen["total_exp"]) if seen is not None else "",
         })
     tripwire = current_app.config["LIMITS"].api_tripwire
     return render_template(
@@ -139,6 +148,7 @@ def settings():
         models=SUMMARY_MODELS, efforts=SUMMARY_EFFORTS,
         env_keys=ENV_KEYS, zones=COMMON_ZONES,
         job=current_app.config["JOBS"].status(),
+        hook_base=request.url_root.rstrip("/") + "/hook/dink/",
         tripwire=tripwire.status() if tripwire else None,
         periods=[p.key for p in periods.PERIODS])
 
@@ -210,6 +220,41 @@ def save_colour():
     else:
         set_player_color(config, username, colour)
         flash("Recoloured {}.".format(username))
+    return redirect(url_for("admin.settings"))
+
+
+@admin.route("/admin/dink", methods=["POST"])
+@requires_login
+def dink():
+    """Issue or revoke one player's webhook URL.
+
+    A token is the whole credential, so issuing again replaces the old one
+    rather than adding to it: there is never more than one live URL per
+    player, and handing out a new one is how you retire a leaked one.
+    """
+    config = Config()
+    username = " ".join(request.form.get("username", "").split()).lower()
+    action = request.form.get("action", "")
+    if not username or username not in [
+            n.lower() for n in config.get("usernames", [])]:
+        flash("That is not a tracked player.")
+        return redirect(url_for("admin.settings"))
+
+    tokens = dict(config.get("dink_tokens") or {})
+    if action == "revoke":
+        if tokens.pop(username, None) is None:
+            flash("{} had no webhook URL.".format(username))
+        else:
+            log.warning("admin revoked the Dink webhook for %s", username)
+            flash("Revoked {}. Their old URL now answers 404.".format(username))
+    else:
+        replaced = username in tokens
+        tokens[username] = secrets.token_urlsafe(24)
+        log.info("admin issued a Dink webhook for %s", username)
+        flash("{} a URL for {}.".format(
+            "Replaced" if replaced else "Issued", username))
+    config["dink_tokens"] = tokens
+    config.save()
     return redirect(url_for("admin.settings"))
 
 

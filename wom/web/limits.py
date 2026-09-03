@@ -243,6 +243,13 @@ API_ADDRESS_WINDOW = 300
 API_TRIP_TOTAL = 15000
 API_TRIP_WINDOW = 300
 
+# Dink posts once per login, six seconds in. Nobody logs in thirty times in
+# five minutes; a loop or a leaked URL does. Counted per player rather than
+# per address because the token already says who is calling, and a player's
+# address is whatever their ISP gave them today.
+DINK_PER_TOKEN = 30
+DINK_WINDOW = 300
+
 # The admin login is on the public internet, so an unlimited guess rate is the
 # whole attack. Six tries buys a five minute wait, counted per address.
 SIGN_IN_ATTEMPTS = 6
@@ -304,6 +311,7 @@ class Limits:
                  api_per_address=API_PER_ADDRESS,
                  api_trip_total=API_TRIP_TOTAL,
                  sign_in_attempts=SIGN_IN_ATTEMPTS,
+                 dink_per_token=DINK_PER_TOKEN,
                  latch=None):
         self.exports_per_address = exports_per_address
         self.exports_per_day = exports_per_day
@@ -313,6 +321,7 @@ class Limits:
         self.api_tripwire = Tripwire(api_trip_total, API_TRIP_WINDOW, store=latch)
         self.sign_in_attempts = sign_in_attempts
         self.sign_in = Budget(sign_in_attempts, SIGN_IN_WINDOW)
+        self.dink_per_token = Budget(dink_per_token, DINK_WINDOW)
 
     address = staticmethod(client_address)
 

@@ -114,6 +114,32 @@ CREATE TABLE IF NOT EXISTS group_summaries (
     PRIMARY KEY (period, window_key)
 );
 
+-- Dink's metadata webhook, which fires once when a client finishes logging in
+-- and carries that account's own reading of its experience at that moment.
+--
+-- This is the only measurement of a session's *start* we can get. Wise Old Man
+-- can only ever tell us one has ended, because the hiscores do not move until
+-- logout - so a three hour session arrives as a single jump and we attribute
+-- it to the ten minutes we happened to notice in.
+--
+-- Keyed by username rather than player id: a login can arrive before the
+-- account is tracked, and it stays interesting after one is pruned. player_id
+-- is a convenience, filled in when we know it.
+CREATE TABLE IF NOT EXISTS logins (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    username    TEXT NOT NULL,                    -- lowercase, the token's owner
+    player_id   INTEGER,                          -- NULL until the account is known
+    received_at TEXT NOT NULL,                    -- when the POST reached us, ISO UTC
+    world       INTEGER,
+    total_exp   REAL,                             -- skills.totalExperience, live
+    total_level INTEGER,
+    collections INTEGER,                          -- collectionLog.completed
+    payload     TEXT NOT NULL                     -- what we chose to keep of the body
+);
+
+CREATE INDEX IF NOT EXISTS idx_logins_who
+    ON logins (username, received_at DESC);
+
 CREATE TABLE IF NOT EXISTS runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at  TEXT NOT NULL,
@@ -127,6 +153,10 @@ CREATE TABLE IF NOT EXISTS runs (
 """
 
 _VALUE_KEYS = ("experience", "kills", "score", "value")
+
+# How long two identical readings from one account are treated as one
+# login. See record_login.
+LOGIN_DEDUPE_SECONDS = 300
 
 
 class Database:
@@ -427,6 +457,59 @@ class Database:
         row = self.query_one("SELECT COUNT(*) AS n FROM snapshots WHERE player_id=?",
                              (player_id,))
         return row["n"] if row else 0
+
+    def record_login(self, username, reading, payload, when=None,
+                     dedupe_seconds=LOGIN_DEDUPE_SECONDS):
+        """Store one login. Returns its row id, or None if it is a repeat.
+
+        Dink retries a webhook it could not deliver, so the same login can
+        arrive more than once with a different timestamp each time. There is
+        no id in the payload to key on, so a repeat is recognised the only way
+        left: the same account reporting the same total experience again
+        within a few minutes. That also swallows the rare genuine second login
+        in that window, which costs us one session boundary and is the right
+        way round - a phantom session would be attributed real gains.
+        """
+        stamp = when or _utcnow()
+        conn = self.connect()
+        exp = reading.get("total_exp")
+        if exp is not None:
+            cutoff = _seconds_before(stamp, dedupe_seconds)
+            seen = conn.execute(
+                "SELECT id FROM logins WHERE username=? AND total_exp=?"
+                " AND received_at>=? LIMIT 1", (username, exp, cutoff)).fetchone()
+            if seen is not None:
+                return None
+        row = self.player_by_username(username)
+        with conn:
+            cur = conn.execute(
+                "INSERT INTO logins (username, player_id, received_at, world,"
+                " total_exp, total_level, collections, payload)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (username, row["id"] if row is not None else None, stamp,
+                 reading.get("world"), exp, reading.get("total_level"),
+                 reading.get("collections"), json.dumps(payload)))
+        return cur.lastrowid
+
+    def logins(self, username=None, limit=200):
+        """Recorded logins, newest first."""
+        sql = "SELECT * FROM logins"
+        params = []
+        if username:
+            sql += " WHERE username=?"
+            params.append(username)
+        return self.query(sql + " ORDER BY received_at DESC LIMIT ?",
+                          params + [limit])
+
+    def last_login(self, username):
+        return self.query_one(
+            "SELECT * FROM logins WHERE username=?"
+            " ORDER BY received_at DESC LIMIT 1", (username,))
+
+    def login_count(self, username):
+        row = self.query_one(
+            "SELECT COUNT(*) AS n FROM logins WHERE username=?", (username,))
+        return row["n"] if row is not None else 0
 
     def save_achievements(self, player_id, achievements):
         """Store a player's milestones. Returns how many were new to us."""
@@ -946,6 +1029,12 @@ def _num(value):
 
 def _utcnow():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _seconds_before(stamp, seconds):
+    """`stamp` moved back by `seconds`, in the same ISO form."""
+    when = parse_api_time(stamp) or datetime.now(timezone.utc)
+    return (when - timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _days_ago(days):

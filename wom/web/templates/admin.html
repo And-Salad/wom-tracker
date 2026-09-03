@@ -177,6 +177,63 @@
       <button type="submit">Delete data for players off the list</button>
     </form>
   </div>
+  <div class="card">
+    <h3>Session logins</h3>
+    <p class="hint">
+      Wise Old Man only ever tells us a session has ended - the hiscores do not
+      move until logout. The Dink plugin tells us when one started, so a long
+      session stops landing in the ten minutes we happened to notice it in.
+      Nothing on the dashboard reads this yet; it is being collected first.
+    </p>
+    <p class="hint">
+      Each player installs <strong>Dink</strong> from the RuneLite Plugin Hub,
+      then pastes their own URL below into the setting called
+      <strong>Custom Metadata Handler</strong>. That field is the only one they
+      need - the Discord webhook box above it can stay empty. Ask them to untick
+      <em>Send Discord Profile</em> and <em>Send Clan Name</em> while they are
+      there; we throw both away, but there is no reason to send them.
+    </p>
+    <p class="hint">
+      A URL is a password. Send it to that player and nobody else, and issue a
+      new one to retire a leaked one.
+    </p>
+    <div class="scroll">
+      <table>
+        <tr><th>Player</th><th>Webhook URL</th><th class="num">Logins</th>
+          <th>Last seen</th><th></th></tr>
+        {% for player in roster %}
+          <tr>
+            <td>{{ player.display_name }}</td>
+            <td>
+              {% if player.token %}
+                <input type="text" readonly spellcheck="false" class="secret"
+                       value="{{ hook_base }}{{ player.token }}">
+              {% else %}
+                <span class="dim">none issued</span>
+              {% endif %}
+            </td>
+            <td class="num">{{ player.logins }}</td>
+            <td class="dim">
+              {% if player.last_login %}
+                {{ player.last_login }} ({{ player.last_login_ago }})
+                <br>{{ player.last_exp }} xp
+              {% else %}-{% endif %}
+            </td>
+            <td>
+              <form method="post" action="/admin/dink" class="row">
+                <input type="hidden" name="username" value="{{ player.username }}">
+                <button type="submit" name="action" value="issue"
+                  >{% if player.token %}Replace{% else %}Issue{% endif %}</button>
+                {% if player.token %}
+                  <button type="submit" name="action" value="revoke">Revoke</button>
+                {% endif %}
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
 {% endblock %}
 
 {% block scripts %}

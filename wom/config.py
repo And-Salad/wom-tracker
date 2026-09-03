@@ -53,6 +53,12 @@ DEFAULTS = {
     # Chart colour overrides, {lowercase username: "#rrggbb"}. Anything not
     # listed falls back to the default palette by list position.
     "player_colors": {},
+    # Per-player secrets for Dink's metadata webhook, {lowercase username:
+    # token}. The plugin cannot send a header, so the URL is the whole
+    # credential - which is why each player gets their own: it says who sent
+    # a request without trusting the name in the body, and one leak is
+    # revoked alone. Issued and revoked from the admin page.
+    "dink_tokens": {},
     # Set when the data endpoints' tripwire latches, cleared from the admin
     # page. Here rather than in memory so a restart does not resume serving.
     "api_tripped_at": "",

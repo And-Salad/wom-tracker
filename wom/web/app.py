@@ -20,6 +20,7 @@ from .admin import PASSWORD_ENV, admin as admin_blueprint, admin_enabled
 from .api import api as api_blueprint
 from .dates import BadRequest
 from .exporting import exporting as exporting_blueprint
+from .hooks import hooks as hooks_blueprint
 from .jobs import JobRunner
 from .limits import ConfigLatch, Limits
 from .pages import pages as pages_blueprint
@@ -55,6 +56,7 @@ def create_app(limits=None):
     app.register_blueprint(pages_blueprint)
     app.register_blueprint(api_blueprint)
     app.register_blueprint(exporting_blueprint)
+    app.register_blueprint(hooks_blueprint)
     _add_hardening(app)
     _add_template_globals(app)
     _refuse_bad_dates(app)

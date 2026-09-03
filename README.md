@@ -212,6 +212,12 @@ so one machine can only ever contribute its own 600, and tripping it needs
 dozens of addresses at once rather than a busy evening on a shared link.
 Exports are five per address per six hours, and twenty a day across everyone.
 
+One endpoint takes writes without a password: `/hook/dink/<token>`, where a
+RuneLite plugin reports a login. See below. It sits outside the tripwire on
+purpose - a login that is refused is gone for good, where everything the
+tripwire protects can be fetched again - and is capped at thirty calls per
+player per five minutes instead.
+
 ### Knowing who is calling
 
 All of that depends on telling visitors apart. Behind a proxy `remote_addr` is
@@ -246,6 +252,29 @@ admin.
 | `WOM_API_KEY` | Optional Wise Old Man key. Without one the API allows 20 requests a minute, which is ample: six players is twelve requests every ten minutes. |
 | `WOM_INSECURE_COOKIE` | Drops `Secure` from the session cookie, for reaching admin over plain HTTP on a LAN. Not for anything public. |
 | `TZ` | Only affects what the logs print. Day boundaries follow the time zone set under Admin. |
+
+## Session logins
+
+Wise Old Man can only ever tell us a session has *ended*: the hiscores do not
+move until logout, so three hours of training arrives as one jump and lands in
+whichever ten-minute window we happened to notice it in.
+
+[Dink](https://github.com/pajlads/DinkPlugin), a Plugin Hub plugin, tells us
+when one began. Point its **Custom Metadata Handler** setting at a URL and it
+POSTs once per login - about six seconds in, not on world hops - carrying that
+account's own live reading of its experience. Setting that field is the only
+thing a player has to do; the Discord webhook box beside it can stay empty.
+
+Issue and revoke a player's URL from the admin page, which also shows when we
+last heard from them. The plugin cannot send a header, so the URL *is* the
+credential, and each player gets their own: it says who is calling without
+trusting the name in the body, and one that leaks is revoked alone. Whatever
+Dink offers about someone's Discord account or clan is dropped as the body is
+read, never stored.
+
+Nothing on the dashboard reads any of this yet. It is being collected first, so
+that whether to re-attribute gains across a session can be decided against real
+logins rather than in advance.
 
 ## What gets stored
 
@@ -313,6 +342,7 @@ wom/
     today.py         the day in progress: standings, breakdown, trend
     selection.py     which players and colours a request is about
     limits.py        budgets, the tripwire, and the caller's address
+    hooks.py         the Dink webhook: session logins, the one public write
     timespan.py      the window every page is answering over
     dates.py         parsing the sidebar's dates, and refusing bad ones
     jobs.py          admin jobs on their own thread, with progress

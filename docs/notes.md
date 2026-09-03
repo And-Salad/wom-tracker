@@ -306,3 +306,60 @@ If it is a stacked or trend chart, that is all - `chartkit.js` already draws bot
 shapes, icons, legend, tooltips and the responsive behaviour. A genuinely new
 shape needs a branch in `Chart.prototype.draw` and a drawing function beside
 `stacked` and `trend`.
+
+## When a session actually happened
+
+Every gain on this dashboard is stamped with the moment we *noticed* it, which
+is not the moment it was earned. The hiscores do not move while someone is
+logged in, so three hours of training becomes one jump, attributed to whichever
+ten-minute window our next poll fell in. Around one gain in eighteen lands on
+the wrong side of a local midnight because of it.
+
+Two things narrow that, and it is worth writing down which is which.
+
+### What we already had
+
+`snapshots.captured_at` is Wise Old Man's `createdAt`, not our poll clock (see
+`save_snapshot`). Wise Old Man only creates a snapshot when the data actually
+differs, so the stamp belongs to whoever first observed the change - and we are
+not the only one asking. RuneLite ships **XP Updater**, which POSTs to the same
+`/players/{username}` endpoint we do on logout and on world hop, whenever at
+least 10,000 experience was gained.
+
+That leaves a signature in our own data. Each account's polls land on a fixed
+ten-minute phase; readings more than 90 seconds off it were triggered by
+someone else. Over 30 days, excluding every reading traceable to one of our own
+runs:
+
+```
+on our polling grid : 153 of 2180 carry a gain   (7%)
+off the grid        : 108 of  114 carry a gain  (95%)
+```
+
+Thirteen times more likely, which is exactly what a signal that fires on logout
+and only when something was gained looks like. Of those 108, 102 are followed
+by twenty minutes of quiet - genuine session ends rather than world hops.
+
+Two consequences. Hiscore propagation is fast: a push at the logout screen
+already sees the new experience, so our own detection brackets a logout by the
+poll interval with no systematic lag hiding under it. And the 10,000 threshold
+means quiet sessions never push at all, so this is a precision upgrade on
+sessions we would have caught anyway, not extra coverage.
+
+### What was missing
+
+The start. Nothing in the Wise Old Man pipeline can supply it, which is what
+`wom/web/hooks.py` and the `logins` table are for: Dink reports a login as it
+happens, with that account's live experience attached. A session then has a
+measured beginning and a measured end, instead of one point and a guess.
+
+`metrics.efficiency` (EHP) remains the only estimate of how long a session ran,
+and stays useful for placing activity inside a span - someone can log in, idle
+an hour, then train.
+
+### Before any of this is used
+
+`compact_snapshots` thins beyond 30 days to one reading a day, which discards
+the off-grid logout stamps described above along with the intra-day precision
+they carry. The `logins` table is not compacted, but the other half of the pair
+is. That wants deciding before session attribution is built on either.

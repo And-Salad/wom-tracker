@@ -625,6 +625,16 @@
     border: 1px solid var(--line); background: var(--raised); color: var(--ink);
   }
   .field input:disabled { color: var(--muted); }
+  /* A webhook URL, sitting in a table cell rather than under a label. Wide
+     enough to read the whole thing without scrolling it, and monospaced so a
+     transcribed one can be checked character by character. */
+  .secret {
+    width: 100%; min-width: 260px; padding: 5px 8px;
+    border-radius: var(--radius); border: 1px solid var(--line);
+    background: var(--raised); color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
   .tick {
     display: flex; gap: var(--space-2); align-items: center; margin: 0 0 10px;
   }
