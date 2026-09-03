@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 from flask import request
 
-from ..util import parse_api_time
+from ..util import api_stamp, parse_api_time
 
 log = logging.getLogger(__name__)
 
@@ -271,7 +271,7 @@ class ConfigLatch:
     def save(self, when, address):
         from ..config import Config
         settings = Config()
-        settings["api_tripped_at"] = when.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        settings["api_tripped_at"] = api_stamp(when)
         settings["api_tripped_by"] = address or "?"
         settings.save()
 

@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta, timezone
 
+from .util import api_stamp
+
 
 class Period:
     def __init__(self, key, label, days, bucket=None):
@@ -20,7 +22,7 @@ class Period:
         return now - timedelta(days=self.days)
 
     def start_iso(self, now=None):
-        return self.start(now).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        return api_stamp(self.start(now))
 
 
 PERIODS = (
@@ -72,6 +74,7 @@ def coverage_slack(window_seconds):
     """
     return max(COVERAGE_FLOOR_SECONDS, (window_seconds or 0) * COVERAGE_FRACTION)
 
+
 _BY_KEY = {p.key: p for p in PERIODS}
 _BY_LABEL = {p.label: p for p in PERIODS}
 
@@ -97,18 +100,13 @@ class Window:
         return self.start.strftime("%Y-%m-%d")
 
     def start_iso(self):
-        return _utc(self.start)
+        return api_stamp(self.start)
 
     def end_iso(self):
-        return _utc(self.end)
+        return api_stamp(self.end)
 
     def __repr__(self):
         return "<Window {} {}>".format(self.period, self.key)
-
-
-def _utc(when):
-    from datetime import timezone
-    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 def latest_window(period, now=None, offset=0):

@@ -14,8 +14,7 @@ from .data import NOBODY_PICKED
 from . import today, views
 from ..context import ViewContext
 from ..util import parse_api_time, pretty_metric
-from .selection import (chosen, colors, current_span, database, roster,
-                        settings)
+from .selection import database, scope
 
 api = Blueprint("api", __name__)
 
@@ -69,30 +68,19 @@ def guard():
     return None
 
 
-def _span(players):
-    """The window this request asks about.
-
-    An unusable date raises BadRequest, which the app answers with a 400 on
-    every route at once - see wom/web/app.py.
-    """
-    return current_span(players)
-
-
 @api.route("/api/chart/<key>")
 def chart_data(key):
     refused = guard()
     if refused is not None:
         return refused
-    config = settings()
-    players = chosen(roster(config))
-    span = _span(players)
-    payload = web_data.build(database(), config, key, span, players,
-                             request.args.get("choice"))
+    here = scope()
+    payload = web_data.build(database(), here.config, key, here.span,
+                             here.selected, request.args.get("choice"))
     if payload is None:
         abort(404)
     # The sidebar's date inputs show whatever the period resolved to, so every
     # answer says what window it was answering over.
-    payload["span"] = span.as_dict()
+    payload["span"] = here.span.as_dict()
     return _fresh(payload)
 
 
@@ -104,9 +92,7 @@ def player_detail(username):
     player = database().player_by_username(username)
     if player is None:
         abort(404)
-    config = settings()
-    span = _span(chosen(roster(config)))
-    return _fresh(views.player_detail(database(), player, span))
+    return _fresh(views.player_detail(database(), player, scope().span))
 
 
 @api.route("/api/players")
@@ -115,13 +101,10 @@ def player_rows():
     refused = guard()
     if refused is not None:
         return refused
-    config = settings()
-    players = roster(config)
-    picked = chosen(players)
-    span = _span(picked)
-    return _fresh({"rows": views.player_rows(database(), picked,
-                                             colors(config, players)),
-                   "span": span.as_dict()})
+    here = scope()
+    return _fresh({"rows": views.player_rows(database(), here.selected,
+                                             here.palette),
+                   "span": here.span.as_dict()})
 
 
 @api.route("/api/maxing/player/<username>")
@@ -153,14 +136,12 @@ def maxing_trend():
     refused = guard()
     if refused is not None:
         return refused
-    config = settings()
-    players = roster(config)
-    picked = chosen(players)
-    if not picked:
+    here = scope()
+    if not here.selected:
         return _fresh({"empty": NOBODY_PICKED})
-    context = ViewContext(database(), config, players, selected=picked,
-                          span=_span(picked))
-    return _fresh(today.trend(database(), picked, context.color_for))
+    context = ViewContext(database(), here.config, here.players,
+                          selected=here.selected, span=here.span)
+    return _fresh(today.trend(database(), here.selected, context.color_for))
 
 
 @api.route("/api/milestones")
@@ -169,13 +150,10 @@ def milestones():
     refused = guard()
     if refused is not None:
         return refused
-    config = settings()
-    players = roster(config)
-    picked = chosen(players)
-    span = _span(picked)
-    feed = views.milestone_feed(database(), picked, colors(config, players),
-                                since=span.since, until=span.until)
-    return _fresh({"feed": feed, "span": span.as_dict()})
+    here = scope()
+    feed = views.milestone_feed(database(), here.selected, here.palette,
+                                since=here.span.since, until=here.span.until)
+    return _fresh({"feed": feed, "span": here.span.as_dict()})
 
 
 @api.route("/api/table")
@@ -188,15 +166,12 @@ def metric_table():
     refused = guard()
     if refused is not None:
         return refused
-    config = settings()
-    players = roster(config)
-    picked = chosen(players)
-    if not picked:
+    here = scope()
+    if not here.selected:
         return _fresh({"rows": [], "empty": NOBODY_PICKED})
-    span = _span(picked)
-    rows = views.metric_table(database(), picked, span.since, span.until,
-                              colors(config, players))
-    return _fresh({"rows": rows, "span": span.as_dict()})
+    rows = views.metric_table(database(), here.selected, here.span.since,
+                              here.span.until, here.palette)
+    return _fresh({"rows": rows, "span": here.span.as_dict()})
 
 
 UNITS = {"skill": "experience", "boss": "kills", "activity": "score"}
@@ -219,16 +194,15 @@ def metric_history():
     if kind not in UNITS or not METRIC_NAME.match(metric):
         abort(404)
 
-    config = settings()
-    players = roster(config)
-    picked = chosen(players)
-    if not picked:
+    here = scope()
+    if not here.selected:
         return _fresh({"empty": NOBODY_PICKED})
-    span = _span(picked)
+    span = here.span
 
-    context = ViewContext(database(), config, players, selected=picked, span=span)
+    context = ViewContext(database(), here.config, here.players,
+                          selected=here.selected, span=span)
     series = web_data.trend_series(
-        database(), picked, context.color_for, kind, metric, "value",
+        database(), here.selected, context.color_for, kind, metric, "value",
         span.since, span.until, bucket=span.bucket)
     if not series:
         return _fresh({"empty": "No readings of {} in {}.".format(

@@ -393,6 +393,22 @@ class Database:
             conn.execute("UPDATE players SET backfilled_at=? WHERE id=?",
                          (when or _utcnow(), player_id))
 
+    def overall_at(self, player_id, when=None):
+        """Total level and total experience as at a moment, or now.
+
+        The same query lived in five places - twice in the digest builders,
+        once in the landmark line, once in the Players table and once in the
+        standings - and three of the five had no time bound at all, which is
+        how a digest about August came to open with "Total level now".
+        """
+        sql = ("SELECT level, value FROM metrics WHERE player_id=?"
+               " AND kind='skill' AND metric='overall'")
+        params = [player_id]
+        if when:
+            sql += " AND captured_at<=?"
+            params.append(when)
+        return self.query_one(sql + " ORDER BY captured_at DESC LIMIT 1", params)
+
     def last_change(self, player_id):
         """When this player's numbers last actually moved.
 

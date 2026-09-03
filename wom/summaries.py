@@ -143,9 +143,7 @@ def build_digest(database, config, player, window):
              "Period: {} ({})".format(window.label, _period_noun(window.period))]
     lines += _coverage(database, player, window)
 
-    overall = database.query_one(
-        "SELECT level, value FROM metrics WHERE player_id=? AND kind='skill'"
-        " AND metric='overall' ORDER BY captured_at DESC LIMIT 1", (player["id"],))
+    overall = database.overall_at(player["id"])
     if overall:
         lines.append("Total level now: {}   Total XP now: {}".format(
             fmt_int(overall["level"]), fmt_int(overall["value"])))
@@ -277,9 +275,7 @@ def build_group_digest(database, config, players, window):
         milestones = [row["name"] for row in database.achievements(
             player_ids=[player["id"]], since=since, limit=25)
             if row["achieved_at"] and row["achieved_at"] < until]
-        overall = database.query_one(
-            "SELECT level, value FROM metrics WHERE player_id=? AND kind='skill'"
-            " AND metric='overall' ORDER BY captured_at DESC LIMIT 1", (player["id"],))
+        overall = database.overall_at(player["id"])
 
         lines.append("{} ({})".format(
             player["display_name"], pretty_metric(player["type"] or "unknown")))
@@ -395,11 +391,7 @@ def _nearest_reading(database, player, window):
     # table stopped carrying one when it went to storing only what changed, so
     # this query had been raising on every window an account was not tracked
     # through - which is precisely the case this whole function exists for.
-    overall = database.query_one(
-        "SELECT level, value FROM metrics WHERE player_id=? AND kind='skill'"
-        " AND metric='overall' AND captured_at<=?"
-        " ORDER BY captured_at DESC LIMIT 1",
-        (player["id"], chosen["captured_at"]))
+    overall = database.overall_at(player["id"], chosen["captured_at"])
     if overall is None:
         return None
     return ("Nearest reading {} this period: {} - total level {}, {} XP."

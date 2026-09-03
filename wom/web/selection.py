@@ -76,17 +76,44 @@ def status(config):
     }
 
 
+class Scope:
+    """Who the request is about, over what window, in what colours.
+
+    The three questions every route answers before it does anything else. The
+    HTML routes had them in page_context(); the JSON routes each wrote the
+    same four lines out again, six times over, with small differences nobody
+    intended - which is two halves of one app disagreeing by accident about
+    what a request means.
+    """
+
+    def __init__(self):
+        self.config = settings()
+        self.players = roster(self.config)          # everyone, display order
+        self.selected = chosen(self.players)        # the ticked ones
+        self.palette = colors(self.config, self.players)
+
+    @property
+    def span(self):
+        """Resolved lazily: a bad date raises, and a route that never asks
+        for the window should not be refused on account of one."""
+        if not hasattr(self, "_span"):
+            self._span = current_span(self.selected)
+        return self._span
+
+
+def scope():
+    return Scope()
+
+
 def page_context():
     """Everything a page needs about the current request, resolved once."""
     from .timespan import labels
-    config = settings()
-    players = roster(config)
-    selected = chosen(players)
+    found = Scope()
     return {
-        "config": config,
-        "players": players,
-        "selected": selected,
-        "palette": colors(config, players),
-        "span": current_span(selected),
+        "config": found.config,
+        "players": found.players,
+        "selected": found.selected,
+        "palette": found.palette,
+        "span": found.span,
         "period_labels": labels(),
     }

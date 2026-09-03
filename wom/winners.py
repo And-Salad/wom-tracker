@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 from .periods import coverage_slack
 from .scheduler import zone
-from .util import parse_api_time
+from .util import api_stamp as _stamp, parse_api_time
 
 
 def month_range(when=None, back=0):
@@ -308,10 +308,6 @@ def _player_days(states, boundaries):
         short = _gap(baseline[0], _stamp(opens)) > coverage_slack(86400)
         out.append((measure(baseline[1], carried[1]), short))
     return out
-
-
-def _stamp(when):
-    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 def _gap(a, b):

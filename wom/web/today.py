@@ -18,7 +18,8 @@ account still climbing compete with one that has already maxed.
 """
 
 from .. import theme, winners
-from ..util import fmt_int, parse_api_time, pretty_metric
+from ..util import (api_stamp as _stamp, fmt_int, parse_api_time,
+                    pretty_metric)
 
 
 def is_whole_group(database, players):
@@ -200,6 +201,3 @@ def trend(database, players, color_for, when=None):
     }
 
 
-def _stamp(when):
-    from datetime import timezone
-    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")

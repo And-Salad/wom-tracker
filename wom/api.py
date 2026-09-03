@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from .util import api_stamp
+
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://api.wiseoldman.net/v2"
@@ -174,7 +176,7 @@ def _iso(value):
     if isinstance(value, datetime):
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        return api_stamp(value)
     return str(value)
 
 

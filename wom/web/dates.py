@@ -5,7 +5,9 @@ day in the viewer's own zone. Both the export and the Data table need the same
 conversion, in both directions, so it lives in one place rather than twice.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+from ..util import api_stamp
 
 
 class BadRequest(Exception):
@@ -32,8 +34,8 @@ def day_bound(value, end_of_day=False, offset_minutes=0):
         raise BadRequest("{!r} is not a date. Use yyyy-mm-dd.".format(text))
     if end_of_day:
         day += timedelta(days=1)          # `to` is inclusive of the day named
-    return (day - timedelta(minutes=offset_minutes)).strftime(
-        "%Y-%m-%dT%H:%M:%S.000Z")
+    return api_stamp((day - timedelta(minutes=offset_minutes))
+                     .replace(tzinfo=timezone.utc))
 
 
 def offset_minutes(value):

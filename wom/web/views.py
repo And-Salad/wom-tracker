@@ -220,10 +220,7 @@ def player_rows(database, players, palette):
     """The table on /players: one row of headline figures each."""
     rows = []
     for player in players:
-        overall = database.query_one(
-            "SELECT level FROM metrics WHERE player_id=? AND kind='skill'"
-            " AND metric='overall' ORDER BY captured_at DESC LIMIT 1",
-            (player["id"],))
+        overall = database.overall_at(player["id"])
         rows.append({
             "name": player["display_name"],
             "username": player["username"],

@@ -61,11 +61,7 @@ def _levels_gained(ctx, player):
         return 0
     levels = []
     for edge in (start, end):
-        row = ctx.db.query_one(
-            "SELECT level FROM metrics WHERE player_id=? AND kind='skill'"
-            " AND metric='overall' AND captured_at<=?"
-            " ORDER BY captured_at DESC LIMIT 1",
-            (edge["player_id"], edge["captured_at"]))
+        row = ctx.db.overall_at(edge["player_id"], edge["captured_at"])
         # No answer at an edge means no answer at all. Treated as level zero
         # the difference becomes the account's whole total level, so a missing
         # opening row would report "+2,100 levels" for a quiet week.

@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from flask import request
 
 from .. import periods
+from ..util import api_stamp, parse_api_time
 from .dates import BadRequest, day_bound, local_day, viewer_offset
 
 CUSTOM = "Custom"
@@ -149,7 +150,8 @@ def _earliest(database, players):
 
 
 def _bucket(since, until):
-    span = (_stamp(until or _now()) - _stamp(since)).total_seconds()
+    span = (parse_api_time(until or _now())
+            - parse_api_time(since)).total_seconds()
     return "day" if span > BUCKET_AFTER_DAYS * 86400 else None
 
 
@@ -160,10 +162,5 @@ def _pretty(day):
         return day
 
 
-def _stamp(iso):
-    return datetime.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S").replace(
-        tzinfo=timezone.utc)
-
-
 def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    return api_stamp(datetime.now(timezone.utc))

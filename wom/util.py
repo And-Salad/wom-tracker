@@ -19,6 +19,18 @@ def parse_api_time(text):
     return parsed
 
 
+def api_stamp(when):
+    """An aware datetime as the ISO-UTC string every stored timestamp uses.
+
+    The inverse of parse_api_time, and it belongs next to it. This same three
+    lines were written out as `_stamp` in winners.py and today.py, as `_utc`
+    in periods.py, and inline in limits.py, timespan.py, api.py and db.py -
+    seven copies of one format string, two of which re-imported `timezone`
+    inside the function to do it.
+    """
+    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
 def to_local(dt):
     """An aware timestamp in this machine's zone, for display."""
     return dt.astimezone() if dt else None
