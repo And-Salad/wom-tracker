@@ -173,7 +173,7 @@ def test_a_local_run_is_still_given_a_working_link(app):
 def test_a_downgraded_get_says_the_scheme_is_wrong(signed_in, app):
     """What an http:// URL turns into, and it must not be a bare 405."""
     url = issue(signed_in)
-    response = signed_in.get(url)
+    response = signed_in.get(url, headers={"User-Agent": "RuneLite (Dink/1.x)"})
     assert response.status_code == 400
     assert b"https" in response.data, "the answer has to name the cause"
     assert app.config["DATABASE"].session_events("zezima") == []

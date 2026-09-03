@@ -98,12 +98,16 @@ def dink(token):
         return Response("Not found.", status=404, mimetype="text/plain")
 
     if request.method != "POST":
-        # Only one thing produces this: an http:// URL, redirected to https,
-        # with the POST downgraded to a GET on the way. Said plainly, because
-        # the alternative was a bare 405 in a log the person configuring it
-        # never sees.
-        log.warning("dink: %s reached us as a %s - the configured URL is "
-                    "http:// and must be https://", username, request.method)
+        # Dink only ever POSTs, so from its own client this means an http://
+        # URL was redirected and the method downgraded on the way. From
+        # anything else - a browser, a chat app previewing the link - it means
+        # nothing at all, which is why the user agent is named rather than the
+        # scheme asserted. We cannot see the scheme from in here: waitress
+        # strips X-Forwarded-Proto.
+        log.warning("dink: %s sent a %s, not a POST, ua=%r - from Dink that "
+                    "means an http:// URL; from anything else, someone opened "
+                    "the link", username, request.method,
+                    (request.headers.get("User-Agent") or "?")[:60])
         return Response("Send this as a POST over https. An http:// URL is "
                         "redirected, and the body does not survive it.",
                         status=400, mimetype="text/plain")
