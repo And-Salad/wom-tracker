@@ -1,15 +1,17 @@
 """The one place on this app anything may write to without a password.
 
 Dink is a RuneLite plugin. Point its "Custom Metadata Handler" setting at a
-URL and it POSTs a JSON body once per login, about six seconds after the
-client finishes logging in, carrying that account's own reading of its
-experience at that moment.
+URL and it POSTs a JSON body at both ends of a session: a login six seconds
+after the client finishes logging in, carrying that account's own reading of
+its experience, and a logout, which carries only the fact and the moment.
 
-That reading is the piece nothing else can give us. Wise Old Man only ever
-learns a session has *ended* - the hiscores do not move until logout - so a
-three hour session reaches us as a single jump with no idea when it began,
-and lands in whichever ten minute window we happened to notice it in. This
-endpoint is the other end of the measurement.
+Between them that is a session, measured. Wise Old Man can infer an ending
+from the hiscores moving and cannot see a beginning at all, so a three hour
+session reaches us as a single jump and lands in whichever ten minute window
+we happened to notice it in. The logout is also better than what we infer:
+it is the moment itself rather than a ten minute bracket around it, and it
+arrives however little was gained, where the hiscore route stays silent
+under ten thousand experience.
 
 Nothing here changes a number anyone sees. It records logins and stops; what
 to do with them is a decision to make against real data rather than in
@@ -39,10 +41,14 @@ hooks = Blueprint("hooks", __name__)
 # could only be someone using us as free storage.
 MAX_BODY = 64 * 1024
 
-# The metadata webhook receives more than logins: group ironman bank contents
+# Both ends of a session, as Dink names them. A LOGIN carries the account's
+# live experience; a LOGOUT carries only the fact and the moment, and unlike
+# the hiscores it has no threshold under which it stays quiet.
+#
+# The metadata webhook receives more than these: group ironman bank contents
 # when the storage screen opens, and so on. Those are accepted and dropped -
 # refusing them would only make the plugin retry.
-LOGIN_TYPE = "LOGIN"
+KINDS = {"LOGIN": "login", "LOGOUT": "logout"}
 
 # On by default in Dink, and none of our business: who someone is on Discord,
 # and which clan they are in. Dropped as the body is read rather than stored
@@ -61,6 +67,13 @@ def dink(token):
     be fetched again later, unlike anything the tripwire protects.
     """
     username = _owner(token)
+    # Logged before anything can refuse it. Without this line a request that
+    # arrived and was rejected looks exactly like one that never arrived,
+    # which is the first question asked when a player says it is not working.
+    # The token is described, never written down.
+    log.info("dink: %s bytes of %s, %d-character token, %s", request.content_length,
+             request.content_type or "no content type", len(token or ""),
+             "known" if username else "no match")
     if username is None:
         # No hint that the path shape was right, or that another token exists.
         return Response("Not found.", status=404, mimetype="text/plain")
@@ -80,19 +93,22 @@ def dink(token):
         return Response("Expected a JSON object.", status=400,
                         mimetype="text/plain")
 
-    if body.get("type") != LOGIN_TYPE:
+    kind = KINDS.get(body.get("type"))
+    if kind is None:
         # Accepted, so it is not retried, and forgotten.
+        log.info("dink: %s sent a %s, which we do not keep", username,
+                 body.get("type"))
         return Response(status=204)
 
     kept = {key: value for key, value in body.items() if key not in UNWANTED}
     extra = kept.get("extra")
     reading = _reading(extra if isinstance(extra, dict) else {})
     database = current_app.config["DATABASE"]
-    row_id = database.record_login(username, reading, kept)
+    row_id = database.record_session_event(username, kind, reading, kept)
     if row_id is None:
-        log.info("dink: repeat login from %s, ignored", username)
+        log.info("dink: repeat %s from %s, ignored", kind, username)
     else:
-        log.info("dink: %s logged in to world %s at %s xp", username,
+        log.info("dink: %s %s (world %s, %s xp)", username, kind,
                  reading.get("world"), reading.get("total_exp"))
     return Response(status=204)
 

@@ -180,10 +180,11 @@
   <div class="card">
     <h3>Session logins</h3>
     <p class="hint">
-      Wise Old Man only ever tells us a session has ended - the hiscores do not
-      move until logout. The Dink plugin tells us when one started, so a long
-      session stops landing in the ten minutes we happened to notice it in.
-      Nothing on the dashboard reads this yet; it is being collected first.
+      Wise Old Man can infer that a session ended, and cannot see one begin at
+      all - the hiscores do not move until logout. The Dink plugin reports both
+      ends as they happen, so a long session stops landing in the ten minutes we
+      happened to notice it in. Nothing on the dashboard reads this yet; it is
+      being collected first.
     </p>
     <p class="hint">
       Each player installs <strong>Dink</strong> from the RuneLite Plugin Hub,
@@ -199,24 +200,28 @@
     </p>
     <div class="scroll">
       <table>
-        <tr><th>Player</th><th>Webhook URL</th><th class="num">Logins</th>
+        <tr><th>Player</th><th>Webhook URL</th><th class="num">Events</th>
           <th>Last seen</th><th></th></tr>
         {% for player in roster %}
           <tr>
             <td>{{ player.display_name }}</td>
             <td>
               {% if player.token %}
-                <input type="text" readonly spellcheck="false" class="secret"
-                       value="{{ hook_base }}{{ player.token }}">
+                <div class="row">
+                  <input type="text" readonly spellcheck="false" class="secret"
+                         id="url-{{ loop.index }}"
+                         value="{{ hook_base }}{{ player.token }}">
+                  <button type="button" data-copy="url-{{ loop.index }}">Copy</button>
+                </div>
               {% else %}
                 <span class="dim">none issued</span>
               {% endif %}
             </td>
-            <td class="num">{{ player.logins }}</td>
+            <td class="num">{{ player.events }}</td>
             <td class="dim">
-              {% if player.last_login %}
-                {{ player.last_login }} ({{ player.last_login_ago }})
-                <br>{{ player.last_exp }} xp
+              {% if player.last_seen %}
+                {{ player.last_kind }} {{ player.last_seen }} ({{ player.last_ago }})
+                {% if player.last_exp %}<br>{{ player.last_exp }} xp{% endif %}
               {% else %}-{% endif %}
             </td>
             <td>

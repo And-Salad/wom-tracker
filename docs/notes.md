@@ -348,10 +348,13 @@ sessions we would have caught anyway, not extra coverage.
 
 ### What was missing
 
-The start. Nothing in the Wise Old Man pipeline can supply it, which is what
-`wom/web/hooks.py` and the `logins` table are for: Dink reports a login as it
-happens, with that account's live experience attached. A session then has a
-measured beginning and a measured end, instead of one point and a guess.
+The start, and an end that is a moment rather than a bracket. Neither comes out
+of the Wise Old Man pipeline, which is what `wom/web/hooks.py` and the
+`session_events` table are for. Dink reports a login as it happens with that
+account's live experience attached, and a logout carrying only the moment - but
+carrying it however little was gained, where the 10,000 threshold above leaves
+quiet sessions invisible. A session then has a measured beginning and a measured
+end instead of one point and a guess.
 
 `metrics.efficiency` (EHP) remains the only estimate of how long a session ran,
 and stays useful for placing activity inside a span - someone can log in, idle

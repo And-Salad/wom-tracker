@@ -114,31 +114,33 @@ CREATE TABLE IF NOT EXISTS group_summaries (
     PRIMARY KEY (period, window_key)
 );
 
--- Dink's metadata webhook, which fires once when a client finishes logging in
--- and carries that account's own reading of its experience at that moment.
+-- Dink's metadata webhook, which reports both ends of a session as they
+-- happen: a login six seconds in, carrying that account's own reading of its
+-- experience, and a logout, which carries only the fact and the moment.
 --
--- This is the only measurement of a session's *start* we can get. Wise Old Man
--- can only ever tell us one has ended, because the hiscores do not move until
--- logout - so a three hour session arrives as a single jump and we attribute
--- it to the ten minutes we happened to notice in.
+-- Between them this is the only measurement of a session we can get. Wise Old
+-- Man infers an ending from the hiscores moving and cannot see a beginning at
+-- all, so a three hour session arrives as a single jump and we attribute it to
+-- the ten minutes we happened to notice in.
 --
--- Keyed by username rather than player id: a login can arrive before the
+-- Keyed by username rather than player id: an event can arrive before the
 -- account is tracked, and it stays interesting after one is pruned. player_id
 -- is a convenience, filled in when we know it.
-CREATE TABLE IF NOT EXISTS logins (
+CREATE TABLE IF NOT EXISTS session_events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     username    TEXT NOT NULL,                    -- lowercase, the token's owner
     player_id   INTEGER,                          -- NULL until the account is known
+    kind        TEXT NOT NULL,                    -- login | logout
     received_at TEXT NOT NULL,                    -- when the POST reached us, ISO UTC
-    world       INTEGER,
-    total_exp   REAL,                             -- skills.totalExperience, live
-    total_level INTEGER,
-    collections INTEGER,                          -- collectionLog.completed
+    world       INTEGER,                          -- login only
+    total_exp   REAL,                             -- login only: totalExperience, live
+    total_level INTEGER,                          -- login only
+    collections INTEGER,                          -- login only: collectionLog.completed
     payload     TEXT NOT NULL                     -- what we chose to keep of the body
 );
 
-CREATE INDEX IF NOT EXISTS idx_logins_who
-    ON logins (username, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_session_events_who
+    ON session_events (username, received_at DESC);
 
 CREATE TABLE IF NOT EXISTS runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,9 +156,9 @@ CREATE TABLE IF NOT EXISTS runs (
 
 _VALUE_KEYS = ("experience", "kills", "score", "value")
 
-# How long two identical readings from one account are treated as one
-# login. See record_login.
-LOGIN_DEDUPE_SECONDS = 300
+# How long two identical reports from one account are treated as one event.
+# See record_session_event.
+SESSION_DEDUPE_SECONDS = 300
 
 
 class Database:
@@ -208,6 +210,28 @@ class Database:
             conn.executescript(SCHEMA)
 
         self._drop_ungrouped_recaps(conn)
+        self._widen_logins_to_sessions(conn)
+
+    def _widen_logins_to_sessions(self, conn):
+        """Fold the login-only table into one that holds logouts as well.
+
+        Dink reports both ends; the first cut of this only knew about the
+        first. A table called `logins` holding logouts is the kind of drift
+        that outlives whoever remembers it, so the table is renamed rather
+        than given a column and a footnote.
+        """
+        names = {row["name"] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if "logins" not in names:
+            return
+        with conn:
+            conn.execute(
+                "INSERT INTO session_events (username, player_id, kind,"
+                " received_at, world, total_exp, total_level, collections, payload)"
+                " SELECT username, player_id, 'login', received_at, world,"
+                " total_exp, total_level, collections, payload FROM logins")
+            conn.execute("DROP TABLE logins")
+        log.info("migrated the logins table into session_events")
 
     def _drop_ungrouped_recaps(self, conn):
         """Remove group recaps for windows the leaderboard does not judge.
@@ -458,57 +482,69 @@ class Database:
                              (player_id,))
         return row["n"] if row else 0
 
-    def record_login(self, username, reading, payload, when=None,
-                     dedupe_seconds=LOGIN_DEDUPE_SECONDS):
-        """Store one login. Returns its row id, or None if it is a repeat.
+    def record_session_event(self, username, kind, reading, payload, when=None,
+                             dedupe_seconds=SESSION_DEDUPE_SECONDS):
+        """Store one login or logout. Returns its row id, or None if a repeat.
 
-        Dink retries a webhook it could not deliver, so the same login can
+        Dink retries a webhook it could not deliver, so the same event can
         arrive more than once with a different timestamp each time. There is
         no id in the payload to key on, so a repeat is recognised the only way
-        left: the same account reporting the same total experience again
-        within a few minutes. That also swallows the rare genuine second login
-        in that window, which costs us one session boundary and is the right
-        way round - a phantom session would be attributed real gains.
+        left: the same account reporting the same thing again within a few
+        minutes - the same total experience for a login, and for a logout,
+        which carries no numbers at all, simply another logout.
+
+        That also swallows a genuine second event in the same window, which
+        costs one session boundary. It is the right way round: a phantom
+        session would be attributed real gains.
         """
         stamp = when or _utcnow()
         conn = self.connect()
         exp = reading.get("total_exp")
-        if exp is not None:
-            cutoff = _seconds_before(stamp, dedupe_seconds)
-            seen = conn.execute(
-                "SELECT id FROM logins WHERE username=? AND total_exp=?"
-                " AND received_at>=? LIMIT 1", (username, exp, cutoff)).fetchone()
-            if seen is not None:
-                return None
+        cutoff = _seconds_before(stamp, dedupe_seconds)
+        if exp is None:
+            sql = ("SELECT id FROM session_events WHERE username=? AND kind=?"
+                   " AND total_exp IS NULL AND received_at>=? LIMIT 1")
+            params = (username, kind, cutoff)
+        else:
+            sql = ("SELECT id FROM session_events WHERE username=? AND kind=?"
+                   " AND total_exp=? AND received_at>=? LIMIT 1")
+            params = (username, kind, exp, cutoff)
+        if conn.execute(sql, params).fetchone() is not None:
+            return None
         row = self.player_by_username(username)
         with conn:
             cur = conn.execute(
-                "INSERT INTO logins (username, player_id, received_at, world,"
-                " total_exp, total_level, collections, payload)"
-                " VALUES (?,?,?,?,?,?,?,?)",
-                (username, row["id"] if row is not None else None, stamp,
+                "INSERT INTO session_events (username, player_id, kind,"
+                " received_at, world, total_exp, total_level, collections, payload)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                (username, row["id"] if row is not None else None, kind, stamp,
                  reading.get("world"), exp, reading.get("total_level"),
                  reading.get("collections"), json.dumps(payload)))
         return cur.lastrowid
 
-    def logins(self, username=None, limit=200):
-        """Recorded logins, newest first."""
-        sql = "SELECT * FROM logins"
-        params = []
+    def session_events(self, username=None, kind=None, limit=200):
+        """Recorded logins and logouts, newest first."""
+        sql = "SELECT * FROM session_events"
+        clauses, params = [], []
         if username:
-            sql += " WHERE username=?"
+            clauses.append("username=?")
             params.append(username)
+        if kind:
+            clauses.append("kind=?")
+            params.append(kind)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
         return self.query(sql + " ORDER BY received_at DESC LIMIT ?",
                           params + [limit])
 
-    def last_login(self, username):
+    def last_session_event(self, username):
         return self.query_one(
-            "SELECT * FROM logins WHERE username=?"
+            "SELECT * FROM session_events WHERE username=?"
             " ORDER BY received_at DESC LIMIT 1", (username,))
 
-    def login_count(self, username):
+    def session_event_count(self, username):
         row = self.query_one(
-            "SELECT COUNT(*) AS n FROM logins WHERE username=?", (username,))
+            "SELECT COUNT(*) AS n FROM session_events WHERE username=?", (username,))
         return row["n"] if row is not None else 0
 
     def save_achievements(self, player_id, achievements):

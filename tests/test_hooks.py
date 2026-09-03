@@ -62,6 +62,35 @@ def issue(signed_in, username="zezima"):
     return "/hook/dink/" + token
 
 
+def test_an_older_database_keeps_the_logins_it_had(tmp_path):
+    """The first cut of this shipped a table that only knew about logins."""
+    import sqlite3
+    from wom.db import Database
+
+    path = str(tmp_path / "old.db")
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE logins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL,
+            player_id INTEGER, received_at TEXT NOT NULL, world INTEGER,
+            total_exp REAL, total_level INTEGER, collections INTEGER,
+            payload TEXT NOT NULL);
+        INSERT INTO logins (username, received_at, world, total_exp, payload)
+        VALUES ('zezima', '2026-09-03T12:00:00.000Z', 338, 4242.0, '{}');
+    """)
+    conn.commit()
+    conn.close()
+
+    database = Database(path)
+    rows = database.session_events("zezima")
+    assert len(rows) == 1, "a stored login must survive the rename"
+    assert rows[0]["kind"] == "login"
+    assert rows[0]["total_exp"] == 4242.0
+    assert database.query_one(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='logins'"
+    ) is None, "the old table goes, so nothing writes to it by accident"
+
+
 # -- who may call ---------------------------------------------------------
 
 def test_an_unknown_token_is_404(client):
@@ -111,7 +140,7 @@ def test_the_admin_page_shows_the_url_and_the_last_login(signed_in, app):
     page = signed_in.get("/admin").get_data(as_text=True)
     assert "Session logins" in page
     section = page.split("Session logins")[1]
-    assert ">1<" in section, "the login count must move"
+    assert ">1<" in section, "the event count must move"
     assert "12,345,678" in section, (
         "the experience we captured is how you tell the body was parsed, "
         "not merely that something arrived")
@@ -122,7 +151,7 @@ def test_the_admin_page_shows_the_url_and_the_last_login(signed_in, app):
 def test_a_login_is_recorded(signed_in, app):
     url = issue(signed_in)
     assert signed_in.post(url, json=body(exp=12345678, world=420)).status_code == 204
-    rows = app.config["DATABASE"].logins("zezima")
+    rows = app.config["DATABASE"].session_events("zezima")
     assert len(rows) == 1
     assert rows[0]["total_exp"] == 12345678
     assert rows[0]["world"] == 420
@@ -136,14 +165,14 @@ def test_a_login_links_to_the_player_when_we_know_them(signed_in, app):
         {"id": 7, "username": "zezima", "displayName": "Zezima", "type": "regular"})
     url = issue(signed_in)
     signed_in.post(url, json=body())
-    assert app.config["DATABASE"].logins("zezima")[0]["player_id"] == 7
+    assert app.config["DATABASE"].session_events("zezima")[0]["player_id"] == 7
 
 
 def test_a_login_is_kept_for_an_account_we_have_never_seen(signed_in, app):
     """The webhook can arrive before the first update run does."""
     url = issue(signed_in)
     signed_in.post(url, json=body())
-    row = app.config["DATABASE"].logins("zezima")[0]
+    row = app.config["DATABASE"].session_events("zezima")[0]
     assert row["player_id"] is None
     assert row["username"] == "zezima"
 
@@ -153,14 +182,14 @@ def test_a_retry_is_not_a_second_session(signed_in, app):
     url = issue(signed_in)
     for _ in range(3):
         assert signed_in.post(url, json=body(exp=555)).status_code == 204
-    assert len(app.config["DATABASE"].logins("zezima")) == 1
+    assert len(app.config["DATABASE"].session_events("zezima")) == 1
 
 
 def test_logging_in_again_after_gaining_xp_is_a_new_session(signed_in, app):
     url = issue(signed_in)
     signed_in.post(url, json=body(exp=555))
     signed_in.post(url, json=body(exp=666))
-    assert len(app.config["DATABASE"].logins("zezima")) == 2
+    assert len(app.config["DATABASE"].session_events("zezima")) == 2
 
 
 def test_discord_and_clan_are_never_written_down(signed_in, app):
@@ -168,7 +197,7 @@ def test_discord_and_clan_are_never_written_down(signed_in, app):
     signed_in.post(url, json=body(
         discordUser={"id": "123", "name": "discord-handle-9f2a"},
         clanName="Clan-Name-9f2a", dinkAccountHash="hash-9f2a"))
-    stored = app.config["DATABASE"].logins("zezima")[0]["payload"]
+    stored = app.config["DATABASE"].session_events("zezima")[0]["payload"]
     for unwanted in ("discordUser", "clanName", "dinkAccountHash",
                      "discord-handle-9f2a", "Clan-Name-9f2a", "hash-9f2a"):
         assert unwanted not in stored, unwanted
@@ -178,14 +207,14 @@ def test_other_metadata_is_accepted_and_dropped(signed_in, app):
     """Refusing it would only make the plugin retry it."""
     url = issue(signed_in)
     assert signed_in.post(url, json=body(kind="GROUP_STORAGE")).status_code == 204
-    assert app.config["DATABASE"].logins("zezima") == []
+    assert app.config["DATABASE"].session_events("zezima") == []
 
 
 def test_a_login_missing_its_numbers_is_still_a_login(signed_in, app):
     """When the shape changes, the timestamp is the part worth keeping."""
     url = issue(signed_in)
     assert signed_in.post(url, json={"type": "LOGIN"}).status_code == 204
-    rows = app.config["DATABASE"].logins("zezima")
+    rows = app.config["DATABASE"].session_events("zezima")
     assert len(rows) == 1
     assert rows[0]["total_exp"] is None
 
@@ -197,7 +226,42 @@ def test_multipart_is_read_too(signed_in, app):
         url, data={"payload_json": json.dumps(body(exp=999))},
         content_type="multipart/form-data")
     assert response.status_code == 204
-    assert app.config["DATABASE"].logins("zezima")[0]["total_exp"] == 999
+    assert app.config["DATABASE"].session_events("zezima")[0]["total_exp"] == 999
+
+
+def test_a_logout_is_recorded_too(signed_in, app):
+    """Dink reports both ends; the logout carries no numbers, only the moment."""
+    url = issue(signed_in)
+    assert signed_in.post(url, json={"type": "LOGOUT", "playerName": "Zezima"}
+                          ).status_code == 204
+    rows = app.config["DATABASE"].session_events("zezima")
+    assert len(rows) == 1
+    assert rows[0]["kind"] == "logout"
+    assert rows[0]["total_exp"] is None, "a logout tells us nothing about xp"
+
+
+def test_a_logout_and_a_login_are_two_events(signed_in, app):
+    url = issue(signed_in)
+    signed_in.post(url, json=body(exp=500))
+    signed_in.post(url, json={"type": "LOGOUT"})
+    kinds = [r["kind"] for r in app.config["DATABASE"].session_events("zezima")]
+    assert sorted(kinds) == ["login", "logout"]
+
+
+def test_a_repeated_logout_is_one_logout(signed_in, app):
+    """Logouts carry no experience, so they cannot be deduped the way logins are."""
+    url = issue(signed_in)
+    for _ in range(3):
+        assert signed_in.post(url, json={"type": "LOGOUT"}).status_code == 204
+    assert len(app.config["DATABASE"].session_events("zezima")) == 1
+
+
+def test_a_logout_does_not_hide_a_login_with_no_numbers(signed_in, app):
+    """Both carry no experience; they must still be told apart."""
+    url = issue(signed_in)
+    signed_in.post(url, json={"type": "LOGOUT"})
+    signed_in.post(url, json={"type": "LOGIN"})
+    assert len(app.config["DATABASE"].session_events("zezima")) == 2
 
 
 # -- what it refuses ------------------------------------------------------
@@ -207,7 +271,7 @@ def test_an_unreadable_body_is_refused(signed_in, app):
     response = signed_in.post(url, data="not json at all",
                               content_type="application/json")
     assert response.status_code == 400
-    assert app.config["DATABASE"].logins("zezima") == []
+    assert app.config["DATABASE"].session_events("zezima") == []
 
 
 def test_a_json_array_is_refused(signed_in, app):
@@ -219,7 +283,7 @@ def test_an_oversized_body_is_refused(signed_in, app):
     url = issue(signed_in)
     response = signed_in.post(url, json=body(padding="x" * 70000))
     assert response.status_code == 413
-    assert app.config["DATABASE"].logins("zezima") == []
+    assert app.config["DATABASE"].session_events("zezima") == []
 
 
 def test_a_multipart_with_no_payload_is_refused(signed_in, app):
@@ -227,7 +291,7 @@ def test_a_multipart_with_no_payload_is_refused(signed_in, app):
     response = signed_in.post(url, data={"file": "just-an-image"},
                               content_type="multipart/form-data")
     assert response.status_code == 400
-    assert app.config["DATABASE"].logins("zezima") == []
+    assert app.config["DATABASE"].session_events("zezima") == []
 
 
 def test_a_multipart_carrying_junk_is_refused(signed_in, app):
@@ -235,7 +299,7 @@ def test_a_multipart_carrying_junk_is_refused(signed_in, app):
     response = signed_in.post(url, data={"payload_json": "{not json"},
                               content_type="multipart/form-data")
     assert response.status_code == 400
-    assert app.config["DATABASE"].logins("zezima") == []
+    assert app.config["DATABASE"].session_events("zezima") == []
 
 
 def test_a_burst_from_one_token_is_refused(signed_in, app):
@@ -244,7 +308,7 @@ def test_a_burst_from_one_token_is_refused(signed_in, app):
     assert signed_in.post(url, json=body(exp=1)).status_code == 204
     assert signed_in.post(url, json=body(exp=2)).status_code == 204
     assert signed_in.post(url, json=body(exp=3)).status_code == 429
-    assert len(app.config["DATABASE"].logins("zezima")) == 2
+    assert len(app.config["DATABASE"].session_events("zezima")) == 2
 
 
 def test_a_tripped_wire_does_not_stop_us_collecting(signed_in, app):
@@ -260,7 +324,7 @@ def test_a_tripped_wire_does_not_stop_us_collecting(signed_in, app):
     tripwire.tripped_by = "1.2.3.4"
     assert tripwire.tripped
     assert signed_in.post(url, json=body()).status_code == 204
-    assert len(app.config["DATABASE"].logins("zezima")) == 1
+    assert len(app.config["DATABASE"].session_events("zezima")) == 1
 
 
 def test_the_endpoint_only_takes_posts(client):

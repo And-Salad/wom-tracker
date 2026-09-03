@@ -129,7 +129,7 @@ def settings():
     roster = []
     for index, name in enumerate(config.get("usernames", [])):
         row = known.get(name.lower())
-        seen = database.last_login(name.lower())
+        seen = database.last_session_event(name.lower())
         roster.append({
             "username": name,
             "display_name": row["display_name"] if row is not None else name,
@@ -137,10 +137,11 @@ def settings():
             "snapshots": database.snapshot_count(row["id"]) if row is not None else 0,
             "updated": row["updated_at"] if row is not None else None,
             "token": tokens.get(name.lower(), ""),
-            "logins": database.login_count(name.lower()),
-            "last_login": fmt_datetime(seen["received_at"]) if seen is not None else None,
-            "last_login_ago": fmt_ago(seen["received_at"]) if seen is not None else "",
-            "last_exp": fmt_int(seen["total_exp"]) if seen is not None else "",
+            "events": database.session_event_count(name.lower()),
+            "last_kind": seen["kind"] if seen is not None else "",
+            "last_seen": fmt_datetime(seen["received_at"]) if seen is not None else None,
+            "last_ago": fmt_ago(seen["received_at"]) if seen is not None else "",
+            "last_exp": fmt_int(seen["total_exp"], dash="") if seen is not None else "",
         })
     tripwire = current_app.config["LIMITS"].api_tripwire
     return render_template(

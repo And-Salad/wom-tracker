@@ -213,7 +213,7 @@ dozens of addresses at once rather than a busy evening on a shared link.
 Exports are five per address per six hours, and twenty a day across everyone.
 
 One endpoint takes writes without a password: `/hook/dink/<token>`, where a
-RuneLite plugin reports a login. See below. It sits outside the tripwire on
+RuneLite plugin reports a login or a logout. See below. It sits outside the tripwire on
 purpose - a login that is refused is gone for good, where everything the
 tripwire protects can be fetched again - and is capped at thirty calls per
 player per five minutes instead.
@@ -259,11 +259,15 @@ Wise Old Man can only ever tell us a session has *ended*: the hiscores do not
 move until logout, so three hours of training arrives as one jump and lands in
 whichever ten-minute window we happened to notice it in.
 
-[Dink](https://github.com/pajlads/DinkPlugin), a Plugin Hub plugin, tells us
-when one began. Point its **Custom Metadata Handler** setting at a URL and it
-POSTs once per login - about six seconds in, not on world hops - carrying that
-account's own live reading of its experience. Setting that field is the only
-thing a player has to do; the Discord webhook box beside it can stay empty.
+[Dink](https://github.com/pajlads/DinkPlugin), a Plugin Hub plugin, reports
+both ends as they happen. Point its **Custom Metadata Handler** setting at a
+URL and it POSTs a login - about six seconds in, not on world hops - carrying
+that account's own live reading of its experience, and a logout, which carries
+only the fact and the moment. The logout beats what we can infer twice over: it
+is the moment itself rather than a ten-minute bracket, and it arrives however
+little was gained, where the hiscore route says nothing under 10,000 experience.
+Setting that one field is all a player has to do; the Discord webhook box beside
+it can stay empty.
 
 Issue and revoke a player's URL from the admin page, which also shows when we
 last heard from them. The plugin cannot send a header, so the URL *is* the

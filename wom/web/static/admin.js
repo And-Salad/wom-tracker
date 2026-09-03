@@ -29,3 +29,35 @@
     }
     tick();
   })();
+
+// A webhook URL is longer than the box it sits in, and selecting it by hand
+// copies whatever happened to be visible - a half-copied URL then answers 404
+// with nothing to say why. Clicking selects all of it, and the button copies
+// it outright where the browser allows.
+(function () {
+  var fields = document.querySelectorAll(".secret");
+  Array.prototype.forEach.call(fields, function (field) {
+    field.addEventListener("focus", function () { field.select(); });
+    field.addEventListener("click", function () { field.select(); });
+  });
+
+  var buttons = document.querySelectorAll("[data-copy]");
+  Array.prototype.forEach.call(buttons, function (button) {
+    button.addEventListener("click", function (event) {
+      event.preventDefault();
+      var field = document.getElementById(button.getAttribute("data-copy"));
+      if (!field) { return; }
+      field.select();
+      var done = function () {
+        var was = button.textContent;
+        button.textContent = "Copied";
+        setTimeout(function () { button.textContent = was; }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(field.value).then(done, function () {});
+      } else if (document.execCommand("copy")) {
+        done();
+      }
+    });
+  });
+})();
