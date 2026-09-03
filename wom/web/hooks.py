@@ -83,11 +83,9 @@ def dink(token):
         log.warning("dink: refusing a burst from %s", username)
         return Response("Too many requests.", status=429, mimetype="text/plain")
 
-    length = request.content_length
-    if length is None or length > MAX_BODY:
+    body, too_big = _body()
+    if too_big:
         return Response("Body too large.", status=413, mimetype="text/plain")
-
-    body = _body()
     if not isinstance(body, dict):
         log.warning("dink: unreadable body from %s", username)
         return Response("Expected a JSON object.", status=400,
@@ -134,22 +132,46 @@ def _owner(token):
 
 
 def _body():
-    """The JSON Dink sent, whichever way it sent it.
+    """The JSON Dink sent, whichever way it sent it. Returns (body, too_big).
 
     Login metadata has no screenshot attached, so it arrives as a plain JSON
     body. The multipart form is what the plugin uses when there *is* an image,
     and it is read here too rather than left as a shape that silently 400s if
     Dink ever attaches one.
+
+    The cap does not lean on Content-Length alone, for two reasons. A chunked
+    request declares no length and is still bounded here, by reading one byte
+    past the limit. And a URL given as http:// is redirected to https by the
+    host in front of us, which arrives with neither a length nor a body: that
+    is a 400 saying the body could not be read, rather than a 413 claiming it
+    was too large, because the latter sent whoever configured it looking for
+    a size problem that was really a scheme problem.
+
+    Nothing here can rescue that request - the body is gone by the time it
+    reaches us - so the URL handed to a player has to be https.
     """
+    declared = request.content_length
+    if declared is not None and declared > MAX_BODY:
+        return None, True
     if request.mimetype == "multipart/form-data":
+        # Werkzeug needs the length to parse a form, and okhttp always sends
+        # one for multipart, so an undeclared body of this shape is refused.
+        if declared is None:
+            return None, False
         raw = request.form.get("payload_json")
         if not raw:
-            return None
+            return None, False
         try:
-            return json.loads(raw)
+            return json.loads(raw), False
         except ValueError:
-            return None
-    return request.get_json(silent=True)
+            return None, False
+    raw = request.stream.read(MAX_BODY + 1)
+    if len(raw) > MAX_BODY:
+        return None, True
+    try:
+        return json.loads(raw.decode("utf-8")), False
+    except (ValueError, UnicodeDecodeError):
+        return None, False
 
 
 def _reading(extra):

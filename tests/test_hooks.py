@@ -5,6 +5,7 @@ what it refuses, because the URL is the whole credential and there is nobody
 signed in to check.
 """
 
+import io
 import json
 from datetime import datetime, timezone
 
@@ -300,6 +301,56 @@ def test_a_multipart_carrying_junk_is_refused(signed_in, app):
                               content_type="multipart/form-data")
     assert response.status_code == 400
     assert app.config["DATABASE"].session_events("zezima") == []
+
+
+def test_a_body_that_lost_its_length_says_so_rather_than_blaming_size(signed_in, app):
+    """What an http:// URL produces after the redirect to https.
+
+    The body does not survive that redirect, so there is nothing to accept.
+    It must not answer 413: that sends whoever configured it hunting for a
+    size problem when the real one is the scheme.
+    """
+    url = issue(signed_in)
+    response = signed_in.post(url, data=b"", content_type="application/json",
+                              content_length=None)
+    assert response.status_code == 400
+    assert b"large" not in response.data.lower()
+    assert app.config["DATABASE"].session_events("zezima") == []
+
+
+def _no_length(app, body, content_type, terminated=False):
+    """A request context whose environ genuinely declares no length.
+
+    The test client fills CONTENT_LENGTH in for you, which is the opposite of
+    what these two cases are about - so the environ is built and the header
+    removed by hand.
+    """
+    from werkzeug.test import EnvironBuilder
+    environ = EnvironBuilder(path="/hook/dink/x", method="POST",
+                             content_type=content_type).get_environ()
+    environ.pop("CONTENT_LENGTH", None)
+    environ["wsgi.input"] = io.BytesIO(body)
+    environ["wsgi.input_terminated"] = terminated
+    return app.request_context(environ)
+
+
+def test_a_multipart_with_no_length_is_refused_rather_than_parsed(app):
+    """Werkzeug cannot parse a form it has no length for."""
+    from flask import request
+    from wom.web.hooks import _body
+    with _no_length(app, b"whatever", "multipart/form-data"):
+        assert request.content_length is None, "the point of the fixture"
+        assert _body() == (None, False)
+
+
+def test_an_undeclared_body_is_still_bounded(app):
+    """A chunked request declares no length; the read must still stop."""
+    from flask import request
+    from wom.web.hooks import _body, MAX_BODY
+    with _no_length(app, b"x" * (MAX_BODY + 500), "application/json",
+                    terminated=True):
+        assert request.content_length is None, "the point of the fixture"
+        assert _body() == (None, True), "an unbounded body must be refused"
 
 
 def test_a_burst_from_one_token_is_refused(signed_in, app):
