@@ -40,6 +40,19 @@ def snapshot(when, skills=None, bosses=None, activities=None):
     }}
 
 
+def as_polled(db):
+    """Mark every stored reading as one we made ourselves.
+
+    A test writes an old createdAt at the moment it runs, which is exactly
+    what an imported reading looks like - so without this the compaction
+    tests are describing archive rows, which are deliberately never thinned.
+    Real polled history was stored as it happened and carries `poll`.
+    """
+    conn = db.connect()
+    with conn:
+        conn.execute("UPDATE snapshots SET origin='poll'")
+
+
 @pytest.fixture
 def db(tmp_path):
     """An empty database, per test."""

@@ -1,6 +1,6 @@
 """Storage: history, compaction, pruning and the export query."""
 
-from conftest import snapshot
+from conftest import as_polled, snapshot
 
 
 def test_compaction_keeps_each_days_last_reading(db, player):
@@ -15,6 +15,7 @@ def test_compaction_keeps_each_days_last_reading(db, player):
     db.save_snapshot(player["id"], snapshot("2026-08-30T00:00:00.000Z",
                                             bosses={"zulrah": 90}))
 
+    as_polled(db)
     db.compact_snapshots(keep_days=30)
     kept = db.query(
         "SELECT captured_at FROM snapshots WHERE player_id=? AND captured_at < ?"
@@ -148,6 +149,7 @@ def test_compaction_leaves_every_surviving_reading_saying_what_it_said(db, playe
             "2020-01-01T{}:00:00.000Z".format(hour), skills={"attack": (xp, 40)}))
     db.save_snapshot(player["id"], snapshot("2026-08-31T00:00:00.000Z",
                                       skills={"attack": (9000, 50)}))
+    as_polled(db)
     db.compact_snapshots(keep_days=30)
 
     kept = db.observations(player["id"], "2020-01-01", "2020-01-02")
@@ -255,3 +257,76 @@ def test_a_players_own_notes_survive_that_drop(tmp_path):
     again = Database(path)
     assert {row["period"] for row in again.summaries(player_id=1)} == set(
         periods.SUMMARY_PERIODS)
+
+
+# -- where a reading came from, and what compaction does about it ---------
+
+def test_a_reading_we_caused_is_marked_as_ours(db, player):
+    """Wise Old Man stamped it as we asked for it, so we can ask again."""
+    from wom.util import api_stamp
+    from datetime import datetime, timezone
+    db.save_snapshot(player["id"], snapshot(api_stamp(datetime.now(timezone.utc)),
+                                            skills={"attack": (100, 40)}))
+    assert db.query_one("SELECT origin FROM snapshots")["origin"] == "poll"
+
+
+def test_a_reading_that_already_existed_is_marked_archive(db, player):
+    """Made without us - which is the only kind that records a moment we
+    could never have observed on a ten minute rhythm."""
+    db.save_snapshot(player["id"], snapshot("2026-01-05T03:17:42.000Z",
+                                            skills={"attack": (100, 40)}))
+    assert db.query_one("SELECT origin FROM snapshots")["origin"] == "archive"
+
+
+def test_compaction_never_thins_an_archive_reading(db, player):
+    """A polled reading can be made again tomorrow; this one cannot."""
+    for hour in (1, 7, 13, 19):
+        db.save_snapshot(player["id"], snapshot(
+            "2026-01-05T{:02d}:00:00.000Z".format(hour), bosses={"zulrah": hour}))
+    as_polled(db)
+    # one of them was Wise Old Man's own, not ours
+    conn = db.connect()
+    with conn:
+        conn.execute("UPDATE snapshots SET origin='archive'"
+                     " WHERE captured_at LIKE '2026-01-05T07%'")
+
+    db.compact_snapshots(keep_days=30)
+    kept = [r["captured_at"] for r in db.query(
+        "SELECT captured_at FROM snapshots WHERE captured_at < '2026-02-01'"
+        " ORDER BY captured_at")]
+    assert kept == ["2026-01-05T07:00:00.000Z", "2026-01-05T19:00:00.000Z"], (
+        "the day's last reading, and the one we could not have taken ourselves")
+
+
+def test_an_archive_reading_still_says_what_it_said(db, player):
+    """Keeping the reading and dropping its metrics would be worse than
+    dropping both: it would carry an older value and look authoritative."""
+    for hour, kills in ((1, 10), (7, 25), (13, 30), (19, 44)):
+        db.save_snapshot(player["id"], snapshot(
+            "2026-01-05T{:02d}:00:00.000Z".format(hour), bosses={"zulrah": kills}))
+    as_polled(db)
+    conn = db.connect()
+    with conn:
+        conn.execute("UPDATE snapshots SET origin='archive'"
+                     " WHERE captured_at LIKE '2026-01-05T07%'")
+    reading = lambda: {r["metric"]: r["value"] for r in
+                       db.state_at(player["id"], "2026-01-05T07:00:00.000Z",
+                                   kind="boss")}
+    before = reading()
+    assert before["zulrah"] == 25, "what that moment said before we thinned"
+
+    db.compact_snapshots(keep_days=30)
+    assert reading() == before, "the surviving moment must read exactly as it did"
+
+
+def test_older_readings_are_labelled_from_what_was_already_stored(db, player):
+    """The column was added after the fact; the two timestamps it needs
+    were already there, so the answer is exact rather than a guess."""
+    db.save_snapshot(player["id"], snapshot("2026-01-05T03:00:00.000Z",
+                                            skills={"attack": (100, 40)}))
+    conn = db.connect()
+    with conn:
+        conn.execute("UPDATE snapshots SET origin=NULL")
+    from wom.db import Database
+    relabelled = Database(db.path)
+    assert relabelled.query_one("SELECT origin FROM snapshots")["origin"] == "archive"

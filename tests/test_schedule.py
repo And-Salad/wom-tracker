@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 
 import pytest
-from conftest import snapshot
+from conftest import as_polled, snapshot
 
 from wom import periods, summaries
 from wom.scheduler import zone
@@ -225,6 +225,7 @@ def test_history_is_thinned_once_a_day_not_every_run(db, player, tmp_path):
     for hour in ("00", "06", "12", "18"):
         db.save_snapshot(player["id"], snapshot(
             "2020-01-01T{}:00:00.000Z".format(hour), skills={"attack": (int(hour) + 1, 40)}))
+    as_polled(db)
     settings = Config()
 
     web_app._thin_history(db, settings)

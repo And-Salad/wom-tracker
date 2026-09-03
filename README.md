@@ -298,6 +298,16 @@ days, compaction thins what is left to one reading a day, which is finer than a
 month-wide chart can draw; it runs once a day, on the first update after
 midnight.
 
+With one exception. Each reading records an `origin`: `poll` when our own
+request caused Wise Old Man to take it, `archive` when it already existed and
+we were only collecting it. Compaction never thins an `archive` reading. A
+polled one can be taken again tomorrow, so thinning it costs a detail; an
+archive one is a moment recorded without us - a player's client pushing on
+logout, most often - and is the only evidence of when that session ended, so
+thinning it loses the timestamp for good. They are cheap to keep: on the live
+database they are 317 of 2,470 readings and carry 18,749 of 20,340 metric rows,
+which is 92% of the history for 13% of the readings.
+
 `backup.py` pulls a copy of the hosted database taken with SQLite's backup API
 *inside* the container - a consistent file, not a copy with recent writes
 stranded in the write-ahead log - then opens and counts it before believing it.

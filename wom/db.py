@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
     player_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     captured_at TEXT NOT NULL,                    -- snapshot createdAt, ISO UTC
     fetched_at  TEXT NOT NULL,
+    origin      TEXT,                             -- poll | archive; see save_snapshot
     payload     TEXT NOT NULL,                    -- raw snapshot data as JSON
     UNIQUE (player_id, captured_at)
 );
@@ -156,6 +157,11 @@ CREATE TABLE IF NOT EXISTS runs (
 
 _VALUE_KEYS = ("experience", "kills", "score", "value")
 
+# A reading Wise Old Man made this recently was made because we asked. Beyond
+# it, the reading already existed and we are only now collecting it - which is
+# a moment we could never have observed ourselves. See save_snapshot.
+FRESH_SECONDS = 60
+
 # How long two identical reports from one account are treated as one event.
 # See record_session_event.
 SESSION_DEDUPE_SECONDS = 300
@@ -211,6 +217,31 @@ class Database:
 
         self._drop_ungrouped_recaps(conn)
         self._widen_logins_to_sessions(conn)
+        self._label_snapshot_origins(conn)
+
+    def _label_snapshot_origins(self, conn):
+        """Fill in `origin` for readings stored before it was recorded.
+
+        The two timestamps needed were already there, so this is exact rather
+        than a guess - which is the only reason the column can be added after
+        the fact at all.
+        """
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(snapshots)")}
+        if "origin" not in columns:
+            with conn:
+                conn.execute("ALTER TABLE snapshots ADD COLUMN origin TEXT")
+        pending = conn.execute(
+            "SELECT COUNT(*) AS n FROM snapshots WHERE origin IS NULL").fetchone()["n"]
+        if not pending:
+            return
+        with conn:
+            conn.execute(
+                "UPDATE snapshots SET origin = CASE"
+                "  WHEN (julianday(replace(fetched_at,'Z','')) -"
+                "        julianday(replace(captured_at,'Z',''))) * 86400.0 <= ?"
+                "  THEN 'poll' ELSE 'archive' END"
+                " WHERE origin IS NULL", (FRESH_SECONDS,))
+        log.info("labelled the origin of %d stored readings", pending)
 
     def _widen_logins_to_sessions(self, conn):
         """Fold the login-only table into one that holds logouts as well.
@@ -381,15 +412,29 @@ class Database:
         return pid
 
     def save_snapshot(self, player_id, snapshot):
-        """Insert one snapshot and its flattened metrics; ignores duplicates."""
+        """Insert one snapshot and its flattened metrics; ignores duplicates.
+
+        Records where the reading came from, which is not something that can
+        be worked out later. Our update pass asks Wise Old Man to read the
+        hiscores, so a reading stamped a moment before we stored it is one we
+        caused - `poll`. A reading stamped well before that already existed
+        when we asked: Wise Old Man made it for somebody else, most often a
+        player's own client pushing on logout, and it marks a moment we could
+        never have observed on our ten minute rhythm - `archive`.
+
+        Compaction keeps the second kind and thins the first, because one is
+        reproducible by asking again tomorrow and the other is gone for good.
+        """
         captured_at = snapshot.get("createdAt") or _utcnow()
         data = snapshot.get("data") or {}
+        fetched_at = _utcnow()
         conn = self.connect()
         with conn:
             cur = conn.execute(
-                "INSERT OR IGNORE INTO snapshots (player_id, captured_at, fetched_at, payload)"
-                " VALUES (?,?,?,?)",
-                (player_id, captured_at, _utcnow(), json.dumps(data)),
+                "INSERT OR IGNORE INTO snapshots (player_id, captured_at, fetched_at,"
+                " origin, payload) VALUES (?,?,?,?,?)",
+                (player_id, captured_at, fetched_at,
+                 _origin(captured_at, fetched_at), json.dumps(data)),
             )
             if cur.rowcount == 0:
                 return None  # already stored
@@ -694,6 +739,7 @@ class Database:
         total = self.query_one("SELECT COUNT(*) AS n FROM snapshots")["n"]
         doomed = self.query_one(
             "SELECT COUNT(*) AS n FROM snapshots WHERE captured_at < ?"
+            " AND COALESCE(origin,'poll') <> 'archive'"
             " AND id NOT IN (SELECT id FROM ("
             "     SELECT id, MAX(captured_at) FROM snapshots WHERE captured_at < ?"
             "     GROUP BY player_id, substr(captured_at, 1, 10)))",
@@ -706,7 +752,17 @@ class Database:
 
         Four-plus readings a day is the right resolution for recent gains, and
         far more than a month-wide chart can draw. Everything inside the recent
-        window is left alone; beyond it only each day's last snapshot survives.
+        window is left alone; beyond it each day's last snapshot survives - and
+        so does every reading marked `archive`, whatever day it falls on.
+
+        That exception is the point of the origin column. A reading we made by
+        polling can be made again by polling tomorrow, so thinning it costs a
+        detail. An archive reading is a moment Wise Old Man recorded without
+        us - a player's client pushing on logout, most often - and it is the
+        only evidence of when a session ended. Thin it and the timestamp is
+        gone for good. They are also rare enough to be nearly free: 287 of
+        2,470 readings on the live database, and they carry 280 of the 425
+        experience changes in it.
         Each day's *last* reading is the one kept - matching what a daily
         chart point shows. It cannot be picked by highest id: history is
         imported newest-first, so within an imported day the largest id is the
@@ -726,6 +782,7 @@ class Database:
         with conn:
             cur = conn.execute(
                 "DELETE FROM snapshots WHERE captured_at < ?"
+                " AND COALESCE(origin,'poll') <> 'archive'"
                 " AND id NOT IN (SELECT id FROM ("
                 "     SELECT id, MAX(captured_at) FROM snapshots WHERE captured_at < ?"
                 "     GROUP BY player_id, substr(captured_at, 1, 10)))",
@@ -737,7 +794,10 @@ class Database:
                 "   SELECT MAX(x.captured_at) FROM metrics x"
                 "    WHERE x.player_id=metrics.player_id AND x.kind=metrics.kind"
                 "      AND x.metric=metrics.metric AND x.captured_at < ?"
-                "    GROUP BY substr(x.captured_at, 1, 10))",
+                "    GROUP BY substr(x.captured_at, 1, 10))"
+                " AND NOT EXISTS (SELECT 1 FROM snapshots s"
+                "   WHERE s.player_id=metrics.player_id"
+                "     AND s.captured_at=metrics.captured_at)",
                 (cutoff, cutoff))
         # VACUUM cannot run inside a transaction, and in WAL mode its result
         # has to be checkpointed or the file never actually shrinks.
@@ -1065,6 +1125,14 @@ def _num(value):
 
 def _utcnow():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _origin(captured_at, fetched_at):
+    """`poll` if our own request produced this reading, else `archive`."""
+    made, got = parse_api_time(captured_at), parse_api_time(fetched_at)
+    if made is None or got is None:
+        return None
+    return "poll" if (got - made).total_seconds() <= FRESH_SECONDS else "archive"
 
 
 def _seconds_before(stamp, seconds):

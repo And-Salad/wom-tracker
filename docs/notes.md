@@ -362,7 +362,16 @@ an hour, then train.
 
 ### Before any of this is used
 
-`compact_snapshots` thins beyond 30 days to one reading a day, which discards
-the off-grid logout stamps described above along with the intra-day precision
-they carry. The `logins` table is not compacted, but the other half of the pair
-is. That wants deciding before session attribution is built on either.
+`compact_snapshots` thins beyond 30 days to one reading a day, which used to
+discard every reading Wise Old Man had taken without us - the ones that record
+a moment our ten minute rhythm could never have caught. It now keeps them, and
+which kind a reading is stopped being an inference: `snapshots.origin` records
+it as the reading is stored, from whether the stamp Wise Old Man gave it was a
+moment before or well before we collected it.
+
+Note what that correction cost. The phase test above tells you a reading was
+not taken on our rhythm; it does not tell you who took it. Most of the readings
+it flags are imported history, which is why so many of them carry a change -
+Wise Old Man only makes a snapshot when something moved, so an archive of them
+is a list of changes by construction. `origin` answers the question the phase
+test only appeared to.
