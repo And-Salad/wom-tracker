@@ -1,16 +1,18 @@
 """Shared fixtures.
 
-Every test runs against a throwaway data directory. This has to be set before
-anything imports wom.config, which reads WOM_DATA_DIR once at import time to
-work out where the database, the config and the prompts live - so it happens
-here, at the top of the first file pytest loads.
+Every test gets a data directory of its own. That directory is where the
+database, the config, the prompts and the gallery all live, so pointing
+WOM_DATA_DIR at a fresh one per test isolates the lot in a single move -
+see the `data_dir` fixture below for why that used not to be possible.
 """
 
 import os
 import tempfile
 
-_SANDBOX = tempfile.mkdtemp(prefix="wom-tests-")
-os.environ["WOM_DATA_DIR"] = _SANDBOX
+# A floor, not the isolation: WOM_DATA_DIR is set again per test. This is here
+# so that anything constructed at import time - a stray module-level Config,
+# a collection error - still cannot reach a real installation's data.
+os.environ["WOM_DATA_DIR"] = tempfile.mkdtemp(prefix="wom-tests-")
 os.environ.setdefault("WOM_ADMIN_PASSWORD", "test-password")
 os.environ.setdefault("WOM_SECRET_KEY", "test-key")
 os.environ.setdefault("WOM_INSECURE_COOKIE", "1")
@@ -53,6 +55,29 @@ def as_polled(db):
         conn.execute("UPDATE snapshots SET origin='poll'")
 
 
+@pytest.fixture(autouse=True)
+def data_dir(tmp_path, monkeypatch):
+    """A data directory per test: its config, its prompts, its database.
+
+    Autouse, and every test gets its own, because the alternative was one
+    directory for the whole session. The app reads its settings through
+    `Config()` on each request, so a test that posted to /admin/settings wrote
+    into a file the next test would read - and the suite passed only because
+    the handful of tests that changed a setting remembered to put it back in a
+    `finally`. One failure part-way through such a test left the setting
+    changed for everything that ran after it, which is an order-dependent
+    suite waiting to happen rather than an isolated one.
+
+    The fixture that was supposed to prevent this monkeypatched a name -
+    `CONFIG_PATH_FOR_TESTS` - that existed nowhere in the source, with
+    `raising=False`, so it had never done anything at all.
+    """
+    folder = tmp_path / "data"
+    folder.mkdir()
+    monkeypatch.setenv("WOM_DATA_DIR", str(folder))
+    return folder
+
+
 @pytest.fixture
 def db(tmp_path):
     """An empty database, per test."""
@@ -73,17 +98,16 @@ def config(tmp_path):
 
 
 @pytest.fixture
-def app(tmp_path, monkeypatch):
-    """The Flask app, pointed at a database of its own."""
-    from wom.web import app as web_app
+def app(data_dir):
+    """The Flask app, on this test's own data directory.
 
-    database = Database(str(tmp_path / "web.db"))
-    monkeypatch.setattr(web_app, "Database", lambda _path: database)
-    monkeypatch.setattr(web_app, "CONFIG_PATH_FOR_TESTS", str(tmp_path / "c.json"),
-                        raising=False)
-    application = web_app.create_app()
+    Nothing is patched: the app finds its database and its settings under
+    WOM_DATA_DIR the same way it does when it is really running.
+    """
+    from wom.web import create_app
+
+    application = create_app()
     application.config["TESTING"] = True
-    application.config["DATABASE"] = database
     return application
 
 
@@ -96,6 +120,22 @@ def client(app):
 def signed_in(client):
     client.post("/admin/login", data={"password": "test-password"})
     return client
+
+
+@pytest.fixture(autouse=True)
+def _forget_cached_zone():
+    """Nobody inherits the time zone a previous test configured.
+
+    zone() resolves the setting once and remembers it in a module global, so
+    that a running server does not re-read a file on every date it formats.
+    That cache outlives a test even now each test has a config file of its
+    own, which is how a test that set Australia/Perth moved the day
+    boundaries under every calendar test that ran after it.
+    """
+    from wom import scheduler
+    scheduler.forget_zone()
+    yield
+    scheduler.forget_zone()
 
 
 @pytest.fixture(autouse=True)

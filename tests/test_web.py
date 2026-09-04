@@ -109,40 +109,30 @@ def test_the_time_zone_is_a_setting_and_is_checked_before_it_is_stored(signed_in
     from wom.config import Config
     seed(app)
     form = {"usernames": "zezima", "summary_model": "claude-sonnet-5"}
-    was = Config().get("timezone")
-    try:
-        signed_in.post("/admin/settings", data=dict(form, timezone="Australia/Perth"))
-        assert Config().get("timezone") == "Australia/Perth"
-        assert scheduler.zone().key == "Australia/Perth", "and takes effect at once"
+    signed_in.post("/admin/settings", data=dict(form, timezone="Australia/Perth"))
+    assert Config().get("timezone") == "Australia/Perth"
+    assert scheduler.zone().key == "Australia/Perth", "and takes effect at once"
 
-        page = signed_in.post("/admin/settings",
-                              data=dict(form, timezone="Mars/Olympus_Mons"),
-                              follow_redirects=True)
-        assert "not a time zone" in page.get_data(as_text=True)
-        assert Config().get("timezone") == "Australia/Perth", "the good one stands"
+    page = signed_in.post("/admin/settings",
+                          data=dict(form, timezone="Mars/Olympus_Mons"),
+                          follow_redirects=True)
+    assert "not a time zone" in page.get_data(as_text=True)
+    assert Config().get("timezone") == "Australia/Perth", "the good one stands"
 
-        # And the day boundaries follow it: Perth is far enough east that its
-        # midnight is the previous afternoon in UTC.
-        from datetime import datetime, timezone as utc
-        window = periods.latest_window("day",
-                                       datetime(2026, 9, 1, 12, tzinfo=utc.utc))
-        assert window.start.utcoffset().total_seconds() == 8 * 3600
-    finally:
-        # One settings file for the whole run, and one cached zone behind it.
-        settings = Config()
-        settings["timezone"] = was
-        settings.save()
-        scheduler.forget_zone()
+    # And the day boundaries follow it: Perth is far enough east that its
+    # midnight is the previous afternoon in UTC.
+    from datetime import datetime, timezone as utc
+    window = periods.latest_window("day",
+                                   datetime(2026, 9, 1, 12, tzinfo=utc.utc))
+    assert window.start.utcoffset().total_seconds() == 8 * 3600
 
 
-def test_admin_disappears_entirely_without_a_password(monkeypatch, tmp_path):
+def test_admin_disappears_entirely_without_a_password(monkeypatch):
     """Fail closed: no password must mean no routes, not open ones."""
-    from wom.db import Database
-    from wom.web import app as web_app
+    from wom.web import create_app
 
     monkeypatch.delenv("WOM_ADMIN_PASSWORD", raising=False)
-    monkeypatch.setattr(web_app, "Database", lambda _p: Database(str(tmp_path / "x.db")))
-    application = web_app.create_app()
+    application = create_app()
     assert application.config["ADMIN"] is False
     with application.test_client() as bare:
         assert bare.get("/admin").status_code == 404
@@ -1305,8 +1295,21 @@ def test_wins_are_split_by_how_the_day_was_taken(app):
 
 def _prompt_files():
     """Every prompt file currently on disk, by name."""
-    from wom.config import DATA_DIR
-    return {name for name in os.listdir(DATA_DIR) if name.endswith(".txt")}
+    from wom.config import data_dir
+    return {name for name in os.listdir(data_dir()) if name.endswith(".txt")}
+
+
+def _base_prompt(kind="player"):
+    """The base prompt file, brought into being the way the app brings it.
+
+    It is written from the built-in default on first use rather than shipped,
+    so a test that only reads it has to ask for it first. These tests used to
+    find it already there, left by whichever earlier test had happened to open
+    the prompts page - which is not a thing a test may rely on.
+    """
+    from wom import summaries as core
+    core.load_prompt(kind=kind)
+    return core.base_prompt_path(kind=kind)
 
 
 def test_every_prompt_that_drives_a_round_up_can_be_edited(signed_in, app):
@@ -1347,7 +1350,7 @@ def test_saving_an_override_writes_that_period_not_the_base(signed_in, app):
     """prompt_path answers "which file would be used", which falls back to the
     base - so saving through it would silently overwrite the base prompt."""
     from wom import summaries as core
-    base = core.base_prompt_path(kind="player")
+    base = _base_prompt("player")
     with open(base, "r", encoding="utf-8") as handle:
         before = handle.read()
     override = core.period_prompt_path("quarter", kind="player")
@@ -1384,8 +1387,7 @@ def test_an_override_can_be_seeded_and_then_removed(signed_in, app):
 
 def test_a_prompt_cannot_be_saved_empty(signed_in, app):
     """An empty system prompt is not an edit, it is a broken round-up."""
-    from wom import summaries as core
-    base = core.base_prompt_path(kind="player")
+    base = _base_prompt("player")
     with open(base, "r", encoding="utf-8") as handle:
         before = handle.read()
     signed_in.post("/admin/prompts", data={"kind": "player", "text": "   "})
