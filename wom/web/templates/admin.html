@@ -200,8 +200,8 @@
     </p>
     <div class="scroll">
       <table>
-        <tr><th>Player</th><th>Webhook URL</th><th class="num">Events</th>
-          <th>Last seen</th><th></th></tr>
+        <tr><th>Player</th><th>Webhook URL</th><th>Status</th>
+          <th class="num">Events</th><th>Last seen</th><th></th></tr>
         {% for player in roster %}
           <tr>
             <td>{{ player.display_name }}</td>
@@ -217,10 +217,22 @@
                 <span class="dim">none issued</span>
               {% endif %}
             </td>
+            <td>
+              {% if player.state.label %}
+                <span class="state {{ player.state.label | replace(' ', '-') }}"
+                  >{{ player.state.label }}</span>
+                {% if player.state.world %}
+                  <span class="dim">world {{ player.state.world }}</span>
+                {% endif %}
+                {% if player.state.note %}
+                  <br><span class="dim">{{ player.state.note }}</span>
+                {% endif %}
+              {% else %}<span class="dim">-</span>{% endif %}
+            </td>
             <td class="num">{{ player.events }}</td>
             <td class="dim">
               {% if player.last_seen %}
-                {{ player.last_kind }} {{ player.last_seen }} ({{ player.last_ago }})
+                {{ player.last_seen }} ({{ player.last_ago }})
                 {% if player.last_exp %}<br>{{ player.last_exp }} xp{% endif %}
               {% else %}-{% endif %}
             </td>

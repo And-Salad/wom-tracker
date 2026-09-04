@@ -276,8 +276,11 @@ session resolved from arrival would be shortened by however long the retry
 took. A client clock more than thirty minutes from ours is not believed - the
 payload is the one part of that request nobody had to prove.
 
-Issue and revoke a player's URL from the admin page, which also shows when we
-last heard from them. It must be the **https** one the page prints: waitress
+Issue and revoke a player's URL from the admin page, which also shows whether
+each account is in game, which world, and when we last heard from them. That
+status is inferred from the last event and is only ever as good as the last
+thing Dink managed to send - a client that crashed sent no logout, so a login
+older than a session could be stops claiming they are still playing. It must be the **https** one the page prints: waitress
 strips `X-Forwarded-Proto`, so the app cannot tell how it was reached and the
 URL is built as https for any non-local host rather than read off the request.
 An http URL is redirected, okhttp turns the redirected POST into a GET, and the

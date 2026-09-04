@@ -474,3 +474,48 @@ def test_an_unknown_token_is_a_miss_whatever_the_method(client):
     """The scheme hint is for people we know; a stranger learns nothing."""
     assert client.get("/hook/dink/whatever").status_code == 404
     assert client.put("/hook/dink/whatever").status_code == 405
+
+
+# -- what the admin page says about who is playing ------------------------
+
+def _state(kind, minutes_ago, world=302):
+    from datetime import datetime, timedelta, timezone
+    from wom.web.admin import session_state
+    when = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    return session_state({"kind": kind, "world": world,
+                          "happened_at": when.strftime("%Y-%m-%dT%H:%M:%S.%fZ")})
+
+
+def test_a_recent_login_reads_as_in_game_with_the_world():
+    state = _state("login", 5)
+    assert state["label"] == "in game"
+    assert state["world"] == 302
+    assert state["note"] == ""
+
+
+def test_a_logout_reads_as_logged_out_and_names_no_world():
+    """Where they were when they left is not where they are."""
+    state = _state("logout", 5)
+    assert state["label"] == "logged out"
+    assert state["world"] is None
+
+
+def test_a_login_nobody_ever_closed_stops_claiming_they_are_playing():
+    """A client that crashed sent no logout, and this would otherwise show
+    that account in game forever."""
+    state = _state("login", 60 * 20)
+    assert state["label"] == "logged in"
+    assert state["note"] == "no logout since"
+
+
+def test_an_account_we_have_heard_nothing_from_says_nothing():
+    from wom.web.admin import session_state
+    assert session_state(None)["label"] == ""
+
+
+def test_the_admin_page_shows_who_is_in_game(signed_in, app):
+    url = issue(signed_in)
+    signed_in.post(url, json=body(world=451))
+    section = signed_in.get("/admin").get_data(as_text=True).split("Session logins")[1]
+    assert "in game" in section
+    assert "world 451" in section

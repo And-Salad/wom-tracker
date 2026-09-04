@@ -12,6 +12,7 @@ import logging
 import os
 import secrets
 import time
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import (Blueprint, current_app, flash, redirect, render_template,
@@ -21,7 +22,8 @@ from .. import periods, scheduler, summaries as core
 from ..colors import normalise, player_color, set_player_color
 from ..config import Config, ENV_KEYS, normalise_usernames
 from ..summaries import SUMMARY_EFFORTS, SUMMARY_MODELS
-from ..util import fmt_ago, fmt_datetime, fmt_int
+from ..sessions import MAX_SESSION_HOURS
+from ..util import fmt_ago, fmt_datetime, fmt_int, parse_api_time
 from .hooks import public_url
 from .limits import client_address
 
@@ -141,7 +143,7 @@ def settings():
             "url": public_url(tokens[name.lower()])
                    if tokens.get(name.lower()) else "",
             "events": database.session_event_count(name.lower()),
-            "last_kind": seen["kind"] if seen is not None else "",
+            "state": session_state(seen),
             "last_seen": fmt_datetime(seen["happened_at"]) if seen is not None else None,
             "last_ago": fmt_ago(seen["happened_at"]) if seen is not None else "",
             "last_exp": fmt_int(seen["total_exp"], dash="") if seen is not None else "",
@@ -224,6 +226,28 @@ def save_colour():
         set_player_color(config, username, colour)
         flash("Recoloured {}.".format(username))
     return redirect(url_for("admin.settings"))
+
+
+def session_state(event, now=None):
+    """Whether a player is in game, as far as the plugin has told us.
+
+    Inferred from the last event and nothing else, so it is only ever as good
+    as the last thing Dink managed to send. A client that crashed sent no
+    logout, and this would otherwise show that account as playing forever -
+    hence the age check, using the same ceiling sessions.py puts on a login
+    it never saw closed.
+    """
+    if event is None:
+        return {"label": "", "world": None, "note": ""}
+    when = parse_api_time(event["happened_at"])
+    old = when is None or (now or datetime.now(timezone.utc)) - when > timedelta(
+        hours=MAX_SESSION_HOURS)
+    if event["kind"] != "login":
+        return {"label": "logged out", "world": None, "note": ""}
+    if old:
+        return {"label": "logged in", "world": event["world"],
+                "note": "no logout since"}
+    return {"label": "in game", "world": event["world"], "note": ""}
 
 
 @admin.route("/admin/dink", methods=["POST"])
