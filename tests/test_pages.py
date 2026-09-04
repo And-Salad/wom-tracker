@@ -55,6 +55,22 @@ def test_responses_are_hardened(client):
         "script-src")[1].split(";")[0], "inline script must stay forbidden"
 
 
+def test_the_old_round_ups_address_keeps_the_whole_sidebar(client, app):
+    """The tab was renamed; a bookmark of the old one should not lose the ticks.
+
+    `**request.args` reads a MultiDict one value per key, so a link naming
+    four players arrived at the new address naming the first of them - the
+    redirect that exists to preserve a link quietly narrowing it.
+    """
+    seed(app)
+    response = client.get("/summaries?player=zezima&player=other&period=Week")
+    assert response.status_code == 301
+    landed = response.headers["Location"]
+    assert landed.startswith("/recaps")
+    assert "player=zezima" in landed and "player=other" in landed
+    assert "period=Week" in landed
+
+
 def test_every_tab_but_the_calendar_ones_carries_the_window_controls(client, app):
     seed(app)
     for path in ("/", "/milestones", "/players", "/export"):
