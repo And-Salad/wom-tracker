@@ -137,7 +137,7 @@ def events_for(database, username, since, until):
     to run.
     """
     rows = database.session_events(username, since=since, until=until)
-    return [(row["kind"], parse_api_time(row["received_at"])) for row in rows]
+    return [(row["kind"], parse_api_time(row["happened_at"])) for row in rows]
 
 
 def boundary_in(span, zone):

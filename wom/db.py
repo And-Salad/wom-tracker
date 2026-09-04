@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS session_events (
     player_id   INTEGER,                          -- NULL until the account is known
     kind        TEXT NOT NULL,                    -- login | logout
     received_at TEXT NOT NULL,                    -- when the POST reached us, ISO UTC
+    happened_at TEXT NOT NULL,                    -- when the client says it happened
     world       INTEGER,                          -- login only
     total_exp   REAL,                             -- login only: totalExperience, live
     total_level INTEGER,                          -- login only
@@ -141,7 +142,7 @@ CREATE TABLE IF NOT EXISTS session_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_session_events_who
-    ON session_events (username, received_at DESC);
+    ON session_events (username, happened_at DESC);
 
 CREATE TABLE IF NOT EXISTS runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -218,6 +219,25 @@ class Database:
         self._drop_ungrouped_recaps(conn)
         self._widen_logins_to_sessions(conn)
         self._label_snapshot_origins(conn)
+        self._add_event_happened_at(conn)
+
+    def _add_event_happened_at(self, conn):
+        """Separate when an event happened from when it reached us.
+
+        Dink retries a delivery it could not make, so arrival time can be
+        minutes past the moment - and the moment is what session attribution
+        measures. Rows stored before the distinction existed are within a
+        second of each other, so they take their arrival time.
+        """
+        columns = {row["name"] for row in conn.execute(
+            "PRAGMA table_info(session_events)")}
+        if not columns or "happened_at" in columns:
+            return
+        with conn:
+            conn.execute("ALTER TABLE session_events ADD COLUMN happened_at TEXT")
+            conn.execute("UPDATE session_events SET happened_at=received_at"
+                         " WHERE happened_at IS NULL")
+        log.info("session events gained a happened_at")
 
     def _label_snapshot_origins(self, conn):
         """Fill in `origin` for readings stored before it was recorded.
@@ -258,9 +278,10 @@ class Database:
         with conn:
             conn.execute(
                 "INSERT INTO session_events (username, player_id, kind,"
-                " received_at, world, total_exp, total_level, collections, payload)"
-                " SELECT username, player_id, 'login', received_at, world,"
-                " total_exp, total_level, collections, payload FROM logins")
+                " received_at, happened_at, world, total_exp, total_level,"
+                " collections, payload)"
+                " SELECT username, player_id, 'login', received_at, received_at,"
+                " world, total_exp, total_level, collections, payload FROM logins")
             conn.execute("DROP TABLE logins")
         log.info("migrated the logins table into session_events")
 
@@ -581,6 +602,7 @@ class Database:
         return cur.rowcount
 
     def record_session_event(self, username, kind, reading, payload, when=None,
+                             happened_at=None,
                              dedupe_seconds=SESSION_DEDUPE_SECONDS):
         """Store one login or logout. Returns its row id, or None if a repeat.
 
@@ -596,6 +618,7 @@ class Database:
         session would be attributed real gains.
         """
         stamp = when or _utcnow()
+        happened = happened_at or stamp
         conn = self.connect()
         exp = reading.get("total_exp")
         cutoff = _seconds_before(stamp, dedupe_seconds)
@@ -613,10 +636,10 @@ class Database:
         with conn:
             cur = conn.execute(
                 "INSERT INTO session_events (username, player_id, kind,"
-                " received_at, world, total_exp, total_level, collections, payload)"
-                " VALUES (?,?,?,?,?,?,?,?,?)",
+                " received_at, happened_at, world, total_exp, total_level,"
+                " collections, payload) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (username, row["id"] if row is not None else None, kind, stamp,
-                 reading.get("world"), exp, reading.get("total_level"),
+                 happened, reading.get("world"), exp, reading.get("total_level"),
                  reading.get("collections"), json.dumps(payload)))
         return cur.lastrowid
 
@@ -632,20 +655,20 @@ class Database:
             clauses.append("kind=?")
             params.append(kind)
         if since:
-            clauses.append("received_at>=?")
+            clauses.append("happened_at>=?")
             params.append(since)
         if until:
-            clauses.append("received_at<=?")
+            clauses.append("happened_at<=?")
             params.append(until)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        return self.query(sql + " ORDER BY received_at DESC LIMIT ?",
+        return self.query(sql + " ORDER BY happened_at DESC LIMIT ?",
                           params + [limit])
 
     def last_session_event(self, username):
         return self.query_one(
             "SELECT * FROM session_events WHERE username=?"
-            " ORDER BY received_at DESC LIMIT 1", (username,))
+            " ORDER BY happened_at DESC LIMIT 1", (username,))
 
     def session_event_count(self, username):
         row = self.query_one(

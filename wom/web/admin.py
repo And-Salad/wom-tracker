@@ -142,8 +142,8 @@ def settings():
                    if tokens.get(name.lower()) else "",
             "events": database.session_event_count(name.lower()),
             "last_kind": seen["kind"] if seen is not None else "",
-            "last_seen": fmt_datetime(seen["received_at"]) if seen is not None else None,
-            "last_ago": fmt_ago(seen["received_at"]) if seen is not None else "",
+            "last_seen": fmt_datetime(seen["happened_at"]) if seen is not None else None,
+            "last_ago": fmt_ago(seen["happened_at"]) if seen is not None else "",
             "last_exp": fmt_int(seen["total_exp"], dash="") if seen is not None else "",
         })
     tripwire = current_app.config["LIMITS"].api_tripwire

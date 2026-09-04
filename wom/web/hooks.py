@@ -26,11 +26,12 @@ and one that leaks is revoked on its own.
 import hmac
 import json
 import logging
+from datetime import datetime, timezone
 
 from flask import Blueprint, Response, current_app, request
 
 from ..config import Config
-from ..util import is_local_host
+from ..util import api_stamp, is_local_host, parse_api_time
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +56,12 @@ KINDS = {"LOGIN": "login", "LOGOUT": "logout"}
 # and which clan they are in. Dropped as the body is read rather than stored
 # and ignored, so they are never written down at all.
 UNWANTED = ("discordUser", "clanName", "groupIronClanName", "dinkAccountHash")
+
+# How far the client's own clock may sit from ours before we stop believing
+# it. Retries are the reason to prefer the client's timestamp at all, and they
+# are minutes at most; past this it is a broken clock or a made-up one, and
+# the payload is the one part of this request nobody had to prove.
+CLOCK_SLACK_SECONDS = 30 * 60
 
 
 def public_url(token):
@@ -140,9 +147,10 @@ def dink(token):
 
     kept = {key: value for key, value in body.items() if key not in UNWANTED}
     extra = kept.get("extra")
-    reading = _reading(extra if isinstance(extra, dict) else {})
+    reading = _reading(kept, extra if isinstance(extra, dict) else {})
     database = current_app.config["DATABASE"]
-    row_id = database.record_session_event(username, kind, reading, kept)
+    row_id = database.record_session_event(username, kind, reading, kept,
+                                           happened_at=_happened_at(kept))
     if row_id is None:
         log.info("dink: repeat %s from %s, ignored", kind, username)
     else:
@@ -214,12 +222,41 @@ def _body():
         return None, False
 
 
-def _reading(extra):
-    """The few numbers worth their own columns. The rest stays in the payload."""
+def _happened_at(body, now=None):
+    """When the client says this happened, or None to use the arrival time.
+
+    Dink stamps each event in its embed and retries a delivery it could not
+    make, so arrival time can be minutes past the moment - and the moment is
+    what a session is measured between. The client's clock is only trusted
+    within CLOCK_SLACK_SECONDS of ours: the payload is the one part of this
+    request nobody had to prove, and a session placed by a wrong clock would
+    move real experience onto the wrong day.
+    """
+    arrived = now or datetime.now(timezone.utc)
+    embeds = body.get("embeds")
+    stamp = embeds[0].get("timestamp") if (
+        isinstance(embeds, list) and embeds and isinstance(embeds[0], dict)) else None
+    said = parse_api_time(stamp) if stamp else None
+    if said is None:
+        return None
+    if abs((said - arrived).total_seconds()) > CLOCK_SLACK_SECONDS:
+        log.warning("dink: ignoring a client timestamp %s, %.0f minutes from now",
+                    stamp, (said - arrived).total_seconds() / 60)
+        return None
+    return api_stamp(said)
+
+
+def _reading(body, extra):
+    """The few numbers worth their own columns. The rest stays in the payload.
+
+    `world` is read from the body as well as from `extra`: a login carries it
+    in both, a logout only at the top level, and reading only the second threw
+    away the world every logout was telling us.
+    """
     skills = extra.get("skills") if isinstance(extra.get("skills"), dict) else {}
     clog = extra.get("collectionLog")
     return {
-        "world": _int(extra.get("world")),
+        "world": _int(extra.get("world")) or _int(body.get("world")),
         "total_exp": _float(skills.get("totalExperience")),
         "total_level": _int(skills.get("totalLevel")),
         "collections": _int(clog.get("completed")) if isinstance(clog, dict) else None,

@@ -155,6 +155,18 @@ def test_events_are_read_back_in_a_shape_resolve_accepts(db):
     assert span.measured
 
 
+def test_a_retried_delivery_is_placed_when_it_happened(db):
+    """Dink retries what it could not deliver. A session resolved from the
+    arrival time would then be shortened by however long the retry took."""
+    from wom.sessions import events_for
+    db.record_session_event("zezima", "login", {"total_exp": None}, {},
+                            when="2026-09-03T19:40:00.000000Z",
+                            happened_at="2026-09-03T19:00:00.000000Z")
+    events = events_for(db, "zezima", "2026-09-03T00:00:00.000Z",
+                        "2026-09-04T00:00:00.000Z")
+    assert events == [("login", at(19))], "the moment, not the arrival"
+
+
 def test_events_outside_the_window_are_not_read(db):
     from wom.sessions import events_for
     db.record_session_event("zezima", "login", {"total_exp": None}, {},

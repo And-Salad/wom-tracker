@@ -297,6 +297,48 @@ def test_a_logout_does_not_hide_a_login_with_no_numbers(signed_in, app):
     assert len(app.config["DATABASE"].session_events("zezima")) == 2
 
 
+def test_a_logout_keeps_the_world_it_reported(signed_in, app):
+    """A logout puts world at the top level, not in extra. Reading only extra
+    threw away the world every logout was telling us."""
+    url = issue(signed_in)
+    signed_in.post(url, json={"type": "LOGOUT", "playerName": "Zezima",
+                              "world": 302})
+    assert app.config["DATABASE"].session_events("zezima")[0]["world"] == 302
+
+
+def test_the_moment_comes_from_the_client_not_from_arrival(signed_in, app):
+    """Dink retries what it could not deliver, so arrival can be minutes past
+    the moment - and the moment is what a session is measured between."""
+    from datetime import datetime, timedelta, timezone
+    said = (datetime.now(timezone.utc) - timedelta(minutes=4))
+    stamp = said.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    url = issue(signed_in)
+    signed_in.post(url, json=body(embeds=[{"timestamp": stamp}]))
+    row = app.config["DATABASE"].session_events("zezima")[0]
+    assert row["happened_at"][:16] == stamp[:16], "the client's moment"
+    assert row["received_at"] > row["happened_at"], "arrival is still recorded"
+
+
+def test_a_client_clock_far_from_ours_is_not_believed(signed_in, app):
+    """A session placed by a wrong clock moves real experience onto the wrong
+    day, and the payload is the one part of this request nobody had to prove."""
+    from datetime import datetime, timedelta, timezone
+    said = (datetime.now(timezone.utc) - timedelta(days=3))
+    url = issue(signed_in)
+    signed_in.post(url, json=body(embeds=[{
+        "timestamp": said.strftime("%Y-%m-%dT%H:%M:%S.%fZ")}]))
+    row = app.config["DATABASE"].session_events("zezima")[0]
+    assert row["happened_at"] == row["received_at"], "fell back to arrival"
+
+
+def test_a_missing_or_broken_embed_falls_back_to_arrival(signed_in, app):
+    url = issue(signed_in)
+    signed_in.post(url, json=body(embeds=[{"timestamp": "not a date"}]))
+    signed_in.post(url, json=body(exp=222, embeds="nonsense"))
+    for row in app.config["DATABASE"].session_events("zezima"):
+        assert row["happened_at"] == row["received_at"]
+
+
 # -- what it refuses ------------------------------------------------------
 
 def test_an_unreadable_body_is_refused(signed_in, app):

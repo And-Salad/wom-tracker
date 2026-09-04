@@ -269,6 +269,13 @@ little was gained, where the hiscore route says nothing under 10,000 experience.
 Setting that one field is all a player has to do; the Discord webhook box beside
 it can stay empty.
 
+Each event is stored twice over in time: `received_at` is when the POST reached
+us, `happened_at` is the moment Dink stamped it with. Attribution measures
+between the second, because Dink retries a delivery it could not make and a
+session resolved from arrival would be shortened by however long the retry
+took. A client clock more than thirty minutes from ours is not believed - the
+payload is the one part of that request nobody had to prove.
+
 Issue and revoke a player's URL from the admin page, which also shows when we
 last heard from them. It must be the **https** one the page prints: waitress
 strips `X-Forwarded-Proto`, so the app cannot tell how it was reached and the
