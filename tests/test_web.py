@@ -17,11 +17,24 @@ def seed(app):
     return database
 
 
+def section(page, board):
+    """One board's half of the leaderboards page.
+
+    Both are rendered whichever is on screen, so anything asserted about one
+    of them has to be looked for inside its own section or the other board
+    answers for it.
+    """
+    start = page.index('data-board="{}"'.format(board))
+    end = page.find("<section", start)
+    return page[start:end if end != -1 else len(page)]
+
+
 # -- what anyone may see --------------------------------------------------
 
 def test_public_pages_render(client, app):
     seed(app)
-    for path in ("/", "/maxing", "/milestones", "/recaps", "/players", "/export"):
+    for path in ("/", "/leaderboards", "/milestones", "/recaps",
+                 "/players", "/export"):
         assert client.get(path).status_code == 200, path
 
 
@@ -624,7 +637,7 @@ def test_every_tab_but_the_calendar_ones_carries_the_window_controls(client, app
             assert control in body, "{} is missing {}".format(path, control)
     # Recaps and the leaderboard run on calendar windows, so a date range
     # means nothing on either - and a control that cannot work is not shown.
-    for path in ("/recaps", "/maxing"):
+    for path in ("/recaps", "/leaderboards"):
         body = client.get(path).get_data(as_text=True)
         assert 'id="all-none"' in body, "{}: the ticks still apply".format(path)
         assert 'id="from"' not in body, path
@@ -722,7 +735,7 @@ def test_a_bad_date_is_refused_on_a_page_not_a_500(client, app):
     query string used to reach Flask as an unhandled exception."""
     seed(app)
     for path in ("/", "/players", "/export", "/milestones", "/recaps",
-                 "/maxing"):
+                 "/leaderboards"):
         response = client.get(path + "?from=notadate")
         assert response.status_code == 400, path
         assert b"not a date" in response.data
@@ -765,7 +778,8 @@ def test_recaps_ticks_reload_the_page_rather_than_doing_nothing(client, app):
     # Maxing has nothing to reload: the calendar and the standings ignore the
     # ticks entirely, and the one thing that honours them - the chart - fetches
     # its own JSON.
-    for path in ("/", "/players", "/export", "/milestones", "/maxing"):
+    for path in ("/", "/players", "/export", "/milestones",
+                 "/leaderboards"):
         assert 'data-reload="0"' in client.get(path).get_data(as_text=True), path
 
 
@@ -922,9 +936,10 @@ def test_the_round_up_overrules_the_figures_only_for_the_whole_group(app):
 
 def test_the_calendar_names_a_winner_for_the_month_too(app, client):
     _calendar_seed(app)
-    body = client.get("/maxing").get_data(as_text=True)
+    body = client.get("/leaderboards").get_data(as_text=True)
     assert "Maxing Leaderboard" in body
-    assert body.count('class="month"') == 2, "last month and this one"
+    assert section(body, "maxing").count('class="month"') == 2, (
+        "last month and this one")
 
 
 def test_adding_a_player_does_not_blank_the_days_before_they_arrived(app):
@@ -1176,7 +1191,7 @@ def test_today_follows_the_grid_in_a_card_of_its_own(app, client):
     only makes sense once you have seen what a finished one looks like.
     """
     _calendar_seed(app)
-    body = client.get("/maxing").get_data(as_text=True)
+    body = client.get("/leaderboards").get_data(as_text=True)
     assert body.index('class="months"') < body.index("Today so far")
     assert body.index("Today so far") < body.index("Experience toward 99 today")
     # Its own card, not a panel inside the calendar's.
@@ -1532,8 +1547,8 @@ def test_the_leaderboard_ignores_the_ticks(app, client):
     competition, and the squares recolour to a result nobody was playing for.
     """
     _calendar_seed(app)
-    everyone = client.get("/maxing").get_data(as_text=True)
-    narrowed = client.get("/maxing?picked=1&player=zezima").get_data(as_text=True)
+    everyone = client.get("/leaderboards").get_data(as_text=True)
+    narrowed = client.get("/leaderboards?picked=1&player=zezima").get_data(as_text=True)
 
     def squares(body):
         start = body.index('class="months"')
@@ -1552,7 +1567,7 @@ def test_the_leaderboard_ignores_the_ticks(app, client):
 def test_unticking_everyone_still_leaves_a_leaderboard(app, client):
     """A page whose whole subject is the group cannot be emptied by the ticks."""
     _calendar_seed(app)
-    body = client.get("/maxing?picked=1").get_data(as_text=True)
+    body = client.get("/leaderboards?picked=1").get_data(as_text=True)
     assert "No players are ticked." not in body
     assert 'class="today-row' in body, "every account is still ranked"
 
@@ -1830,7 +1845,7 @@ def test_the_help_page_answers_the_questions_it_is_for(client):
 
 def test_the_help_page_is_linked_from_every_page_with_a_sidebar(client, app):
     seed(app)
-    for path in ("/", "/maxing", "/milestones", "/gallery", "/recaps",
+    for path in ("/", "/leaderboards", "/milestones", "/gallery", "/recaps",
                  "/players", "/export"):
         page = client.get(path).get_data(as_text=True)
         assert 'class="side-help"' in page, path
@@ -1877,17 +1892,68 @@ def test_an_account_past_99_everywhere_can_win_grinding_but_not_maxing():
     assert winners.moved(maxed, winners.GRINDING)
 
 
-def test_both_leaderboard_pages_render(client, app):
+def test_both_leaderboards_are_on_the_one_page(client, app):
     seed(app)
-    for path, heading in (("/maxing", "Maxing Leaderboard"),
-                          ("/grinding", "Grinding Leaderboard")):
-        page = client.get(path).get_data(as_text=True)
-        assert heading in page, path
+    page = client.get("/leaderboards").get_data(as_text=True)
+    for heading in ("Maxing Leaderboard", "Grinding Leaderboard"):
+        assert heading in page, heading
+
+
+def test_one_board_is_shown_at_a_time_defaulting_to_maxing(client, app):
+    """The same toggle the recaps use: both rendered, one on screen."""
+    seed(app)
+    page = client.get("/leaderboards").get_data(as_text=True)
+    assert 'hidden' not in section(page, "maxing").split(">")[0]
+    assert 'hidden' in section(page, "grinding").split(">")[0], (
+        "the board not chosen is rendered and put away, not left on screen")
+
+
+def test_a_link_to_a_board_opens_on_that_board(client, app):
+    seed(app)
+    page = client.get("/leaderboards?board=grinding").get_data(as_text=True)
+    assert 'hidden' in section(page, "maxing").split(">")[0]
+    assert 'hidden' not in section(page, "grinding").split(">")[0]
+
+
+def test_a_board_nobody_offers_falls_back_rather_than_showing_nothing(client, app):
+    seed(app)
+    page = client.get("/leaderboards?board=nonsense").get_data(as_text=True)
+    assert 'hidden' not in section(page, "maxing").split(">")[0]
+
+
+def test_the_pages_this_one_replaced_still_land_on_their_board(client, app):
+    """They were in the nav for weeks, so a bookmark should not lose which
+    board it was made for."""
+    seed(app)
+    for path, board in (("/maxing", "maxing"), ("/grinding", "grinding")):
+        moved = client.get(path)
+        assert moved.status_code in (301, 302), path
+        assert moved.headers["Location"].endswith(
+            "/leaderboards?board=" + board), path
+
+
+def test_the_leaderboards_toggle_is_remembered(client, app):
+    """It is a choice like every other control on the site."""
+    seed(app)
+    script = client.get("/static/board.js").get_data(as_text=True)
+    assert "WOM.Remember" in script and "board.shown" in script
+
+
+def test_a_query_naming_no_player_or_period_keeps_the_kept_sidebar(client):
+    """The sidebar comes back on a bare URL and stands aside for a shared one.
+
+    /leaderboards?board=grinding is neither: it names a board and nobody, and
+    counted as a shared view it threw the reader's ticks away on the way in.
+    """
+    script = client.get("/static/sidebar.js").get_data(as_text=True)
+    assert "if (window.location.search) { return false; }" not in script, (
+        "any query at all used to stand for the sidebar")
+    assert 'HELD = ["picked", "player", "period", "from", "to"]' in script
 
 
 def test_the_grinding_table_says_what_it_counts(client, app):
     seed(app)
-    page = client.get("/grinding").get_data(as_text=True)
+    page = section(client.get("/leaderboards").get_data(as_text=True), "grinding")
     assert "XP Gained" in page and "XP Towards 99" not in page
     assert "99 Wins" not in page, (
         "a 99 never takes a grinding day, so that column could only read zero")
@@ -1920,7 +1986,7 @@ def test_levels_today_counts_from_midnight(db, player):
 
 def test_the_maxing_table_is_unchanged(client, app):
     seed(app)
-    page = client.get("/maxing").get_data(as_text=True)
+    page = section(client.get("/leaderboards").get_data(as_text=True), "maxing")
     assert "XP Towards 99" in page and "99 Wins" in page and "XP Wins" in page
 
 
@@ -2136,7 +2202,7 @@ def test_the_store_is_loaded_before_anything_that_reads_it(client, app):
 
 def test_every_page_that_remembers_something_loads_the_store(client, app):
     seed(app)
-    for path in ("/", "/maxing", "/grinding", "/recaps", "/milestones",
+    for path in ("/", "/leaderboards", "/recaps", "/milestones",
                  "/gallery", "/export"):
         assert "store.js" in client.get(path).get_data(as_text=True), path
 

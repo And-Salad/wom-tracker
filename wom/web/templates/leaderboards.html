@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% set page = board.key %}
+{% set page = 'leaderboards' %}
 {% set no_window = true %}
 {# Days are calendar days, so the sidebar's period does not apply. Neither do
    the ticks, for the leaderboard: it judges every tracked account or it is
@@ -7,20 +7,37 @@
    line per account, and that redraws itself - so nothing here reloads. #}
 {% set reloads = false %}
 {% set live_note = "The leaderboard always judges every tracked account, so the ticks change only the chart. Days are calendar days, so dates do not apply here." %}
-{% block title %}{{ board.label }} - WOM Tracker{% endblock %}
+{% block title %}Leaderboards - WOM Tracker{% endblock %}
 
 {% block content %}
+  {# One board at a time, the same as the recaps: both are rendered and the
+     one not chosen is put away, so switching costs nothing. Without
+     JavaScript the toggle does nothing and the URL decides, which is what the
+     ?board= it answers to is for. #}
+  <div class="row types" id="boards">
+    {% for board in boards %}
+      <label class="tick">
+        <input type="radio" name="board" value="{{ board.key }}"
+               {{ 'checked' if board.key == chosen }}>
+        <span>{{ board.label }}</span>
+      </label>
+    {% endfor %}
+  </div>
+
+  {% for board in boards %}
+  <section class="board-page" data-board="{{ board.key }}"
+           {{ '' if board.key == chosen else 'hidden' }}>
   <div class="card">
     <h3>{{ board.label }} Leaderboard</h3>
     {# The short version is on the page; the whole rule is a mouse away, so
        the card stays readable to someone who already knows it. #}
-    <p class="hint rules" title="{{ calendar.rule }}">Last month and this one,
+    <p class="hint rules" title="{{ board.calendar.rule }}">Last month and this one,
       each day in the colour of whoever won it and each month in the colour of
       whoever took it. Today shows who is ahead, dashed until it is over, and
       days before every account was tracked are blank.</p>
 
     <div class="months">
-      {% for month in calendar.months %}
+      {% for month in board.calendar.months %}
         <div class="month">
           <h4 class="named" style="--dot: {{ month.color }}">{{ month.label }}
             {% if month.winner %}<span class="took">{{ month.winner }}</span>{% endif %}
@@ -63,17 +80,17 @@
              line it is most of the column, and the figures below are four
              characters wide. #}
           {% if board.split_wins %}
-            <th class="num" title="Days of {{ today.month }} taken by reaching a 99">99 Wins<span class="when">{{ today.month }}</span></th>
-            <th class="num" title="Days of {{ today.month }} taken on experience, nobody having reached a 99. Today is not one until it is over">XP Wins<span class="when">{{ today.month }}</span></th>
+            <th class="num" title="Days of {{ board.today.month }} taken by reaching a 99">99 Wins<span class="when">{{ board.today.month }}</span></th>
+            <th class="num" title="Days of {{ board.today.month }} taken on experience, nobody having reached a 99. Today is not one until it is over">XP Wins<span class="when">{{ board.today.month }}</span></th>
           {% else %}
             {# One column, because on this board a 99 never wins a day and a
                column that can only ever read nothing is worse than no column. #}
-            <th class="num" title="Days of {{ today.month }} taken. Today is not one until it is over">Wins<span class="when">{{ today.month }}</span></th>
+            <th class="num" title="Days of {{ board.today.month }} taken. Today is not one until it is over">Wins<span class="when">{{ board.today.month }}</span></th>
           {% endif %}
         </tr>
         </thead>
         <tbody>
-        {% for row in today.rows %}
+        {% for row in board.today.rows %}
           {# The row is the control, as on Players: one list of accounts, not
              a table with an accordion repeating it. #}
           <tr class="today-row {{ 'moved' if row.moved }}"
@@ -106,7 +123,7 @@
     </div>
   </div>
 
-  <div class="card chart" id="board-trend" data-board="{{ board.key }}">
+  <div class="card chart board-trend">
     <div class="card-head">
       <div>
         <h3>{{ board.chart_title }}</h3>
@@ -117,6 +134,8 @@
     </div>
     <div class="plot loading"></div>
   </div>
+  </section>
+  {% endfor %}
 {% endblock %}
 
 {% block scripts %}

@@ -285,7 +285,7 @@ def test_the_history_window_only_covers_what_we_do_not_hold(db):
     """Asked for a flat three hours it re-fetched every ten-minute reading in
     them, nearly all already stored - which is what made a pass slow."""
     from datetime import datetime, timedelta, timezone
-    from wom.updater import OVERLAP_MINUTES, RECENT_MINUTES, _recent_since
+    from wom.updater import OVERLAP_MINUTES, _recent_since
 
     now = datetime.now(timezone.utc)
     db.save_player_details({"id": 1, "username": "zezima",
@@ -303,7 +303,7 @@ def test_the_history_window_only_covers_what_we_do_not_hold(db):
 def test_the_window_widens_by_itself_after_an_outage(db):
     """The last reading is older, so asking from it covers the gap."""
     from datetime import datetime, timedelta, timezone
-    from wom.updater import RECENT_MINUTES, _recent_since
+    from wom.updater import _recent_since
 
     now = datetime.now(timezone.utc)
     db.save_player_details({"id": 1, "username": "zezima",
@@ -316,7 +316,7 @@ def test_the_window_widens_by_itself_after_an_outage(db):
 
 def test_the_window_never_reaches_further_back_than_the_ceiling(db):
     """An account we have not read for a week is a backfill's job, not this."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
     from wom.updater import RECENT_MINUTES, _recent_since
 
     now = datetime.now(timezone.utc)

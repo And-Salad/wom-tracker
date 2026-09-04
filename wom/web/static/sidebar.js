@@ -100,17 +100,29 @@
     remember.write(SAVED, query());
   }
 
-  /* What the sidebar comes back to on a bare URL.
+  /* Whether the address bar says anything the sidebar holds.
    *
-   * Only a bare one. A link with a query string says who and when in as many
-   * words - it is how the tabs carry the sidebar and how a view gets shared -
-   * and quietly overruling that with something out of this browser would make
-   * a pasted link mean different things to the two people reading it.
+   * A link that names who and when is how the tabs carry the sidebar and how
+   * a view gets shared, and it has to win: overruled by something out of this
+   * browser, a pasted link would mean different things to the two people
+   * reading it.
+   *
+   * A query naming something else entirely - /leaderboards?board=grinding
+   * names a board and nobody - says nothing about who or when, and counting
+   * it as a shared view threw away the reader's ticks on the way in. */
+  var HELD = ["picked", "player", "period", "from", "to"];
+
+  function addressed() {
+    var here = new URLSearchParams(window.location.search);
+    return HELD.some(function (name) { return here.has(name); });
+  }
+
+  /* What the sidebar comes back to on a URL that does not speak for it.
    *
    * Returns whether anything actually moved, because the page behind it was
    * rendered from the bare URL and has to be told. */
   function restore() {
-    if (window.location.search) { return false; }
+    if (addressed()) { return false; }
     var kept = saved();
     if (!kept.get("picked")) { return false; }      // nothing saved yet
 

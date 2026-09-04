@@ -673,7 +673,7 @@ def test_the_tabs_are_in_the_order_they_were_asked_for(client):
     page was added."""
     page = client.get("/").get_data(as_text=True)
     nav = page.split("<nav>")[1].split("</nav>")[0]
-    wanted = ['href="/"', "/maxing", "/grinding", "/recaps", "/milestones",
+    wanted = ['href="/"', "/leaderboards", "/recaps", "/milestones",
               "/gallery", "/players", "/export"]
     found = sorted(wanted, key=nav.index)
     assert found == wanted, found

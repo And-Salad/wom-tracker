@@ -1,20 +1,20 @@
-/* A leaderboard page - Maxing or Grinding: expanding standings rows, and
- * the day's trend. Which board is on screen comes off the chart card, so one
- * script serves both.
+/* The leaderboards page: Maxing and Grinding, one on screen at a time.
  *
- * The row is the control, the same as on Players - there is one list of
- * accounts here, not a table and an accordion repeating each other. A day's
- * breakdown is small, but it is only interesting for the account somebody
- * asks about, so it is fetched when a row is first opened.
+ * Both are rendered by the server, which puts the one not chosen away; this
+ * switches between them, remembers which was being read, and wires up what
+ * each board can do:
  *
- * The ticks reload this page (there is a calendar to redraw), so nothing here
- * listens for a change of window.
+ *   - expanding standings rows, fetched when a row is first opened
+ *   - the day's trend, drawn when its board is first looked at
+ *
+ * A row is the control, the same as on Players - there is one list of
+ * accounts per board here, not a table and an accordion repeating each other.
+ *
+ * The ticks do not reload this page (there is a calendar to keep), so the
+ * charts listen for a change of window themselves.
  */
 (function () {
   "use strict";
-
-  var host = document.getElementById("board-trend");
-  var board = (host && host.dataset.board) || "maxing";
 
   var full = new Intl.NumberFormat();
 
@@ -59,7 +59,7 @@
      recaps are read on the Recaps page, where every window it has is in one
      tree; here they would push the day's figures - which are what the row
      was opened for - below a fold of prose. */
-  function render(host, data) {
+  function render(host, board, data) {
     host.textContent = "";
     if (data.note) {
       host.appendChild(el("p", "hint", data.note));
@@ -73,7 +73,8 @@
       head += " · " + data.nines + " ninety-nine" + (data.nines === 1 ? "" : "s");
     }
     if (data.beyond) {
-      head += " · " + full.format(Math.round(data.beyond)) + " XP past 99, which the day is not judged on";
+      head += " · " + full.format(Math.round(data.beyond)) +
+        " XP past 99, which the day is not judged on";
     }
     host.appendChild(el("p", "hint", head));
 
@@ -84,7 +85,7 @@
     host.appendChild(scroll);
   }
 
-  function wire(row) {
+  function wire(row, board) {
     var detailRow = row.nextElementSibling;
     var host = detailRow.querySelector(".detail-body");
     var loaded = false;
@@ -99,7 +100,7 @@
         .then(function (r) { return r.json(); })
         .then(function (data) {
           loaded = true;
-          render(host, data);
+          render(host, board, data);
         })
         .catch(function (err) {
           host.textContent = "";
@@ -124,20 +125,102 @@
     });
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll("tr.today-row").forEach(wire);
+  /* Which board was being read, kept between visits. Stored as the one chosen
+     rather than the ones not: there are two and both are always offered, so a
+     name that stops existing simply fails to match and the server's choice
+     stands. */
+  var CHOSEN = "board.shown";
 
-    var card = document.getElementById("board-trend");
-    if (!card || !window.WOM) { return; }
-    var chart = new window.WOM.Chart(card);
-    /* Always the day in progress, never the sidebar's period - so this asks
-       its own endpoint rather than pretending to be a catalogue entry. */
-    chart.endpoint = function () { return "/api/" + board + "/trend?" + window.Sidebar.query(); };
-    /* The only thing on this page the ticks move. The calendar and the
-       standings above judge every account whatever is ticked, so the page
-       has nothing to reload - this redraws and they stay as they are. */
-    window.Sidebar.onChange(function (query) { chart.load(query); });
+  document.addEventListener("DOMContentLoaded", function () {
+    var sections = document.querySelectorAll(".board-page[data-board]");
+    if (!sections.length) { return; }
+    var picker = document.getElementById("boards");
+    var remember = (window.WOM && window.WOM.Remember) ||
+      {read: function (_n, fallback) { return fallback; }, write: function () {}};
+
+    /* One entry per board: its section, its chart, and whether what the chart
+       holds is still the window the sidebar is on. A hidden chart is left
+       alone - drawn into a hidden card it comes out with no width - so it is
+       marked stale instead and redrawn when its board is shown. */
+    var boards = [];
+    Array.prototype.forEach.call(sections, function (section) {
+      var name = section.getAttribute("data-board");
+      section.querySelectorAll("tr.today-row").forEach(function (row) {
+        wire(row, name);
+      });
+      boards.push({name: name, section: section, chart: null, stale: true});
+    });
+
+    /* Nothing is drawn until the page has settled on which board is shown
+       and on where its opening copy is coming from - a restored sidebar has
+       already asked for one, and drawing here too would fetch the same day
+       twice on the first visit of every morning. */
+    var ready = false;
+
+    function draw(entry) {
+      if (!ready || entry.section.hidden || !entry.stale) { return; }
+      if (!window.WOM || !window.Sidebar) { return; }
+      if (!entry.chart) {
+        var card = entry.section.querySelector(".board-trend");
+        if (!card) { return; }
+        entry.chart = new window.WOM.Chart(card);
+        /* Always the day in progress, never the sidebar's period - so this
+           asks its own endpoint rather than pretending to be a catalogue
+           entry. */
+        entry.chart.endpoint = function () {
+          return "/api/" + entry.name + "/trend?" + window.Sidebar.query();
+        };
+      }
+      entry.stale = false;
+      entry.chart.load(window.Sidebar.query());
+    }
+
+    function show(board) {
+      if (!boards.some(function (entry) { return entry.name === board; })) {
+        return false;
+      }
+      boards.forEach(function (entry) {
+        entry.section.hidden = entry.name !== board;
+        var radio = picker &&
+          picker.querySelector('input[value="' + entry.name + '"]');
+        if (radio) { radio.checked = entry.name === board; }
+        draw(entry);
+      });
+      return true;
+    }
+
+    if (picker) {
+      picker.addEventListener("change", function (event) {
+        var chosen = event.target;
+        if (!chosen || chosen.type !== "radio") { return; }
+        remember.write(CHOSEN, chosen.value);
+        show(chosen.value);
+      });
+    }
+
+    /* A URL asking for a board wins over what was last read: it is a link
+       somebody followed to that board on purpose. Only a bare /leaderboards
+       falls back to what they were looking at last. */
+    var asked = new URLSearchParams(window.location.search).get("board");
+    var kept = asked || remember.read(CHOSEN, null);
+    // A board that is no longer offered leaves the server's default in place.
+    if (kept) { show(kept); }
+
+    if (!window.Sidebar) { return; }
+    /* The ticks are the one thing on this page that moves anything. The
+       calendar and the standings judge every account whatever is ticked, so
+       there is nothing to reload - the charts redraw and they stay put. */
+    window.Sidebar.onChange(function () {
+      boards.forEach(function (entry) {
+        entry.stale = true;
+        draw(entry);
+      });
+    });
+
+    ready = true;
     // A restored sidebar has already asked for this; see Sidebar.restored.
-    if (!window.Sidebar.restored) { chart.load(window.Sidebar.query()); }
+    if (!window.Sidebar.restored) {
+      boards.forEach(draw);
+    }
   });
 })();

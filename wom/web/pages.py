@@ -64,18 +64,21 @@ BOARDS = {
 }
 
 
-@pages.route("/maxing")
-def maxing():
-    return _leaderboard(winners.MAXING)
+@pages.route("/leaderboards")
+def leaderboards():
+    """Both leaderboards, one on screen at a time.
 
+    They were two pages and are one, because they are the same competition
+    asked two ways: the same days, the same readings, a different measure.
+    Side by side in the nav they read as two places to be rather than two
+    answers to compare, and comparing them meant losing the page you were on.
 
-@pages.route("/grinding")
-def grinding():
-    return _leaderboard(winners.GRINDING)
-
-
-def _leaderboard(board):
-    """One of the two leaderboards, which is the whole group's or it is nothing.
+    Both are rendered whichever is chosen, and the one not chosen is put
+    away. It is one more pass over the same two months - the readings behind
+    them are read once per board, and the page is a tenth of a second - and in
+    return the toggle costs nothing at all. Which board that is comes from the
+    URL, so it is still a link, and so the two pages this replaced can redirect
+    to the board they named.
 
     Both the calendar and the standings are given every tracked account, not
     the ticked ones. It is one competition with one answer: narrowed to three
@@ -92,14 +95,32 @@ def _leaderboard(board):
     """
     scope = page_context()
     everyone = scope["players"]
-    return render_template(
-        "board.html",
-        board=BOARDS[board],
-        calendar=views.winner_calendar(database(), everyone, scope["palette"],
-                                       board=board),
-        today=today.standings(database(), everyone, scope["palette"],
-                              board=board),
-        **_shell(scope))
+    chosen = request.args.get("board")
+    if chosen not in BOARDS:
+        chosen = winners.MAXING
+    shown = [
+        dict(board,
+             calendar=views.winner_calendar(database(), everyone,
+                                            scope["palette"], board=board["key"]),
+             today=today.standings(database(), everyone, scope["palette"],
+                                   board=board["key"]))
+        for board in BOARDS.values()
+    ]
+    return render_template("leaderboards.html", boards=shown, chosen=chosen,
+                           **_shell(scope))
+
+
+# The two pages this one replaced. Kept as redirects rather than deleted:
+# they were linked from the nav for weeks, and a bookmark should land on the
+# board it was made for rather than on the default.
+@pages.route("/maxing")
+def maxing():
+    return redirect(url_for("pages.leaderboards", board=winners.MAXING))
+
+
+@pages.route("/grinding")
+def grinding():
+    return redirect(url_for("pages.leaderboards", board=winners.GRINDING))
 
 
 @pages.route("/milestones")

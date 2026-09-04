@@ -85,21 +85,23 @@ the nav, because it is read once: a box under the sidebar links to it from
 every page that has one.
 
 
-Six public pages, with the player ticks and the period in a sidebar that drives
-all of them, plus **Admin** behind the password. The one exception is the
-leaderboard, which always judges every tracked account - see below.
+Seven public pages, with the player ticks and the period in a sidebar that
+drives all of them, plus **Admin** behind the password. The one exception is
+the leaderboards, which always judge every tracked account - see below.
 
 - **Overview** - the standings and the charts: experience gained by skill, by
   player, and over time. Hovering reads off the figures; clicking a legend entry
   hides that player.
-- **Maxing** - the leaderboard calendar, the day's standings, and experience
-  toward 99 plotted midnight to midnight. Click an account for the skills
-  behind its day.
+- **Leaderboards** - Maxing and Grinding, one on screen at a time: the winner
+  calendar, the day's standings, and the day plotted midnight to midnight.
+  Click an account for the skills behind its day.
 - **Milestones** - 99s, level and boss-kill landmarks, newest first. A leading
   `~` means Wise Old Man only knows the date roughly.
 - **Recaps** - the newest daily and monthly recap of the group, each carrying
   what the leaderboard decided, then a tree holding every earlier one and each
   account's own notes.
+- **Gallery** - the screenshots players' own clients sent with a death or a
+  pet, each kind on its own toggle. Click one to open it.
 - **Players** - one row of headline figures each; click a row for that player's
   skills, bosses and activities, and what moved this period.
 - **Data** - every metric as a sortable, filterable table, with export behind a
@@ -122,13 +124,19 @@ a ninety-nine takes a day outright; **Grinding** counts all of it and nothing
 else. An account with everything maxed cannot place on the first and can win
 the second, which is the point of having both.
 
-One rule, `winners.key(shown, board)`, and one page template. Grinding shows a
-single Wins column where Maxing splits it: a ninety-nine never takes a grinding
-day, so the split would be a column that could only ever read nothing.
+One rule, `winners.key(shown, board)`, and one page. Grinding shows a single
+Wins column where Maxing splits it: a ninety-nine never takes a grinding day, so
+the split would be a column that could only ever read nothing.
 
-## The Maxing Leaderboard
+They share the **Leaderboards** tab and a toggle, the same one the recaps use.
+Both are rendered whichever is chosen and the other is put away - one more pass
+over the same two months - so switching costs nothing. `?board=` picks the one
+shown, which is what the toggle remembers between visits and what lets
+`/maxing` and `/grinding` still answer, as redirects to the board they named.
 
-The **Maxing** tab colours a calendar by who took each day: whoever reached a 99
+## The leaderboard page
+
+It colours a calendar by who took each day. On **Maxing**: whoever reached a 99
 takes it, two beat one, and failing that it goes on experience counted only up
 to level 99 in each skill - so an account with everything maxed cannot take a
 day off people still climbing. A day is blank unless the tracker actually polled
