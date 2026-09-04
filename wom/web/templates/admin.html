@@ -69,9 +69,9 @@
       </datalist>
       <p class="hint" style="margin: -4px 0 14px">
         Days, the calendar and every round-up window run midnight to midnight
-        here, following that place's daylight saving rather than this
-        machine's. Changing it re-cuts the days: round-ups already written keep
-        the dates they were written under.
+        here, on that place's daylight saving rather than this machine's.
+        Changing it re-cuts the days; round-ups already written keep the dates
+        they were written under.
       </p>
 
       <h4>Wise Old Man</h4>
@@ -181,10 +181,9 @@
     <h3>Session logins</h3>
     <p class="hint">
       Wise Old Man can infer that a session ended, and cannot see one begin at
-      all - the hiscores do not move until logout. The Dink plugin reports both
-      ends as they happen, so a long session stops landing in the ten minutes we
-      happened to notice it in. Nothing on the dashboard reads this yet; it is
-      being collected first.
+      all - the hiscores do not move until logout. Dink reports both ends as
+      they happen, so a session that crossed midnight is credited to both days
+      rather than landing whole in the ten minutes we noticed it in.
     </p>
     <p class="hint">
       Each player installs <strong>Dink</strong> from the RuneLite Plugin Hub,
@@ -202,12 +201,15 @@
       <strong>Optional.</strong> A player can also send what happens
       <em>during</em> a session. Put the same URL in <strong>Primary Webhook
       URLs</strong> as well - not instead, the metadata field is what carries
-      the logins - and tick <em>Collection Log</em>, <em>Level Up</em> and
-      <em>Kill Count</em>. Collection slots and boss counts then land on the
-      minute they happened rather than at the next ten-minute reading, and the
-      detail is kept for a feed later. Set <em>Kill Count Interval</em> to 1
-      for every kill; it ships at every fiftieth. The count below shows session
-      events, and beneath it what has been reported during play.
+      the logins - and tick <em>Collection Log</em>, <em>Level Up</em>,
+      <em>Kill Count</em>, <em>Quests</em>, <em>Achievement Diary</em>,
+      <em>Combat Achievements</em>, <em>Pets</em> and <em>Deaths</em>.
+      Collection slots and boss counts then land on the minute they happened
+      rather than at the next reading; quests, diaries, tasks, pets and clog
+      slots join the Milestones feed; deaths and pets bring a screenshot to the
+      Gallery. Set <em>Kill Count Interval</em> to 1 for every kill; it ships at
+      every fiftieth. The counts below are session events, then what arrived
+      during play.
     </p>
     <div class="scroll">
       <table>

@@ -99,7 +99,7 @@
       text += " of " + total;
     }
     count.textContent = text +
-      ", newest first. A leading ~ means Wise Old Man only knows the date roughly.";
+      ", newest first. A ~ marks a date Wise Old Man knows only roughly.";
   }
 
   if (types) {

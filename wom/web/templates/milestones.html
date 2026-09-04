@@ -7,8 +7,8 @@
   <div class="card">
     <h3>Milestones</h3>
     <p class="hint" id="count">
-      {{ feed | length }} achievement{{ '' if feed | length == 1 else 's' }},
-      newest first. A leading ~ means Wise Old Man only knows the date roughly.
+      {{ feed | length }} milestone{{ '' if feed | length == 1 else 's' }},
+      newest first. A ~ marks a date Wise Old Man knows only roughly.
     </p>
     {# Every kind is on by default. Unticking is the only way to lose a row,
        so a reader who ignores this sees everything. #}

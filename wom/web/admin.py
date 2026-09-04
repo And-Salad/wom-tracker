@@ -320,9 +320,9 @@ KINDS = (("player", "Per-player"), ("group", "Group round-up"))
 def _windows_for(kind):
     """Which windows a prompt of this kind is ever asked for.
 
-    A player's notes cover all five; the group recap is the Maxing
-    Leaderboard's feed and covers the two the calendar judges. Offering a
-    group prompt for a quarter would create a file nothing ever loads.
+    A player's notes cover all five; a leaderboard's round-ups cover the
+    three windows it has something to say about. Offering a group prompt for
+    a quarter would create a file nothing ever loads.
     """
     return (periods.SUMMARY_PERIODS if kind == "player"
             else periods.GROUP_PERIODS)

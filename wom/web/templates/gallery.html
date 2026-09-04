@@ -1,15 +1,14 @@
 {% extends "base.html" %}
 {% set page = 'gallery' %}
-{% set live_note = "Pictures arrive as they happen." %}
+{% set live_note = "The ticks choose whose pictures show. New ones arrive as they happen." %}
 {% block title %}Gallery - WOM Tracker{% endblock %}
 
 {% block content %}
   <div class="card">
     <h3>Gallery</h3>
     <p class="hint">
-      Screenshots a player's own client sent, for the two things worth
-      looking at. Nothing here comes from Wise Old Man, and an account only
-      appears once its owner has opted in.
+      Screenshots a player's own client sent. Nothing here comes from Wise
+      Old Man, and an account appears only once its owner has opted in.
     </p>
     {# Every panel is on by default, so unticking is the only way to lose one. #}
     <div class="row types" id="types">

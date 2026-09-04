@@ -31,9 +31,9 @@
     <div class="card">
       <h3>No recaps yet</h3>
       <p class="hint">
-        Nothing has been written for the included players yet. The day just
-        gone is written by the first update after midnight, and the month
-        behind it on the 1st &mdash; or by
+        Nothing has been written for the included players yet. Each
+        leaderboard gets the day just gone after midnight, the week behind it
+        on a Monday and the month on the 1st &mdash; or run
         <code>py wom_tracker.py --summarize --due</code>.
       </p>
     </div>
@@ -79,8 +79,8 @@
 
   {% if tree %}
     <p class="hint anchor-note" id="earlier">
-      Everything written so far. The group's covers the day and the month the
-      leaderboard judges; each account's own covers all five windows.
+      Everything written so far. Each leaderboard covers the day, the week and
+      the month; each account's own notes cover all five windows.
     </p>
 
     {% for branch in tree %}

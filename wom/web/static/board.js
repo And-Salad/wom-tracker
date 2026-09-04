@@ -65,7 +65,10 @@
       host.appendChild(el("p", "hint", data.note));
       return;
     }
-    var head = "Toward 99 today: " + full.format(Math.round(data.total)) + " XP";
+    /* Named for what this board counts. One script serves both, and on
+       Grinding "toward 99" describes a rule it does not have. */
+    var head = (board === "grinding" ? "Gained today: " : "Toward 99 today: ") +
+      full.format(Math.round(data.total)) + " XP";
     if (data.nines) {
       head += " · " + data.nines + " ninety-nine" + (data.nines === 1 ? "" : "s");
     }

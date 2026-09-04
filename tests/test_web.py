@@ -1820,8 +1820,9 @@ def test_the_help_page_answers_the_questions_it_is_for(client):
                    "ten minutes",                  # how polling works
                    "log out",                      # why numbers arrive late
                    "You do not need it",           # the WOM plugin
-                   "ninety-nine",                  # how the day is won
-                   "average of its days"):         # how the month is won
+                   "Maxing", "Grinding",           # both competitions exist
+                   "ninety-nine",                  # how a day is won
+                   "average of its days"):         # how a month is won
         assert phrase in page, phrase
     assert 'href="https://wiseoldman.net"' in page
 
@@ -2114,3 +2115,26 @@ def test_the_recaps_toggle_is_remembered(client, app):
     assert "recaps.js" in page
     script = client.get("/static/recaps.js").get_data(as_text=True)
     assert "WOM.Remember" in script and "recaps.board" in script
+
+
+def test_the_help_page_describes_both_leaderboards(client):
+    """It explained one competition for as long as there was one. A second
+    arriving is exactly the sort of thing help text does not notice."""
+    from wom import winners
+    page = client.get("/help").get_data(as_text=True)
+    for board in winners.BOARDS:
+        assert winners.BOARD_LABELS[board] in page, board
+
+
+def test_the_day_breakdown_is_labelled_for_the_board_it_is_on(client):
+    """One script serves both leaderboards, so a label naming one rule is
+    wrong on the other half the time."""
+    script = client.get("/static/board.js").get_data(as_text=True)
+    assert "Gained today: " in script and "Toward 99 today: " in script
+    assert 'board === "grinding"' in script
+
+
+def test_no_page_still_claims_the_session_events_go_unread(signed_in):
+    """They were collected and unread for about an hour. Then they were not."""
+    page = signed_in.get("/admin").get_data(as_text=True)
+    assert "Nothing on the dashboard reads this yet" not in page

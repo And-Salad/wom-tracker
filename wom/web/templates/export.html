@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set page = 'export' %}
-{% set live_note = "The table and chart update as you change these." %}
+{% set live_note = "The table and chart update as you change these. Dates override the period until you clear them." %}
 {% block title %}Data - WOM Tracker{% endblock %}
 
 {% block content %}
@@ -49,13 +49,11 @@
       </table>
     </div>
     <p class="hint" id="state">Loading&hellip;</p>
-    <p class="hint stack-top">The window is the period in the
-      sidebar until you set a date, after which the dates hold it until you
-      clear them with the &times;. A blank rank means the account is not on the
-      hiscores for that metric, which is not the same as zero.
-      &ldquo;Gained&rdquo; is measured from the last reading before the window
-      opened, so an account first seen inside it shows only what it has been
-      watched for.</p>
+    <p class="hint stack-top">
+      A blank rank means the account is not on the hiscores for that metric,
+      which is not the same as zero. &ldquo;Gained&rdquo; is measured from the
+      last reading before the window opened, so an account first seen inside
+      it shows only what it has been watched for.</p>
   </div>
 
   <div class="card chart" id="history" data-key="history">
