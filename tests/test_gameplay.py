@@ -296,3 +296,11 @@ def test_a_feed_row_with_unreadable_stored_json_still_appears(db, player):
     feed = views.milestone_feed(db, [dict(player)], {})
     assert len(feed) == 1, "the event happened whatever the payload says now"
     assert feed[0]["detail"] == ""
+
+
+def test_a_pet_says_what_made_it_worth_mentioning():
+    """A duplicate and a milestone are the two things a pet line can add."""
+    assert gameplay.detail("pet", {"extra": {"duplicate": True}}) == "duplicate"
+    assert gameplay.detail("pet", {"extra": {"milestone": "5,000 killcount"}}) \
+        == "5,000 killcount"
+    assert gameplay.detail("pet", {"extra": {"petName": "Ikkle hydra"}}) == ""

@@ -1,4 +1,4 @@
-﻿"""The HTTP surface: what is public, what is not, and what is refused."""
+"""The HTTP surface: what is public, what is not, and what is refused."""
 
 import json
 import os
@@ -222,7 +222,8 @@ def test_a_spreadsheet_formula_in_a_name_is_defused(app):
 def test_every_described_chart_has_a_builder():
     """Describing a chart and forgetting to build it used to be silent."""
     from wom import catalog
-    import wom.web.data  # noqa: F401  - importing is what attaches them
+    from wom.web import data as _data  # importing is what attaches them
+    assert _data is not None
 
     missing = [s.key for s in catalog.SUMMARY_CHARTS if s.build is None]
     assert missing == [], "described but never built: {}".format(missing)
@@ -1840,7 +1841,6 @@ def test_the_help_box_sits_under_the_sidebar_not_beside_the_page(client):
     """Both live in one column; without the wrapper the box becomes a third
     thing in a flex row and lands next to the charts."""
     page = client.get("/").get_data(as_text=True)
-    rail = page.split('class="rail"')[1].split("</div>")
     assert 'class="side"' in page.split('class="rail"')[1].split('class="content"')[0]
     assert page.index('class="side-help"') < page.index('class="content"')
 
@@ -1942,15 +1942,24 @@ def test_a_grinding_day_counts_experience_past_99(db, player):
     below it there is no `beyond` either way and the test would pass on a
     board that ignored the distinction entirely.
     """
-    from datetime import datetime, timezone
+    from datetime import timedelta, timezone
     from wom.web import today
     from wom import winners
     from conftest import snapshot as snap
 
-    day = datetime.now(timezone.utc).strftime("%Y-%m-%dT{}:00:00.000Z")
-    db.save_snapshot(player["id"], snap(day.format("01"),
+    # Anchored to the day the app is actually judging, not to a UTC hour:
+    # picking 01:00 and 02:00 put both readings on the previous local day for
+    # anyone running this between midnight and 04:00, and the test failed for
+    # a reason that had nothing to do with the code.
+    opens = winners.today_range()[0]
+
+    def at(offset):
+        return (opens + offset).astimezone(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S.000Z")
+
+    db.save_snapshot(player["id"], snap(at(timedelta(hours=1)),
                                         skills={"attack": (14000000, 99)}))
-    db.save_snapshot(player["id"], snap(day.format("02"),
+    db.save_snapshot(player["id"], snap(at(timedelta(hours=2)),
                                         skills={"attack": (14500000, 99)}))
 
     maxed = today.breakdown(db, player, board=winners.MAXING)

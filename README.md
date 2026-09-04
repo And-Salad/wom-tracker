@@ -382,9 +382,14 @@ two of our polls is invisible to us however often we ask.
 
 That matters at a day boundary. Somebody who logs out at 23:55 is noticed by
 our poll at 00:10, and their whole evening lands on the wrong day. So each pass
-also re-reads the last three hours of history and keeps anything new, which
-puts that reading back where it happened - for every account, with nothing for
-anyone to install. One small request per player per pass.
+also re-reads history and keeps anything new, which puts that reading back
+where it happened - for every account, with nothing for anyone to install.
+
+It reads from just before its own last reading rather than a flat window, so
+normally that is a snapshot or two. Asked for a flat three hours it returned
+every ten-minute reading in them, almost all already held, and that alone
+turned an eighteen second pass into a minute. After an outage the window
+widens by itself, because the last reading is older.
 
 ## What gets stored
 

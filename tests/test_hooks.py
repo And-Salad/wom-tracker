@@ -677,3 +677,14 @@ def test_the_tabs_are_in_the_order_they_were_asked_for(client):
               "/gallery", "/players", "/export"]
     found = sorted(wanted, key=nav.index)
     assert found == wanted, found
+
+
+def test_a_death_without_a_screenshot_is_still_a_death(signed_in, app):
+    """Someone who ticks Deaths but leaves its screenshot option off. The
+    event is the thing; the picture is the extra."""
+    url = issue(signed_in)
+    assert signed_in.post(url, json={"type": "DEATH", "extra":
+                                     {"valueLost": 4200}}).status_code == 204
+    db = app.config["DATABASE"]
+    assert len(db.game_events("zezima", kind="death")) == 1
+    assert db.images(kind="death", limit=5) == []

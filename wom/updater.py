@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from . import scheduler, sessions
+from .util import parse_api_time
 from .api import HISTORY_LIMIT, WomError
 
 log = logging.getLogger(__name__)
@@ -162,11 +163,29 @@ def update_one(client, database, username, achievements=True):
     return PlayerResult(username, True, message, imported, milestones)
 
 
-# How far back each pass re-reads a player's history. Wise Old Man keeps a
-# snapshot whenever anybody asks it to look, so a reading made between two of
-# ours - a client pushing on logout - only exists there. Long enough to cover
-# an outage of an hour or two and still one small request per player.
+# The furthest back a pass will re-read a player's history, and how much it
+# overlaps what it already has.
+#
+# Normally the window is tiny: everything up to our own last reading is
+# already stored, so asking from just before it returns a snapshot or two.
+# Asked for a flat three hours it returned every ten-minute reading in them -
+# eighteen full snapshots per player per run, nearly all of which we already
+# had - and that, not the work, was what turned an eighteen second pass into
+# a minute. After an outage the window widens on its own, because the last
+# reading is older.
 RECENT_MINUTES = 180
+OVERLAP_MINUTES = 15
+
+
+def _recent_since(database, player_id, now=None):
+    """When to re-read a player's history from."""
+    now = now or datetime.now(timezone.utc)
+    floor = now - timedelta(minutes=RECENT_MINUTES)
+    latest = database.latest_snapshot(player_id)
+    held = parse_api_time(latest["captured_at"]) if latest else None
+    if held is None:
+        return floor
+    return max(floor, held - timedelta(minutes=OVERLAP_MINUTES))
 
 
 def collect_recent(client, database, username, player_id):
@@ -184,7 +203,7 @@ def collect_recent(client, database, username, player_id):
 
     Never allowed to break a run: the update itself is the thing worth having.
     """
-    since = datetime.now(timezone.utc) - timedelta(minutes=RECENT_MINUTES)
+    since = _recent_since(database, player_id)
     try:
         found = client.get_snapshots(username, start_date=since)
     except WomError as exc:

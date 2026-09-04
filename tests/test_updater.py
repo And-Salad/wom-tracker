@@ -23,6 +23,7 @@ class FakeClient:
         self.snapshots = snapshots or []
         self.recent = recent or []
         self.fail_recent = fail_recent
+        self.asked_from = None
         self._achievements = achievements or []
         self.calls = []
 
@@ -47,7 +48,10 @@ class FakeClient:
         return iter(self.snapshots)
 
     def get_snapshots(self, username, **kwargs):
+        # The window is recorded, not just the call: asking for the right
+        # range is the whole of what makes this cheap.
         self.calls.append(("recent", username))
+        self.asked_from = kwargs.get("start_date")
         if self.fail_recent:
             raise WomError("rate limited", 429)
         return self.recent
@@ -275,3 +279,78 @@ def test_a_client_too_old_to_answer_that_call_is_survivable(db):
 
     result = update_one(Older(), db, "zezima")
     assert result.ok
+
+
+def test_the_history_window_only_covers_what_we_do_not_hold(db):
+    """Asked for a flat three hours it re-fetched every ten-minute reading in
+    them, nearly all already stored - which is what made a pass slow."""
+    from datetime import datetime, timedelta, timezone
+    from wom.updater import OVERLAP_MINUTES, RECENT_MINUTES, _recent_since
+
+    now = datetime.now(timezone.utc)
+    db.save_player_details({"id": 1, "username": "zezima",
+                            "displayName": "Zezima", "type": "regular"})
+    db.save_snapshot(1, snapshot(
+        (now - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        skills={"attack": (500, 40)}))
+
+    since = _recent_since(db, 1, now)
+    minutes = (now - since).total_seconds() / 60
+    assert OVERLAP_MINUTES < minutes < OVERLAP_MINUTES + 15, (
+        "just past our own last reading, not the whole ceiling")
+
+
+def test_the_window_widens_by_itself_after_an_outage(db):
+    """The last reading is older, so asking from it covers the gap."""
+    from datetime import datetime, timedelta, timezone
+    from wom.updater import RECENT_MINUTES, _recent_since
+
+    now = datetime.now(timezone.utc)
+    db.save_player_details({"id": 1, "username": "zezima",
+                            "displayName": "Zezima", "type": "regular"})
+    db.save_snapshot(1, snapshot(
+        (now - timedelta(minutes=90)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        skills={"attack": (500, 40)}))
+    assert (now - _recent_since(db, 1, now)).total_seconds() / 60 > 90
+
+
+def test_the_window_never_reaches_further_back_than_the_ceiling(db):
+    """An account we have not read for a week is a backfill's job, not this."""
+    from datetime import datetime, timedelta, timezone
+    from wom.updater import RECENT_MINUTES, _recent_since
+
+    now = datetime.now(timezone.utc)
+    db.save_player_details({"id": 1, "username": "zezima",
+                            "displayName": "Zezima", "type": "regular"})
+    db.save_snapshot(1, snapshot("2026-01-01T00:00:00.000Z",
+                                 skills={"attack": (500, 40)}))
+    minutes = (now - _recent_since(db, 1, now)).total_seconds() / 60
+    assert abs(minutes - RECENT_MINUTES) < 1
+
+
+def test_an_account_with_no_readings_yet_uses_the_ceiling(db):
+    from datetime import datetime, timezone
+    from wom.updater import RECENT_MINUTES, _recent_since
+    now = datetime.now(timezone.utc)
+    minutes = (now - _recent_since(db, 99, now)).total_seconds() / 60
+    assert abs(minutes - RECENT_MINUTES) < 1
+
+
+def test_the_history_call_asks_only_for_the_gap(db):
+    """Not a flat ceiling every time. Everything up to our own last reading is
+    already stored, so asking from the start of the window re-fetched a whole
+    afternoon of readings on every pass."""
+    from datetime import datetime, timedelta, timezone
+    from wom.updater import RECENT_MINUTES
+
+    now = datetime.now(timezone.utc)
+    recent = snapshot((now - timedelta(minutes=5)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z"), skills={"attack": (500, 40)})
+    client = FakeClient(details={
+        "id": 1, "username": "zezima", "displayName": "Zezima",
+        "type": "regular", "latestSnapshot": recent})
+    update_one(client, db, "zezima")
+
+    asked = (now - client.asked_from).total_seconds() / 60
+    assert asked < RECENT_MINUTES / 2, (
+        "the window should follow the last reading, not the ceiling")
