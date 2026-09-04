@@ -1,6 +1,13 @@
 """Storage: history, compaction, pruning and the export query."""
 
-from conftest import as_polled, snapshot
+import pytest
+from conftest import as_polled, before_migration, snapshot
+
+# The two migrations these tests are about, by the number migrations.py gives
+# them. Named here so a test says which step it is staging rather than a bare
+# integer, and so renumbering one of them breaks loudly.
+DROP_UNGROUPED_RECAPS = 6
+LABEL_SNAPSHOT_ORIGINS = 8
 
 
 def test_compaction_keeps_each_days_last_reading(db, player):
@@ -235,7 +242,8 @@ def test_group_recaps_outside_the_new_schedule_are_dropped(tmp_path):
     kept = {row["period"] for row in database.group_summaries()}
     assert kept == set(periods.SUMMARY_PERIODS), "all five are there to start"
 
-    # Reopening runs the migration, as a deploy would.
+    # Reopening runs the migration, as a deploy onto an older file would.
+    before_migration(database, DROP_UNGROUPED_RECAPS)
     again = Database(path)
     assert {row["period"] for row in again.group_summaries()} == set(
         periods.GROUP_PERIODS)
@@ -329,6 +337,106 @@ def test_older_readings_are_labelled_from_what_was_already_stored(db, player):
     conn = db.connect()
     with conn:
         conn.execute("UPDATE snapshots SET origin=NULL")
+    before_migration(db, LABEL_SNAPSHOT_ORIGINS)
     from wom.db import Database
     relabelled = Database(db.path)
     assert relabelled.query_one("SELECT origin FROM snapshots")["origin"] == "archive"
+
+
+# -- the version the file records -----------------------------------------
+
+def test_a_new_database_is_current_without_running_a_single_step(tmp_path,
+                                                                 monkeypatch):
+    """Built from today's schema, it cannot be an older shape.
+
+    The steps all used to run on every open, each one reading PRAGMA
+    table_info to discover it had nothing to do - a probe paid at every
+    startup for ever, on a file that was seconds old.
+    """
+    from wom.db import Database
+    from wom.store import migrations
+
+    ran = []
+    monkeypatch.setattr(migrations, "STEPS", tuple(
+        (n, lambda conn, n=n: ran.append(n)) for n, _step in migrations.STEPS))
+
+    database = Database(str(tmp_path / "new.db"))
+    assert ran == [], "a new file needs none of them"
+    assert migrations.version(database.connect()) == migrations.LATEST
+
+
+def test_a_database_from_before_the_numbering_is_walked_through_all_of_them():
+    """It says version zero because it has never said anything else, so every
+    step is offered it - and every step finds its work already done, which is
+    what the checks inside them are still there for."""
+    import sqlite3
+
+    from wom.store import migrations
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(migrations.SCHEMA)
+    assert migrations.version(conn) == 0, "nothing has stamped it"
+
+    assert migrations.apply(conn) == migrations.LATEST
+    assert migrations.version(conn) == migrations.LATEST
+
+
+def test_a_step_that_has_run_is_never_offered_again(tmp_path, monkeypatch):
+    """Which is the point of writing the number down."""
+    from wom.db import Database
+    from wom.store import migrations
+
+    path = str(tmp_path / "twice.db")
+    Database(path)                                  # stamped current
+
+    ran = []
+    monkeypatch.setattr(migrations, "STEPS", tuple(
+        (n, lambda conn, n=n: ran.append(n)) for n, _step in migrations.STEPS))
+    Database(path)
+    assert ran == []
+
+
+def test_an_interrupted_migration_resumes_rather_than_restarting(tmp_path,
+                                                                monkeypatch):
+    """The version is stamped after each step, not after the last one."""
+    import sqlite3
+
+    from wom.store import migrations
+
+    conn = sqlite3.connect(str(tmp_path / "half.db"))
+    conn.row_factory = sqlite3.Row
+    conn.executescript(migrations.SCHEMA)
+
+    ran = []
+
+    def explode(_conn):
+        raise RuntimeError("the power went out")
+
+    steps = [(n, lambda c, n=n: ran.append(n)) for n, _s in migrations.STEPS]
+    stumbles = steps[2][0]
+    steps[2] = (stumbles, explode)
+    monkeypatch.setattr(migrations, "STEPS", tuple(steps))
+
+    with pytest.raises(RuntimeError):
+        migrations.apply(conn)
+    assert ran == [steps[0][0], steps[1][0]]
+    assert migrations.version(conn) == steps[1][0], "as far as it got"
+
+    # And a second attempt picks up at the one that failed.
+    steps[2] = (stumbles, lambda c: ran.append(stumbles))
+    monkeypatch.setattr(migrations, "STEPS", tuple(steps))
+    migrations.apply(conn)
+    assert ran[2] == stumbles
+    assert migrations.version(conn) == migrations.LATEST
+
+
+def test_every_step_is_numbered_once_and_in_order():
+    """Numbers are permanent: a renumbered step is one an older file either
+    runs twice or never sees."""
+    from wom.store import migrations
+
+    numbers = [n for n, _step in migrations.STEPS]
+    assert numbers == sorted(numbers)
+    assert len(set(numbers)) == len(numbers)
+    assert numbers[0] == 1 and numbers[-1] == migrations.LATEST

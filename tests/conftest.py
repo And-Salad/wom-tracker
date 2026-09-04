@@ -42,6 +42,22 @@ def snapshot(when, skills=None, bosses=None, activities=None):
     }}
 
 
+def before_migration(db, number):
+    """Wind this file back to just before migration `number`, so it runs again.
+
+    A database records which migrations it has had, in SQLite's own
+    user_version, and a step that has run is never asked again. So a test that
+    stages what an older file looked like has to say that here too - otherwise
+    the file it built claims to be current, and the step the test is about is
+    quite correctly skipped.
+
+    Reopening the database is what applies it, exactly as a deploy would.
+    """
+    conn = db.connect()
+    with conn:
+        conn.execute("PRAGMA user_version = {:d}".format(number - 1))
+
+
 def as_polled(db):
     """Mark every stored reading as one we made ourselves.
 
