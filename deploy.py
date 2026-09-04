@@ -67,8 +67,13 @@ def check_git():
 
     # An unpushed commit is not as bad as an uncommitted change - it exists in
     # git - but it still means the repo does not show what is running.
-    run(["git", "fetch", "--quiet", "origin"])
+    #
+    # The fetch is inside the try as well as the count. A repository with no
+    # origin fails at the fetch, and it was the one command here whose failure
+    # was not caught - so "there is no upstream yet", which the line below
+    # exists to tolerate, refused the deploy instead.
     try:
+        run(["git", "fetch", "--quiet", "origin"])
         ahead = run(["git", "rev-list", "--count", "origin/{}..HEAD".format(branch)])
     except Stop:
         ahead = "0"          # no upstream yet; the push will set one

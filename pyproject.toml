@@ -33,6 +33,12 @@ select = ["E", "F", "W", "I", "B", "C4", "SIM", "UP015", "UP025", "UP028"]
 known-first-party = ["wom"]
 
 [tool.pytest.ini_options]
+# The application is not installed - wom/, web_app.py and wom_tracker.py are
+# imported from the repository root - so the root has to be on the path. It
+# used to arrive there only because `python -m pytest` puts the working
+# directory there; a bare `pytest`, which is what CI runs, could not import
+# wom at all.
+pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-q"
 filterwarnings = ["error::DeprecationWarning"]
