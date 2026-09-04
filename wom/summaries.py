@@ -13,9 +13,12 @@ import hashlib
 import logging
 import os
 import re
+from datetime import datetime, timezone
 
-from . import periods
+from . import periods, winners
+from .config import data_dir
 from .icons import SKILL_ORDER
+from .scheduler import zone
 from .util import fmt_datetime, fmt_hours, fmt_int, parse_api_time, pretty_metric
 
 log = logging.getLogger(__name__)
@@ -118,7 +121,6 @@ def prompt_path(config=None, period=None, kind="player"):
 
 
 def _prompt_file(name):
-    from .config import data_dir
     return os.path.join(data_dir(), name + ".txt")
 
 
@@ -209,7 +211,6 @@ def _week_context(database, players, window, board):
     competition nobody is playing. What it is for is review: who took each of
     its days, and where that leaves the month it sits in.
     """
-    from . import winners
 
     lines = ["", "Days of this week, and who took each:"]
     won = winners.daily_winners(database, players, window.start, window.end,
@@ -254,7 +255,6 @@ def _ranking_lines(ranked):
     Worked out here rather than left to the model, so the round-up and the
     calendar square beside it cannot name different winners.
     """
-    from . import winners
 
     averaged = ranked and ranked[0]["points"] is not None
     voided = bool(ranked and ranked[0].get("voided"))
@@ -318,7 +318,6 @@ def build_group_digest(database, config, players, window, board="maxing"):
     same figures judged differently and a round-up handed only the numbers
     would pick the winner the numbers suggest rather than the one who won.
     """
-    from . import winners
 
     since, until = window.start_iso(), window.end_iso()
     lines = ["Competition: {}".format(BOARD_RULES.get(board, board)),
@@ -599,9 +598,7 @@ def due_periods(database, now=None):
     Everything is judged in the configured time zone so it lines up with the
     update schedule rather than drifting against the viewer's own clock.
     """
-    from datetime import datetime, timezone
 
-    from .scheduler import zone
     now = (now or datetime.now(timezone.utc)).astimezone(zone())
 
     # A period is owed when its newest complete window has not been written
@@ -629,7 +626,6 @@ def _missing(database, period, window_key):
         return False
     # Every board owes its own round-up for the window. Asking about one of
     # them would call the window done while the other had nothing written.
-    from . import winners
     return any(database.group_summary(period, window_key, board) is None
                for board in winners.BOARDS)
 
@@ -741,7 +737,6 @@ def summarise_all(database, config, players, period_keys=None, force=False,
     # It always compares the whole roster, never the caller's subset: there is
     # a single stored recap per window, so writing one from a partial
     # selection would file a two-player comparison as the verdict for everyone.
-    from . import winners
 
     roster = database.players()
     for key in [k for k in keys if k in periods.GROUP_PERIODS]:

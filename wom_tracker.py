@@ -108,7 +108,6 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
     from wom import periods, summaries
     config = Config()
     if show_prompt:
-        from wom import periods as _periods
         for kind, title in (("player", "PER-PLAYER NOTES"),
                             ("group", "GROUP ROUND-UP")):
             base = summaries.base_prompt_path(kind)
@@ -117,7 +116,7 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
             print("base prompt (used unless a period has its own):")
             print("    {}".format(base))
             print("per-period overrides - create any of these to differ:")
-            for key in _periods.SUMMARY_PERIODS:
+            for key in periods.SUMMARY_PERIODS:
                 path = summaries.period_prompt_path(key, kind)
                 print("        {:<7} {}  {}".format(
                     key, path,

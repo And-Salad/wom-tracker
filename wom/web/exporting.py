@@ -21,7 +21,7 @@ from flask import (
 )
 
 from .dates import BadRequest, day_bound, offset_minutes
-from .selection import chosen, database, roster, settings
+from .selection import chosen, database, page_context, roster, settings, shell
 
 exporting = Blueprint("exporting", __name__)
 
@@ -32,10 +32,8 @@ COLUMNS = ("captured_at", "player", "username", "kind", "metric",
 
 @exporting.route("/export")
 def export_page():
-    from .pages import _shell
-    from .selection import page_context
     scope = page_context()
-    return render_template("export.html", kinds=KINDS, **_shell(scope))
+    return render_template("export.html", kinds=KINDS, **shell(scope))
 
 
 @exporting.route("/export.<fmt>")

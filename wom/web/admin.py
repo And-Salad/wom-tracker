@@ -19,6 +19,7 @@ from flask import (
     Blueprint,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -28,10 +29,12 @@ from flask import (
 
 from .. import periods, scheduler
 from .. import summaries as core
+from ..api import WomClient
 from ..colors import normalise, player_color, set_player_color
 from ..config import ENV_KEYS, Config, normalise_usernames
 from ..sessions import MAX_SESSION_HOURS
 from ..summaries import SUMMARY_EFFORTS, SUMMARY_MODELS
+from ..updater import backfill_player, update_all
 from ..util import fmt_ago, fmt_datetime, fmt_int, parse_api_time
 from .hooks import public_url
 from .limits import client_address
@@ -473,8 +476,6 @@ def run(action):
 
     if action == "update":
         def work(job):
-            from ..api import WomClient
-            from ..updater import update_all
             client = WomClient(config.get("api_key", ""),
                                config.get("user_agent_contact", ""))
             names = config.get("usernames", [])
@@ -506,8 +507,6 @@ def run(action):
 
     elif action == "backfill":
         def work(job):
-            from ..api import WomClient
-            from ..updater import backfill_player
             client = WomClient(config.get("api_key", ""),
                                config.get("user_agent_contact", ""))
             for name in config.get("usernames", []):
@@ -528,5 +527,4 @@ def run(action):
 @admin.route("/admin/status")
 @requires_login
 def status():
-    from flask import jsonify
     return jsonify(current_app.config["JOBS"].status())

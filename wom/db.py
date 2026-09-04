@@ -11,6 +11,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 
+from .periods import GROUP_PERIODS
 from .util import parse_api_time
 
 log = logging.getLogger(__name__)
@@ -373,7 +374,6 @@ class Database:
         Each player's own notes are untouched: those are about one account's
         progress, and all five windows still say something there.
         """
-        from .periods import GROUP_PERIODS
 
         marks = ",".join("?" * len(GROUP_PERIODS))
         stale = conn.execute(

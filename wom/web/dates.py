@@ -7,6 +7,8 @@ conversion, in both directions, so it lives in one place rather than twice.
 
 from datetime import datetime, timedelta, timezone
 
+from flask import request
+
 from ..util import api_stamp
 
 
@@ -59,7 +61,6 @@ def viewer_offset():
     sees a "To" of tomorrow until they touch something. The cookie is written
     by sidebar.js and holds nothing but a number of minutes.
     """
-    from flask import request
     given = request.args.get("tzoffset")
     if given is not None:
         return offset_minutes(given)

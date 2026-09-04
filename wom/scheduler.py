@@ -10,6 +10,8 @@ import logging
 import threading
 from datetime import datetime, timedelta, timezone, tzinfo
 
+from .config import Config
+
 log = logging.getLogger(__name__)
 
 # Minutes between update runs. Ten is a long way inside what Wise Old Man
@@ -87,7 +89,6 @@ def zone():
     """
     global _zone
     if _zone is None:
-        from .config import Config
         _zone = zone_named((Config().get("timezone") or "").strip() or DEFAULT_ZONE)
     return _zone
 

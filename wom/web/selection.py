@@ -12,6 +12,7 @@ from ..colors import player_color
 from ..config import Config
 from ..scheduler import next_slot, parse_last_run
 from ..util import fmt_ago
+from .timespan import current_timespan, labels
 
 
 def database():
@@ -63,7 +64,6 @@ def colors(config, players):
 
 def current_span(players=None):
     """The window the request is asking about: the period, or the dates."""
-    from .timespan import current_timespan
     return current_timespan(database(), players)
 
 
@@ -106,9 +106,27 @@ def scope():
     return Scope()
 
 
+def shell(scope):
+    """What every page hands the sidebar: who, and over what window.
+
+    Not `status`: the header line is the same on every page including admin,
+    so the app factory's context processor supplies it. Passing it here as
+    well only overrode an identical value that had already been computed.
+
+    It lives beside page_context because it is that context reshaped, and
+    because the export page needs it too - which it used to get by reaching
+    into pages.py for a private name, from inside a function, to break a
+    circular import that was never there.
+    """
+    return {"players": scope["players"],
+            "selected": {p["username"] for p in scope["selected"]},
+            "colors": scope["palette"],
+            "span": scope["span"].as_dict(),
+            "period_labels": scope["period_labels"]}
+
+
 def page_context():
     """Everything a page needs about the current request, resolved once."""
-    from .timespan import labels
     found = Scope()
     return {
         "config": found.config,
