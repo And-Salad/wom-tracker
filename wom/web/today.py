@@ -18,8 +18,8 @@ account still climbing compete with one that has already maxed.
 """
 
 from .. import theme, winners
-from ..util import (api_stamp as _stamp, fmt_int, parse_api_time,
-                    pretty_metric)
+from ..util import api_stamp as _stamp
+from ..util import fmt_int, parse_api_time, pretty_metric
 
 
 def is_whole_group(database, players):

@@ -677,48 +677,33 @@
     var line = d3.line()
       .x(function (p) { return x(p[0]); })
       .y(function (p) { return y(p[1]); });
-    /* Three kinds of stretch, and only one of them is a measurement.
-
-       SOLID joins two readings taken close enough together to believe the
-       line between them.
-
-       GAP is Wise Old Man's history having holes - weeks or months with no
-       snapshot at all. Joining across one draws a straight line through time
-       nobody measured, which reads as steady progress that may never have
-       happened. Long dashes, faded: the two ends are real, the middle is
-       anybody's guess, and the guess spans months.
-
-       RAMP is a session we know both ends of. The hiscores are frozen while
-       somebody is logged in, so those readings all repeat the value from
-       before and the honest-looking line is flat for three hours and then
-       vertical - which is not what happened either. sessions.py fills the
-       stretch in at an even rate. Dotted rather than dashed, and at full
-       strength: the shape is invented, but the hour it covers is one we know
-       they were playing, which is a much better class of guess than GAP. */
-    var SOLID = 0, GAP = 1, RAMP = 2;
-    var STYLE = {};
-    STYLE[GAP] = { width: 1.2, opacity: 0.5, dash: "4,4" };
-    STYLE[RAMP] = { width: 1.6, opacity: 0.9, dash: "1,3" };
+    // Wise Old Man's history has holes - weeks or months with no snapshot at
+    // all. Joining across one draws a straight line through time nobody
+    // measured, which reads as steady progress that may never have happened.
+    // Those stretches are dashed: the two ends are real, the middle is a guess.
+    //
+    // A session's ramp is not one of them and is drawn as an ordinary line.
+    // The stretch it covers is time we know they were playing, and only its
+    // shape is assumed - a much better class of guess than a dashed gap, and
+    // breaking the line to say so made a normal evening look like missing
+    // data. What is invented is still said, twice: no dot sits on a ramped
+    // point, because a dot asserts a reading, and the tooltip marks the value
+    // with a "roughly" sign.
     var gapLimit = Math.max(1.5 * 86400000, (ends - data.since) * 0.04);
     shown.forEach(function (s) {
-      // A run collects consecutive stretches of one kind, so a session is one
-      // path rather than a path per reading it ran through.
-      var run = [s.points[0]], kind = SOLID;
+      var run = [s.points[0]];
       for (var i = 1; i < s.points.length; i++) {
         var previous = s.points[i - 1];
         var point = s.points[i];
-        var next = point[0] - previous[0] > gapLimit ? GAP
-          : (point[3] ? RAMP : SOLID);
-        if (next !== kind) {
-          stroke(run, kind);
-          run = [previous];         // the shared point belongs to both runs
-          kind = next;
+        if (point[0] - previous[0] > gapLimit) {
+          stroke(run, false);
+          stroke([previous, point], true);
+          run = [point];
+        } else {
+          run.push(point);
         }
-        run.push(point);
       }
-      stroke(run, kind);
-      // A dot asserts a reading, so only the real ones get one. Interpolated
-      // points are the line's shape, not evidence of anything.
+      stroke(run, false);
       var real = s.points.filter(function (p) { return !p[3]; });
       if (real.length < 80) {
         plot.append("g").selectAll("circle").data(real).join("circle")
@@ -727,14 +712,12 @@
           .attr("r", 2.2).attr("fill", s.color);
       }
 
-      function stroke(points, of) {
+      function stroke(points, guessed) {
         if (points.length < 2) { return; }
-        var style = STYLE[of];
         plot.append("path").datum(points).attr("fill", "none")
-          .attr("stroke", s.color).attr("stroke-width", style ? style.width : 1.8)
-          .attr("stroke-opacity", style ? style.opacity : 1)
-          .attr("stroke-dasharray", style ? style.dash : null)
-          .attr("stroke-linecap", of === RAMP ? "round" : null)
+          .attr("stroke", s.color).attr("stroke-width", guessed ? 1.2 : 1.8)
+          .attr("stroke-opacity", guessed ? 0.5 : 1)
+          .attr("stroke-dasharray", guessed ? "4,4" : null)
           .attr("stroke-linejoin", "round").attr("d", line);
       }
     });

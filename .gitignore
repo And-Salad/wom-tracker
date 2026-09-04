@@ -48,3 +48,8 @@ backups/
 # Test artefacts
 .coverage
 .pytest_cache/
+
+# The browser tests' one dependency (jsdom). package.json is committed; what
+# npm unpacks from it is not.
+node_modules/
+package-lock.json

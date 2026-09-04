@@ -219,7 +219,9 @@ def attribute(database, zone, player, since, max_hours=MAX_SESSION_HOURS):
         (player["id"], since))]
 
     written = 0
-    for previous_at, reading_at in zip(readings, readings[1:]):
+    # strict=False deliberately: this is a list zipped against itself
+    # offset by one, so the shorter tail is the point of the pairing.
+    for previous_at, reading_at in zip(readings, readings[1:], strict=False):
         # Any metric moving means something was earned in that gap. Gating on
         # `overall` alone would miss a reading that only moved a boss count.
         moved = database.query_one(

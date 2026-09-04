@@ -6,30 +6,36 @@ chosen. `python_requires` in package metadata is the mechanism that enforces
 it, and this is an application you clone rather than a package you install.
 So the entry points ask here, on the way in.
 
-The floor is zoneinfo, which arrived in 3.9. Nothing else in the codebase
-needs anything newer - every file parses under 3.7 - and the README used to
-claim 3.10 for no reason anybody could point at.
+Two things set the floor, and they are worth keeping straight because they
+fail in opposite ways.
 
-It matters because the failure without it is quiet rather than loud. zoneinfo
-is imported inside a try/except so a missing time zone database degrades
-instead of crashing, which is right when the database is missing and wrong
-when the interpreter is simply too old: US Eastern keeps working off the
-built-in rules, every other zone silently becomes UTC - moving every day
-boundary, every calendar square and every recap window - and the admin page
-refuses each zone you type with "not a time zone this machine knows", blaming
-the machine for the interpreter's age.
+zoneinfo arrived in 3.9, and its absence is quiet. It is imported inside a
+try/except so a missing time zone *database* degrades instead of crashing,
+which is right when the database is missing and wrong when the interpreter is
+simply too old: US Eastern keeps working off the built-in rules, every other
+zone silently becomes UTC - moving every day boundary, every calendar square
+and every recap window - and the admin page refuses each zone you type with
+"not a time zone this machine knows", blaming the machine for the
+interpreter's age.
+
+The anthropic SDK requires 3.10, and its absence is loud: pip refuses to
+install requirements.txt at all. That is the higher of the two, so it is the
+floor. This file used to say 3.9 and note that "the README used to claim 3.10
+for no reason anybody could point at" - the reason was in requirements.txt the
+whole time, and nothing ever ran the install on 3.9 to find out. CI does now.
 """
 
 import sys
 
-MINIMUM = (3, 9)
+MINIMUM = (3, 10)
 
 MESSAGE = """\
 WOM Tracker needs Python {needed} or newer; this is Python {found}.
 
-Python {found} has no `zoneinfo`, and without it every time zone but US
+Below 3.9 there is no `zoneinfo`, and without it every time zone but US
 Eastern silently becomes UTC - which moves every day boundary, every square
-on the calendar and every window a recap is written for.
+on the calendar and every window a recap is written for. Below 3.10 the
+anthropic SDK the recaps are written with will not install at all.
 
 Install a newer Python and run it with that instead.\
 """

@@ -26,9 +26,9 @@ from wom.runtime import require as require_python
 require_python()
 
 from wom.api import WomClient
-from wom.logs import setup_logging
-from wom.config import Config, DB_PATH
+from wom.config import Config, db_path
 from wom.db import Database
+from wom.logs import setup_logging
 from wom.scheduler import stamp_now
 from wom.updater import backfill_player, update_all
 
@@ -43,7 +43,7 @@ def run_headless_update():
     if not names:
         print("No usernames configured. Open the app and add some under Options.")
         return 1
-    database = Database(DB_PATH)
+    database = Database(db_path())
     client = WomClient(config.get("api_key", ""), config.get("user_agent_contact", ""))
     results = update_all(client, database, names, trigger="cli")
     for result in results:
@@ -65,13 +65,13 @@ def run_headless_update():
 
 
 def run_backfill(names=None):
-    """Re-import stored history for every tracked player, ignoring the once-only flag."""
+    """Re-import stored history for every player, ignoring the once-only flag."""
     config = Config()
     names = names or config.get("usernames", [])
     if not names:
         print("No usernames configured. Open the app and add some under Options.")
         return 1
-    database = Database(DB_PATH)
+    database = Database(db_path())
     client = WomClient(config.get("api_key", ""), config.get("user_agent_contact", ""))
     total = 0
     for name in names:
@@ -84,8 +84,8 @@ def run_backfill(names=None):
 
 def run_compact(keep_days, dry_run):
     """Thin stored history so long-term growth stays flat."""
-    database = Database(DB_PATH)
-    before = os.path.getsize(DB_PATH)
+    database = Database(db_path())
+    before = os.path.getsize(db_path())
     preview = database.compaction_preview(keep_days)
     print("{:,} snapshots stored; {:,} beyond the last {} days are more than"
           " one a day".format(preview["total"], preview["removable"], keep_days))
@@ -96,7 +96,7 @@ def run_compact(keep_days, dry_run):
         print("nothing to compact")
         return 0
     result = database.compact_snapshots(keep_days)
-    after = os.path.getsize(DB_PATH)
+    after = os.path.getsize(db_path())
     print("removed {:,} snapshots; database {:.1f} MB -> {:.1f} MB".format(
         result["removed"], before / 1e6, after / 1e6))
     return 0
@@ -108,7 +108,6 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
     from wom import periods, summaries
     config = Config()
     if show_prompt:
-        from wom import periods as _periods
         for kind, title in (("player", "PER-PLAYER NOTES"),
                             ("group", "GROUP ROUND-UP")):
             base = summaries.base_prompt_path(kind)
@@ -117,17 +116,18 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
             print("base prompt (used unless a period has its own):")
             print("    {}".format(base))
             print("per-period overrides - create any of these to differ:")
-            for key in _periods.SUMMARY_PERIODS:
+            for key in periods.SUMMARY_PERIODS:
                 path = summaries.period_prompt_path(key, kind)
                 print("        {:<7} {}  {}".format(
                     key, path,
                     "IN USE" if os.path.exists(path) else "(not present)"))
             print()
-            print(open(base, encoding="utf-8").read().rstrip())
+            with open(base, encoding="utf-8") as handle:
+                print(handle.read().rstrip())
             print()
         return 0
 
-    database = Database(DB_PATH)
+    database = Database(db_path())
     players = database.players()
     if only_player:
         wanted = only_player.lower()
@@ -189,7 +189,8 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
                 print("=" * 68)
                 print(digest)
                 print()
-        print("nothing was sent. Worst case for all of the above: ${:.3f}".format(total))
+        print("nothing was sent. Worst case for all of the above:"
+              " ${:.3f}".format(total))
         return 0
 
     results = summaries.summarise_all(
@@ -206,25 +207,26 @@ def main(argv=None):
     parser.add_argument("--update", action="store_true",
                         help="run one update pass now, without starting the server")
     parser.add_argument("--backfill", nargs="*", metavar="NAME",
-                        help="re-import stored history, for the given names or all of them")
+                        help="re-import stored history, for these names or all")
     parser.add_argument("--summarize", "--summarise", dest="summarize",
                         action="store_true", help="write the Claude summaries")
     parser.add_argument("--period", action="append", metavar="KEY",
                         help="which period to summarise (repeatable); default week")
     parser.add_argument("--player", metavar="NAME", help="summarise just this player")
     parser.add_argument("--due", action="store_true",
-                        help="with --summarize, write exactly what the schedule owes now")
+                        help="with --summarize, write what the schedule owes now")
     parser.add_argument("--force", action="store_true",
                         help="regenerate even when the data has not changed")
     parser.add_argument("--show-prompt", action="store_true",
                         help="print the tunable summary prompt and its path")
     parser.add_argument("--compact", action="store_true",
-                        help="thin history older than --keep-days to one snapshot a day")
+                        help="thin history past --keep-days to one a day")
     parser.add_argument("--keep-days", type=int, default=30, metavar="N",
                         help="how much recent history --compact leaves untouched")
     parser.add_argument("--dry-run", action="store_true",
                         help="report what would happen without doing it")
-    parser.add_argument("--list", action="store_true", help="print the tracked usernames")
+    parser.add_argument("--list", action="store_true",
+                        help="print the tracked usernames")
     parser.add_argument("--verbose", action="store_true", help="debug logging")
     args = parser.parse_args(argv)
 

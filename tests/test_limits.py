@@ -2,8 +2,7 @@
 
 import time
 
-from wom.web.limits import (TRUSTED_HEADER_ENV, Budget, Tripwire,
-                            client_address)
+from wom.web.limits import TRUSTED_HEADER_ENV, Budget, Tripwire, client_address
 
 
 def test_a_budget_allows_its_allowance_then_refuses():
@@ -93,7 +92,7 @@ def test_the_sign_in_lockout_cannot_be_shaken_off_with_a_header(client, app,
     assert refused, "a header nobody vouches for must not buy a fresh allowance"
 
 
-def test_one_app_locking_out_cannot_lock_out_another(app, tmp_path, monkeypatch):
+def test_one_app_locking_out_cannot_lock_out_another(app, monkeypatch):
     """The lockout is per app, like every other budget.
 
     As a module global it was shared by every app in the process, so one
@@ -107,11 +106,8 @@ def test_one_app_locking_out_cannot_lock_out_another(app, tmp_path, monkeypatch)
     assert "Too many attempts" in first.post(
         "/admin/login", data={"password": "wrong"}).get_data(as_text=True)
 
-    from wom.db import Database
-    from wom.web import app as web_app
-    database = Database(str(tmp_path / "second.db"))
-    monkeypatch.setattr(web_app, "Database", lambda _path: database)
-    second = web_app.create_app()
+    from wom.web import create_app
+    second = create_app()
     second.config["TESTING"] = True
     page = second.test_client().post("/admin/login", data={"password": "wrong"})
     assert "Too many attempts" not in page.get_data(as_text=True), (
@@ -274,8 +270,9 @@ def test_a_quiet_key_is_eventually_forgotten():
 def test_a_second_job_is_refused_while_one_is_running():
     """Two update passes over the same rows is twice the API traffic for the
     same answer, and for summaries twice the Claude bill."""
-    from wom.web.jobs import JobRunner
     import threading
+
+    from wom.web.jobs import JobRunner
 
     runner = JobRunner()
     holding, release = threading.Event(), threading.Event()
@@ -337,19 +334,26 @@ def test_an_interpreter_without_zoneinfo_is_refused_loudly():
     degrades rather than crashes, and on too old an interpreter that same
     path turns every zone but US Eastern into UTC."""
     import io as _io
+
     from wom import runtime
 
     said = _io.StringIO()
     assert runtime.check((3, 8), said) is False
     message = said.getvalue()
-    assert "3.9 or newer" in message and "3.8" in message
+    assert "3.10 or newer" in message and "3.8" in message
     assert "zoneinfo" in message, "and says which missing piece is the reason"
 
 
-def test_the_floor_is_the_one_zoneinfo_needs():
+def test_the_floor_is_the_highest_of_the_reasons_for_one():
+    """zoneinfo wants 3.9 and the anthropic SDK wants 3.10, so it is 3.10.
+
+    It said 3.9 until CI tried to install requirements.txt on 3.9 and pip
+    refused - which is the sort of thing a check nobody runs cannot tell you.
+    """
     from wom import runtime
-    assert runtime.MINIMUM == (3, 9)
-    assert runtime.check((3, 9)) is True
+    assert runtime.MINIMUM == (3, 10)
+    assert runtime.check((3, 9)) is False, "anthropic will not install there"
+    assert runtime.check((3, 10)) is True
     assert runtime.check((3, 12)) is True
 
 

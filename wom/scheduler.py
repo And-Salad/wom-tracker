@@ -10,6 +10,8 @@ import logging
 import threading
 from datetime import datetime, timedelta, timezone, tzinfo
 
+from .config import Config
+
 log = logging.getLogger(__name__)
 
 # Minutes between update runs. Ten is a long way inside what Wise Old Man
@@ -87,7 +89,6 @@ def zone():
     """
     global _zone
     if _zone is None:
-        from .config import Config
         _zone = zone_named((Config().get("timezone") or "").strip() or DEFAULT_ZONE)
     return _zone
 
@@ -168,7 +169,8 @@ class SlotScheduler:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, name="wom-scheduler", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name="wom-scheduler",
+                                        daemon=True)
         self._thread.start()
 
     def stop(self):
@@ -243,7 +245,8 @@ class SlotScheduler:
         while not self._stop.is_set():
             try:
                 if not self._busy and self.due():
-                    trigger = "startup" if not self.config.get("last_run") else "scheduled"
+                    trigger = ("startup" if not self.config.get("last_run")
+                               else "scheduled")
                     self.run_now(trigger)
             except Exception:
                 log.exception("scheduler tick failed")

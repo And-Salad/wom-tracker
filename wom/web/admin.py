@@ -15,14 +15,26 @@ import time
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
-from flask import (Blueprint, current_app, flash, redirect, render_template,
-                   request, session, url_for)
+from flask import (
+    Blueprint,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
-from .. import periods, scheduler, summaries as core
+from .. import periods, scheduler
+from .. import summaries as core
+from ..api import WomClient
 from ..colors import normalise, player_color, set_player_color
-from ..config import Config, ENV_KEYS, normalise_usernames
-from ..summaries import SUMMARY_EFFORTS, SUMMARY_MODELS
+from ..config import ENV_KEYS, Config, normalise_usernames
 from ..sessions import MAX_SESSION_HOURS
+from ..summaries import SUMMARY_EFFORTS, SUMMARY_MODELS
+from ..updater import backfill_player, update_all
 from ..util import fmt_ago, fmt_datetime, fmt_int, parse_api_time
 from .hooks import public_url
 from .limits import client_address
@@ -145,7 +157,8 @@ def settings():
             "events": database.session_event_count(name.lower()),
             "reported": database.game_event_count(name.lower()),
             "state": session_state(seen),
-            "last_seen": fmt_datetime(seen["happened_at"]) if seen is not None else None,
+            "last_seen": (fmt_datetime(seen["happened_at"])
+                          if seen is not None else None),
             "last_ago": fmt_ago(seen["happened_at"]) if seen is not None else "",
             "last_exp": fmt_int(seen["total_exp"], dash="") if seen is not None else "",
         })
@@ -346,7 +359,7 @@ def _prompt_rows(config):
             path = core.period_prompt_path(key, kind=kind)
             if not os.path.exists(path):
                 continue
-            with open(path, "r", encoding="utf-8") as handle:
+            with open(path, encoding="utf-8") as handle:
                 rows.append({"kind": kind, "period": key,
                              "title": "{} prompt for {}".format(label, key),
                              "text": handle.read().strip(), "override": True})
@@ -463,8 +476,6 @@ def run(action):
 
     if action == "update":
         def work(job):
-            from ..api import WomClient
-            from ..updater import update_all
             client = WomClient(config.get("api_key", ""),
                                config.get("user_agent_contact", ""))
             names = config.get("usernames", [])
@@ -496,8 +507,6 @@ def run(action):
 
     elif action == "backfill":
         def work(job):
-            from ..api import WomClient
-            from ..updater import backfill_player
             client = WomClient(config.get("api_key", ""),
                                config.get("user_agent_contact", ""))
             for name in config.get("usernames", []):
@@ -518,5 +527,4 @@ def run(action):
 @admin.route("/admin/status")
 @requires_login
 def status():
-    from flask import jsonify
     return jsonify(current_app.config["JOBS"].status())

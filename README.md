@@ -435,11 +435,26 @@ it as a daily task on Windows.
 ## Tests
 
 ```bash
-py -m pytest -q
+pip install -r requirements-dev.txt
+pytest
 ```
 
-Every test runs against a throwaway data directory, so none of them touch a real
-database or make a network call. `deploy.py` runs them before it deploys.
+Every test runs against a throwaway data directory of its own - its database,
+its settings and its prompts - so none of them touch a real installation or
+make a network call, and none of them can leave anything behind for the next
+one. They run in a different order every time, which is what keeps that true.
+`deploy.py` runs them before it deploys.
+
+The browser half has its own, because it needs a different runtime:
+
+```bash
+npm install
+npm test
+```
+
+Both, on 3.10 and 3.12, run on every push and pull request - see
+`.github/workflows/tests.yml`. `ruff check .` is the linter, configured in
+`pyproject.toml`.
 
 ## Layout
 
@@ -450,10 +465,14 @@ deploy.py            commit-checked deploy, then push
 backup.py            pull a verified copy of the hosted database
 backup_schedule.ps1  registers backup.py as a daily Windows task
 fetch_icons.py       download the skill and boss sprites into assets/
+pyproject.toml       ruff and pytest configuration; no packaging metadata
+requirements.txt     what the app needs
+requirements-dev.txt what the tests need on top of it
+package.json         jsdom, for the browser tests
 wom/
   api.py             Wise Old Man client, rate limiting and retries
   config.py          settings file, with secrets overridable by environment
-  db.py              SQLite schema and queries
+  db.py              the name everything imports; wom/store is the code
   updater.py         one update pass over the username list
   scheduler.py       the ten-minute timer, the configured zone, the busy flag
   periods.py         the windows: all five for a note, day and month for a recap
@@ -483,7 +502,20 @@ wom/
     dates.py         parsing the sidebar's dates, and refusing bad ones
     jobs.py          admin jobs on their own thread, with progress
     static/          app.css, D3, chartkit.js and a file per page
-tests/               pytest, against a throwaway data directory
+  store/
+    schema.py        the tables as they are today
+    migrations.py    getting an older file to them, numbered in user_version
+    core.py          the connection, and the two ways of asking
+    players.py       the roster, and what Wise Old Man says about each
+    snapshots.py     readings, and the sparse metric history under them
+    events.py        what players report while playing: sessions, milestones
+    images.py        the gallery's rows
+    achievements.py  milestones Wise Old Man dates for us
+    recaps.py        the written notes and round-ups, and the runs behind them
+    maintenance.py   thinning old history
+tests/               a file per concern, each against its own data directory
+  js/                the browser half, run by node against jsdom
+.github/workflows/   the tests, on 3.10 and 3.12, and the linter
 docs/notes.md        longer background on why parts are shaped as they are
 data/                settings, database, prompts and logs (created on first run)
 ```
@@ -496,12 +528,12 @@ what the tables and the column names still call it.
 
 ## Requirements
 
-**Python 3.9 or newer**, with `requests`, `flask` and `waitress`, plus `tzdata`
-(Windows has no IANA time zone database of its own) and `anthropic` for the
-recaps.
+**Python 3.10 or newer**, with `requests`, `flask` and `waitress`, plus
+`tzdata` (Windows has no IANA time zone database of its own) and `anthropic`
+for the recaps.
 
-The floor is 3.9 because of `zoneinfo`; nothing here needs anything newer, and
-every file parses under 3.7. It cannot live in `requirements.txt` - pip is a
+Two things set the floor. `zoneinfo` needs 3.9, and the `anthropic` SDK needs
+3.10 - so 3.10 it is. It cannot live in `requirements.txt` - pip is a
 Python program, so the interpreter is already chosen by the time that file is
 read - so the entry points check it themselves and say so, in `wom/runtime.py`.
 Without that check the failure is quiet: `zoneinfo` is imported inside a

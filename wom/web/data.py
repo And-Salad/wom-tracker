@@ -8,10 +8,19 @@ import logging
 from datetime import datetime, timezone
 
 from .. import winners
-from ..catalog import (BY_KEY, CHOICE_METRICS, CLUE_TIERS, COLLECTION_LOG,
-                       LOG_METRICS, TOP_BOSSES, TOTAL_LEVEL, chart, specs)
-from ..icons import SKILL_ORDER
+from ..catalog import (
+    BY_KEY,
+    CHOICE_METRICS,
+    CLUE_TIERS,
+    COLLECTION_LOG,
+    LOG_METRICS,
+    TOP_BOSSES,
+    TOTAL_LEVEL,
+    chart,
+    specs,
+)
 from ..context import ViewContext
+from ..icons import SKILL_ORDER
 from ..periods import coverage_slack
 from ..util import parse_api_time, pretty_metric
 
@@ -362,7 +371,8 @@ def _coverage(ctx, series):
             continue
         notes.append({"name": entry["name"], "color": entry["color"],
                       "since": measured.strftime("%d %b %Y"),
-                      "days": max(1, int((closes - measured).total_seconds() // 86400))})
+                      "days": max(1, int(
+                          (closes - measured).total_seconds() // 86400))})
     return notes
 
 

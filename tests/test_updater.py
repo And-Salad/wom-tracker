@@ -1,5 +1,6 @@
 """One update pass, against a stand-in for the API."""
 
+
 from conftest import snapshot
 
 from wom.api import WomError
@@ -87,7 +88,7 @@ def test_history_is_imported_once(db):
     assert first.imported == 2
     second = update_one(client, db, "zezima")
     assert second.imported == 0, "backfill runs once, not on every pass"
-    assert [c for c in client.calls].count(("snapshots", "zezima")) == 1
+    assert list(client.calls).count(("snapshots", "zezima")) == 1
 
 
 def test_milestones_are_counted_only_when_new(db):
@@ -187,6 +188,7 @@ def test_an_update_run_places_the_sessions_it_just_learned_about(db, monkeypatch
     """The correction has to ride on the update, not on a command somebody
     remembers to run - the same reason compaction was moved onto the schedule."""
     from conftest import snapshot
+
     from wom import updater
 
     db.save_player_details({"id": 1, "username": "zezima",
@@ -285,6 +287,7 @@ def test_the_history_window_only_covers_what_we_do_not_hold(db):
     """Asked for a flat three hours it re-fetched every ten-minute reading in
     them, nearly all already stored - which is what made a pass slow."""
     from datetime import datetime, timedelta, timezone
+
     from wom.updater import OVERLAP_MINUTES, _recent_since
 
     now = datetime.now(timezone.utc)
@@ -303,6 +306,7 @@ def test_the_history_window_only_covers_what_we_do_not_hold(db):
 def test_the_window_widens_by_itself_after_an_outage(db):
     """The last reading is older, so asking from it covers the gap."""
     from datetime import datetime, timedelta, timezone
+
     from wom.updater import _recent_since
 
     now = datetime.now(timezone.utc)
@@ -317,6 +321,7 @@ def test_the_window_widens_by_itself_after_an_outage(db):
 def test_the_window_never_reaches_further_back_than_the_ceiling(db):
     """An account we have not read for a week is a backfill's job, not this."""
     from datetime import datetime, timezone
+
     from wom.updater import RECENT_MINUTES, _recent_since
 
     now = datetime.now(timezone.utc)
@@ -330,6 +335,7 @@ def test_the_window_never_reaches_further_back_than_the_ceiling(db):
 
 def test_an_account_with_no_readings_yet_uses_the_ceiling(db):
     from datetime import datetime, timezone
+
     from wom.updater import RECENT_MINUTES, _recent_since
     now = datetime.now(timezone.utc)
     minutes = (now - _recent_since(db, 99, now)).total_seconds() / 60
@@ -341,6 +347,7 @@ def test_the_history_call_asks_only_for_the_gap(db):
     already stored, so asking from the start of the window re-fetched a whole
     afternoon of readings on every pass."""
     from datetime import datetime, timedelta, timezone
+
     from wom.updater import RECENT_MINUTES
 
     now = datetime.now(timezone.utc)
@@ -363,6 +370,7 @@ def test_the_window_never_starts_in_the_future(db):
     asks for a stretch that has not happened yet.
     """
     from datetime import datetime, timedelta, timezone
+
     from wom.updater import _recent_since
 
     now = datetime.now(timezone.utc)
