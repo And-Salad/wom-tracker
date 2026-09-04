@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
     player_id   INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     captured_at TEXT NOT NULL,                    -- snapshot createdAt, ISO UTC
     fetched_at  TEXT NOT NULL,
-    origin      TEXT,                             -- poll | archive | derived
+    origin      TEXT,                             -- see save_snapshot
     payload     TEXT NOT NULL,                    -- raw snapshot data as JSON
     UNIQUE (player_id, captured_at)
 );
@@ -143,6 +143,30 @@ CREATE TABLE IF NOT EXISTS session_events (
 
 CREATE INDEX IF NOT EXISTS idx_session_events_who
     ON session_events (username, happened_at DESC);
+
+-- What Dink reports while somebody is playing, rather than at the ends of a
+-- session: a collection log slot filled, a level gained, a boss count passed.
+-- Opt-in per player, so this is sparse and always will be.
+--
+-- Kept whole as well as flattened, because the interesting part is the detail
+-- - which item, from which drop, at which rank - and none of that fits the
+-- metrics table. A collection log feed wants the item; the charts want the
+-- count. Both are here.
+CREATE TABLE IF NOT EXISTS game_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    username    TEXT NOT NULL,                    -- lowercase, the token's owner
+    player_id   INTEGER,
+    kind        TEXT NOT NULL,                    -- collection | level | kill_count
+    happened_at TEXT NOT NULL,                    -- when the client says it happened
+    received_at TEXT NOT NULL,
+    subject     TEXT,                             -- the item, skill or boss
+    quantity    REAL,                             -- slots filled, new level, kills
+    payload     TEXT NOT NULL,
+    UNIQUE (username, kind, subject, happened_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_game_events_when
+    ON game_events (happened_at DESC);
 
 CREATE TABLE IF NOT EXISTS runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -548,7 +572,7 @@ class Database:
                              (player_id,))
         return row["n"] if row else 0
 
-    def record_derived_state(self, player_id, when, rows):
+    def record_derived_state(self, player_id, when, rows, origin="derived"):
         """Write an interpolated reading at `when`. Returns rows written.
 
         `rows` is [(kind, metric, value)] - what the account had earned by
@@ -563,17 +587,20 @@ class Database:
         unchanged as far as the hiscores were concerned - so these fill a gap
         rather than contradict a reading.
 
-        A snapshot is created only if the moment has none, and marked
-        `derived` so compaction keeps it and nothing mistakes it for
-        something Wise Old Man said.
+        A snapshot is created only if the moment has none, and marked so
+        compaction keeps it and nothing mistakes it for something Wise Old Man
+        said: `derived` when we worked the value out ourselves, `reported`
+        when a plugin told us outright. The difference matters because
+        recomputing attribution clears the first and must not touch the
+        second - a reported value is evidence, not arithmetic.
         """
         conn = self.connect()
         written = 0
         with conn:
             conn.execute(
                 "INSERT OR IGNORE INTO snapshots (player_id, captured_at,"
-                " fetched_at, origin, payload) VALUES (?,?,?,'derived','{}')",
-                (player_id, when, _utcnow()))
+                " fetched_at, origin, payload) VALUES (?,?,?,?,'{}')",
+                (player_id, when, _utcnow(), origin))
             for kind, metric, value in rows:
                 cur = conn.execute(
                     "INSERT OR IGNORE INTO metrics (player_id, kind, metric,"
@@ -600,6 +627,56 @@ class Database:
                 "DELETE FROM snapshots WHERE " + where + " AND origin='derived'",
                 params)
         return cur.rowcount
+
+    def record_game_event(self, username, kind, happened_at, payload,
+                          subject=None, quantity=None, when=None):
+        """Store one thing that happened mid-session. Returns its id, or None.
+
+        Keyed so the same event cannot land twice however many times the
+        plugin retries it: one account, one kind, one subject, one moment.
+        """
+        row = self.player_by_username(username)
+        conn = self.connect()
+        with conn:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO game_events (username, player_id, kind,"
+                " happened_at, received_at, subject, quantity, payload)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (username, row["id"] if row is not None else None, kind,
+                 happened_at, when or _utcnow(), subject, quantity,
+                 json.dumps(payload)))
+        return cur.lastrowid if cur.rowcount else None
+
+    def game_events(self, username=None, kind=None, since=None, limit=200):
+        """What players reported while playing, newest first."""
+        sql = "SELECT * FROM game_events"
+        clauses, params = [], []
+        for column, value in (("username", username), ("kind", kind)):
+            if value:
+                clauses.append(column + "=?")
+                params.append(value)
+        if since:
+            clauses.append("happened_at>=?")
+            params.append(since)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        return self.query(sql + " ORDER BY happened_at DESC LIMIT ?",
+                          params + [limit])
+
+    def game_event_count(self, username=None):
+        sql = "SELECT COUNT(*) AS n FROM game_events"
+        params = ()
+        if username:
+            sql += " WHERE username=?"
+            params = (username,)
+        row = self.query_one(sql, params)
+        return row["n"] if row is not None else 0
+
+    def knows_metric(self, kind, metric):
+        """True if we already track this metric, so a name can be checked."""
+        return self.query_one(
+            "SELECT 1 AS ok FROM metrics WHERE kind=? AND metric=? LIMIT 1",
+            (kind, metric)) is not None
 
     def record_session_event(self, username, kind, reading, payload, when=None,
                              happened_at=None,

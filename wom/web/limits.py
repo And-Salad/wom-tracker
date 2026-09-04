@@ -243,11 +243,15 @@ API_ADDRESS_WINDOW = 300
 API_TRIP_TOTAL = 15000
 API_TRIP_WINDOW = 300
 
-# Dink posts once per login, six seconds in. Nobody logs in thirty times in
-# five minutes; a loop or a leaked URL does. Counted per player rather than
-# per address because the token already says who is calling, and a player's
-# address is whatever their ISP gave them today.
-DINK_PER_TOKEN = 30
+# Dink posts at both ends of a session, and - for players who opt into it -
+# on every level, collection log slot and boss milestone in between. A level
+# treadmill or a boss count interval of one can put several minutes of events
+# close together, so this is sized for the busy case rather than the quiet
+# one. Nobody produces two hundred of these in five minutes; a loop or a
+# leaked URL does. Counted per player rather than per address because the
+# token already says who is calling, and a player's address is whatever their
+# ISP gave them today.
+DINK_PER_TOKEN = 200
 DINK_WINDOW = 300
 
 # The admin login is on the public internet, so an unlimited guess rate is the

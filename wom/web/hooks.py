@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, Response, current_app, request
 
+from .. import gameplay
 from ..config import Config
 from ..util import api_stamp, is_local_host, parse_api_time
 
@@ -138,19 +139,29 @@ def dink(token):
         return Response("Expected a JSON object.", status=400,
                         mimetype="text/plain")
 
-    kind = KINDS.get(body.get("type"))
-    if kind is None:
+    reported = body.get("type")
+    kind = KINDS.get(reported)
+    playing = gameplay.KINDS.get(reported)
+    if kind is None and playing is None:
         # Accepted, so it is not retried, and forgotten.
-        log.info("dink: %s sent a %s, which we do not keep", username,
-                 body.get("type"))
+        log.info("dink: %s sent a %s, which we do not keep", username, reported)
         return Response(status=204)
 
     kept = {key: value for key, value in body.items() if key not in UNWANTED}
+    database = current_app.config["DATABASE"]
+    happened_at = _happened_at(kept)
+
+    if playing is not None:
+        written = gameplay.store(database, username, playing,
+                                 happened_at or api_stamp(datetime.now(timezone.utc)),
+                                 kept)
+        log.info("dink: %s reported a %s (%d rows)", username, playing, written)
+        return Response(status=204)
+
     extra = kept.get("extra")
     reading = _reading(kept, extra if isinstance(extra, dict) else {})
-    database = current_app.config["DATABASE"]
     row_id = database.record_session_event(username, kind, reading, kept,
-                                           happened_at=_happened_at(kept))
+                                           happened_at=happened_at)
     if row_id is None:
         log.info("dink: repeat %s from %s, ignored", kind, username)
     else:

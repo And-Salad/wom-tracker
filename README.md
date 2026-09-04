@@ -291,6 +291,23 @@ trusting the name in the body, and one that leaks is revoked alone. Whatever
 Dink offers about someone's Discord account or clan is dropped as the body is
 read, never stored.
 
+A player can opt into more. Putting the same URL in **Primary Webhook URLs**
+as well - not instead, the metadata field is what carries the logins - and
+ticking *Collection Log*, *Level Up* and *Kill Count* sends what happens during
+a session too. Every notifier ships off, so nothing else comes with them.
+
+Those land in `game_events` whole, because the interesting part is the detail
+no metric has room for: which item, from which drop, at which rank. Where the
+payload *is* a metric we already track, the value is also written at the moment
+it happened - a collection log slot and a boss count both are - so those stop
+being rounded to the next ten-minute reading. Levels are kept but not written
+through: our level total shares a row with overall experience, and half a row
+would read as a whole one.
+
+Kill Count ships at every fiftieth kill; set *Kill Count Interval* to 1 for
+every one. Experience itself cannot be streamed - Dink's XP milestones fire
+only for skills already at 99, at a million or more apart.
+
 Where both ends of a session are known and it crossed a local midnight, the app
 records what the account had earned by that midnight, so a four-hour evening
 session is credited to the evening rather than entirely to the minute after it
@@ -313,8 +330,10 @@ midnight.
 
 With two exceptions. Each reading records an `origin`: `poll` when our own
 request caused Wise Old Man to take it, `archive` when it already existed and
-we were only collecting it, `derived` when the app worked it out (see Session
-logins). Compaction thins only `poll`. Compaction never thins an `archive` reading. A
+we were only collecting it, `derived` when the app worked it out, `reported`
+when a plugin told us outright. Compaction thins only `poll`, and recomputing
+attribution clears only `derived` - a reported value is evidence, not
+arithmetic. Compaction never thins an `archive` reading. A
 polled one can be taken again tomorrow, so thinning it costs a detail; an
 archive one is a moment recorded without us - a player's client pushing on
 logout, most often - and is the only evidence of when that session ended, so

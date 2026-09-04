@@ -438,3 +438,38 @@ Worth knowing what this is worth: only 1% of experience lands within ten
 minutes of a local midnight, which is all that point attribution could ever
 get wrong - but 32% lands within three hours of one, which is the band this
 moves.
+
+
+### What arrives while somebody is playing
+
+`wom/gameplay.py` handles the opt-in half of the webhook. Three of Dink's
+notifications say something we can use, and each does two jobs.
+
+They are stored whole in `game_events`, because the detail is the point and
+none of it fits the metrics table - a collection log feed wants the item, the
+drop it came from and the rank it completed. And where the payload happens to
+*be* a metric we already track, the value is written at the moment it happened
+as a `reported` reading, so the charts stop rounding it to the next poll.
+
+| notification | kept | written through as |
+|---|---|---|
+| `COLLECTION` | item, dropper, rank, counts | `activity/collections_logged` |
+| `KILL_COUNT` | boss, count, kill time, personal best | `boss/<metric>` |
+| `LEVEL` | one row per skill that levelled | nothing, see below |
+
+Levels are not written through. Our level total lives in the `level` column of
+the `overall` row, beside overall experience in `value`, and a level reported
+without experience would be a row that reads as authoritative while carrying
+half an answer. Worth doing deliberately rather than as a side effect.
+
+Boss names arrive as display names and have to become metric names. The
+transform drops apostrophes rather than replacing them - Wise Old Man writes
+Kree'arra as `kreearra` - and the result is checked against metrics we already
+store rather than trusted, because the name comes from a plugin and a wrong
+guess would invent a boss. The article is tried both ways, since Wise Old Man
+keeps it for `the_whisperer` and drops it for `nightmare` with no rule in it.
+A name that does not resolve keeps the event and writes no reading.
+
+Experience cannot be streamed at all. Dink's `XP_MILESTONE` fires only for
+skills already at level 99, at intervals of a million experience or more, so
+it is a milestone rather than a measurement.

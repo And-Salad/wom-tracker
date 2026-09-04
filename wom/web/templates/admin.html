@@ -198,6 +198,17 @@
       A URL is a password. Send it to that player and nobody else, and issue a
       new one to retire a leaked one.
     </p>
+    <p class="hint">
+      <strong>Optional.</strong> A player can also send what happens
+      <em>during</em> a session. Put the same URL in <strong>Primary Webhook
+      URLs</strong> as well - not instead, the metadata field is what carries
+      the logins - and tick <em>Collection Log</em>, <em>Level Up</em> and
+      <em>Kill Count</em>. Collection slots and boss counts then land on the
+      minute they happened rather than at the next ten-minute reading, and the
+      detail is kept for a feed later. Set <em>Kill Count Interval</em> to 1
+      for every kill; it ships at every fiftieth. The count below shows session
+      events, and beneath it what has been reported during play.
+    </p>
     <div class="scroll">
       <table>
         <tr><th>Player</th><th>Webhook URL</th><th>Status</th>
@@ -229,7 +240,8 @@
                 {% endif %}
               {% else %}<span class="dim">-</span>{% endif %}
             </td>
-            <td class="num">{{ player.events }}</td>
+            <td class="num">{{ player.events }}{% if player.reported %}
+              <br><span class="dim">+{{ player.reported }}</span>{% endif %}</td>
             <td class="dim">
               {% if player.last_seen %}
                 {{ player.last_seen }} ({{ player.last_ago }})

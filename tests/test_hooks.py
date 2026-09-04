@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from conftest import snapshot
 from wom.config import Config
 from wom.web.limits import Budget
 
@@ -519,3 +520,60 @@ def test_the_admin_page_shows_who_is_in_game(signed_in, app):
     section = signed_in.get("/admin").get_data(as_text=True).split("Session logins")[1]
     assert "in game" in section
     assert "world 451" in section
+
+
+# -- the opt-in events, over HTTP -----------------------------------------
+
+def test_a_collection_log_slot_arrives_and_is_kept(signed_in, app):
+    url = issue(signed_in)
+    assert signed_in.post(url, json={
+        "type": "COLLECTION", "playerName": "Zezima",
+        "extra": {"itemName": "Zamorak chaps", "completedEntries": 651,
+                  "totalEntries": 1443}}).status_code == 204
+    rows = app.config["DATABASE"].game_events("zezima")
+    assert len(rows) == 1 and rows[0]["subject"] == "Zamorak chaps"
+
+
+def test_a_kill_count_arrives_and_moves_the_metric(signed_in, app):
+    db = app.config["DATABASE"]
+    db.save_player_details({"id": 1, "username": "zezima",
+                            "displayName": "Zezima", "type": "regular"})
+    db.save_snapshot(1, snapshot("2026-09-03T20:00:00.000Z",
+                                 bosses={"zulrah": 100}))
+    url = issue(signed_in)
+    signed_in.post(url, json={"type": "KILL_COUNT", "extra":
+                              {"boss": "Zulrah", "count": 150}})
+    latest = {r["metric"]: r["value"] for r in db.state_at(1, None, "boss")}
+    assert latest["zulrah"] == 150
+
+
+def test_an_opt_in_event_uses_the_client_moment_too(signed_in, app):
+    from datetime import datetime, timedelta, timezone
+    said = datetime.now(timezone.utc) - timedelta(minutes=3)
+    stamp = said.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    url = issue(signed_in)
+    signed_in.post(url, json={"type": "COLLECTION",
+                              "embeds": [{"timestamp": stamp}],
+                              "extra": {"itemName": "Bandos chestplate",
+                                        "completedEntries": 12}})
+    row = app.config["DATABASE"].game_events("zezima")[0]
+    assert row["happened_at"][:16] == stamp[:16]
+
+
+def test_a_type_we_still_do_not_keep_is_accepted_and_dropped(signed_in, app):
+    """Loot, deaths and the rest, if somebody enables them."""
+    url = issue(signed_in)
+    assert signed_in.post(url, json={"type": "LOOT"}).status_code == 204
+    assert app.config["DATABASE"].game_events("zezima") == []
+    assert app.config["DATABASE"].session_events("zezima") == []
+
+
+def test_opting_in_does_not_disturb_the_session_events(signed_in, app):
+    """The two streams share a URL and must not share a table."""
+    url = issue(signed_in)
+    signed_in.post(url, json=body(exp=500))
+    signed_in.post(url, json={"type": "COLLECTION",
+                              "extra": {"itemName": "Dragon pickaxe",
+                                        "completedEntries": 5}})
+    assert len(app.config["DATABASE"].session_events("zezima")) == 1
+    assert len(app.config["DATABASE"].game_events("zezima")) == 1

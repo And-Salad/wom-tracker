@@ -143,6 +143,7 @@ def settings():
             "url": public_url(tokens[name.lower()])
                    if tokens.get(name.lower()) else "",
             "events": database.session_event_count(name.lower()),
+            "reported": database.game_event_count(name.lower()),
             "state": session_state(seen),
             "last_seen": fmt_datetime(seen["happened_at"]) if seen is not None else None,
             "last_ago": fmt_ago(seen["happened_at"]) if seen is not None else "",
