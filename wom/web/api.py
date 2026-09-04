@@ -12,6 +12,7 @@ from flask import (Blueprint, Response, abort, current_app, jsonify, request,
 from . import data as web_data
 from .data import NOBODY_PICKED
 from . import today, views
+from .. import winners
 from ..context import ViewContext
 from ..util import parse_api_time, pretty_metric
 from .selection import database, scope
@@ -107,8 +108,8 @@ def player_rows():
                    "span": here.span.as_dict()})
 
 
-@api.route("/api/maxing/player/<username>")
-def maxing_player(username):
+@api.route("/api/<board>/player/<username>")
+def board_player(board, username):
     """One account's day so far, skill by skill, for an opened row.
 
     The skills and nothing else. An account's written recaps are read on the
@@ -116,23 +117,27 @@ def maxing_player(username):
     push the day's figures, which are what the row was opened for, below a
     fold of prose.
     """
+    if board not in winners.BOARDS:
+        abort(404)
     refused = guard()
     if refused is not None:
         return refused
     player = database().player_by_username(username)
     if player is None:
         abort(404)
-    return _fresh(today.breakdown(database(), player))
+    return _fresh(today.breakdown(database(), player, board=board))
 
 
-@api.route("/api/maxing/trend")
-def maxing_trend():
+@api.route("/api/<board>/trend")
+def board_trend(board):
     """Experience toward 99 since midnight, one line per included account.
 
     Its own endpoint rather than a catalogue chart: the Overview's charts all
     answer over the sidebar's period, and this one is always the day in
     progress. Handing it a period it then ignores would be the confusing part.
     """
+    if board not in winners.BOARDS:
+        abort(404)
     refused = guard()
     if refused is not None:
         return refused
@@ -141,7 +146,8 @@ def maxing_trend():
         return _fresh({"empty": NOBODY_PICKED})
     context = ViewContext(database(), here.config, here.players,
                           selected=here.selected, span=here.span)
-    return _fresh(today.trend(database(), here.selected, context.color_for))
+    return _fresh(today.trend(database(), here.selected, context.color_for,
+                              board=board))
 
 
 @api.route("/api/milestones")

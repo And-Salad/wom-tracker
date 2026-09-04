@@ -68,6 +68,16 @@ def days_in(start, end):
 # past it buys nothing the game recognises.
 NINETY_NINE = 13034431
 
+# The two competitions. They run over the same days on the same readings and
+# disagree on purpose: Maxing is about getting to ninety-nine, so it counts
+# experience only up to it, and Grinding is about how much you did, so it
+# counts all of it. An account with everything maxed cannot place on the
+# first and can win the second outright, which is the point of having both.
+MAXING = "maxing"
+GRINDING = "grinding"
+BOARDS = (MAXING, GRINDING)
+BOARD_LABELS = {MAXING: "Maxing", GRINDING: "Grinding"}
+
 # How much of a month has to have been watched before it is worth awarding.
 # A month decided on the two days at the end of it is not a month anybody
 # competed over, and the winner it names is really a winner of those days.
@@ -170,20 +180,25 @@ def measure_by_skill(before, after):
     return out
 
 
-def key(shown):
+def key(shown, board=MAXING):
     """How a span is judged, as something sortable.
 
-    A ninety-nine takes it outright and two take it over one. Failing that it
-    is experience up to ninety-nine: an account with everything maxed would
-    otherwise win every day it logged in against people still climbing. Where
-    somebody did reach one, the accounts level on nines are separated by raw
-    experience instead - they have all been credited for the milestone, so the
-    question is who did the most work around it.
+    On Maxing a ninety-nine takes it outright and two take it over one.
+    Failing that it is experience up to ninety-nine: an account with
+    everything maxed would otherwise win every day it logged in against people
+    still climbing. Where somebody did reach one, the accounts level on nines
+    are separated by raw experience instead - they have all been credited for
+    the milestone, so the question is who did the most work around it.
+
+    On Grinding it is experience, all of it, and nothing else. No cap and no
+    credit for the milestone, because the question is only how much was done.
     """
+    if board == GRINDING:
+        return (0, shown["raw"])
     return (shown["nines"], shown["raw"] if shown["nines"] else shown["capped"])
 
 
-def moved(shown):
+def moved(shown, board=MAXING):
     """Whether this counts as having done anything the rule recognises.
 
     Deliberately the same test the ranking uses, not "gained any experience
@@ -193,7 +208,7 @@ def moved(shown):
     there, the calendar crowned somebody the round-up beside it called an
     empty day.
     """
-    nines, tiebreak = key(shown)
+    nines, tiebreak = key(shown, board)
     return bool(nines or tiebreak)
 
 
@@ -382,15 +397,16 @@ def gains_by_day(database, players, start, end):
     return out
 
 
-def _best(scores):
+def _best(scores, board=MAXING):
     """Whoever scores highest, or None if nobody moved at all."""
     if not scores:
         return None
-    winner = max(scores.items(), key=lambda pair: (key(pair[1]), pair[0]))
-    return winner[0] if moved(winner[1]) else None
+    winner = max(scores.items(), key=lambda pair: (key(pair[1], board), pair[0]))
+    return winner[0] if moved(winner[1], board) else None
 
 
-def daily_winners(database, players, start, end, whole_group=False, when=None):
+def daily_winners(database, players, start, end, whole_group=False, when=None,
+                  board=MAXING):
     """{date: {"winner", "reason", "measured", "of", "written"}} for a range.
 
     A day is only answered once every included account was being tracked
@@ -407,7 +423,7 @@ def daily_winners(database, players, start, end, whole_group=False, when=None):
     days = gains_by_day(database, players, start, end)
     polled = polled_days(database, players, start, end)
     known = {p["username"] for p in players}
-    written = _written_winners(database, "day") if whole_group else {}
+    written = _written_winners(database, "day", board) if whole_group else {}
     of = len(players)
     running = today_key(when)
     out = {}
@@ -428,7 +444,8 @@ def daily_winners(database, players, start, end, whole_group=False, when=None):
             out[day] = entry
             continue
         named = written.get(day)
-        entry["winner"] = named if named in known else _best(found["scores"])
+        entry["winner"] = (named if named in known
+                           else _best(found["scores"], board))
         entry["written"] = entry["winner"] is not None and named in known
         if entry["winner"] is None:
             entry["reason"] = "nobody gained anything"
@@ -436,7 +453,7 @@ def daily_winners(database, players, start, end, whole_group=False, when=None):
     return out
 
 
-def placings(found, of):
+def placings(found, of, board=MAXING):
     """{username: points} for one day, by where each account placed.
 
     A win is worth as much as the field it was won against, so taking a day
@@ -444,11 +461,11 @@ def placings(found, of):
     that gained nothing score nothing.
     """
     ranked = sorted(found["scores"].items(),
-                    key=lambda pair: (key(pair[1]), pair[0]), reverse=True)
+                    key=lambda pair: (key(pair[1], board), pair[0]), reverse=True)
     return {username: of - place for place, (username, _) in enumerate(ranked)}
 
 
-def month_points(database, players, start, end, minimum=0):
+def month_points(database, players, start, end, minimum=0, board=MAXING):
     """{username: average daily points} over the days the whole group was on.
 
     A month is the average of its days rather than one measurement across the
@@ -459,18 +476,18 @@ def month_points(database, players, start, end, minimum=0):
     `minimum` is how many of those days there have to be before the answer
     means anything; below it there is no answer, not a provisional one.
     """
-    points, counted = _scored_days(database, players, start, end)
+    points, counted = _scored_days(database, players, start, end, board)
     if counted < max(1, minimum):
         return {}
     return {username: total / counted for username, total in points.items()}
 
 
-def counted_days(database, players, start, end):
+def counted_days(database, players, start, end, board=MAXING):
     """How many days of a span the whole group was watched through."""
-    return _scored_days(database, players, start, end)[1]
+    return _scored_days(database, players, start, end, board)[1]
 
 
-def _scored_days(database, players, start, end):
+def _scored_days(database, players, start, end, board=MAXING):
     """({username: total points}, how many days those came from)."""
     days = gains_by_day(database, players, start, end)
     polled = polled_days(database, players, start, end)
@@ -484,35 +501,42 @@ def _scored_days(database, players, start, end):
         if day == running or len(found["measured"]) < of or day not in polled:
             continue
         counted += 1
-        for username, scored in placings(found, of).items():
+        for username, scored in placings(found, of, board).items():
             points[username] += scored
     return points, counted
 
 
-def month_winner(database, players, start, end, whole_group=False):
+def month_winner(database, players, start, end, whole_group=False,
+                 board=MAXING):
     """Who took a month, on the average of the days that counted.
 
     Nobody, where too few of them counted: see MIN_MONTH_DAYS.
     """
-    points = month_points(database, players, start, end, minimum=MIN_MONTH_DAYS)
+    points = month_points(database, players, start, end,
+                          minimum=MIN_MONTH_DAYS, board=board)
     if not points:
         return None
     if whole_group:
-        named = _written_winners(database, "month").get(start.strftime("%Y-%m-%d"))
+        named = _written_winners(database, "month",
+                                 board).get(start.strftime("%Y-%m-%d"))
         if named in {p["username"] for p in players}:
             return named
     best = max(points.items(), key=lambda pair: (pair[1], pair[0]))
     return best[0] if best[1] > 0 else None
 
 
-def _written_winners(database, period):
-    """{window_key: username} from the round-ups that named one."""
+def _written_winners(database, period, board=MAXING):
+    """{window_key: username} from the round-ups that named one.
+
+    Scoped to one board: the two judge the same days by different rules and
+    a Grinding verdict has no business overruling a Maxing square.
+    """
     return {row["window_key"]: row["winner"]
-            for row in database.group_summaries(period=period)
+            for row in database.group_summaries(period=period, board=board)
             if row["winner"]}
 
 
-def ranking(database, players, window):
+def ranking(database, players, window, board=MAXING):
     """Every account over one window, best first by the rule.
 
     A day is judged directly. Anything longer is judged on the average of its
@@ -535,19 +559,19 @@ def ranking(database, players, window):
         # fortnight of a fortnight would void every one of them.
         minimum = MIN_MONTH_DAYS if window.period == "month" else 0
         points = month_points(database, players, window.start, window.end,
-                              minimum=minimum)
+                              minimum=minimum, board=board)
         voided = bool(minimum and not points)
         # Only worth asking when the answer is going to be printed: it walks
         # every player's readings again.
-        days = counted_days(database, players, window.start,
-                            window.end) if voided else None
+        days = counted_days(database, players, window.start, window.end,
+                            board) if voided else None
         for row in totals:
             row["points"] = points.get(row["username"], 0.0)
             row["voided"] = voided
             row["days"] = days
-        totals.sort(key=lambda row: (row["points"], key(row), row["username"]),
-                    reverse=True)
+        totals.sort(key=lambda row: (row["points"], key(row, board),
+                                     row["username"]), reverse=True)
         return totals
 
-    totals.sort(key=lambda row: (key(row), row["username"]), reverse=True)
+    totals.sort(key=lambda row: (key(row, board), row["username"]), reverse=True)
     return totals

@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS summaries (
 -- The group verdict for a window. Its own table because it belongs to no
 -- single player, and a nullable half of a primary key is a trap.
 CREATE TABLE IF NOT EXISTS group_summaries (
+    board         TEXT NOT NULL DEFAULT 'maxing',  -- which competition
     period        TEXT NOT NULL,
     window_key    TEXT NOT NULL,
     winner        TEXT,                           -- username the round-up named
@@ -112,7 +113,7 @@ CREATE TABLE IF NOT EXISTS group_summaries (
     input_tokens  INTEGER,
     output_tokens INTEGER,
     generated_at  TEXT NOT NULL,
-    PRIMARY KEY (period, window_key)
+    PRIMARY KEY (board, period, window_key)
 );
 
 -- Dink's metadata webhook, which reports both ends of a session as they
@@ -267,6 +268,33 @@ class Database:
         self._widen_logins_to_sessions(conn)
         self._label_snapshot_origins(conn)
         self._add_event_happened_at(conn)
+        self._add_group_summary_board(conn)
+
+    def _add_group_summary_board(self, conn):
+        """Give the round-ups a competition to belong to.
+
+        Everything written before there were two was written about the
+        leaderboard that existed, so it is Maxing. SQLite cannot add a column
+        to a primary key, so the table is rebuilt rather than altered - it
+        holds a few hundred rows and this runs once.
+        """
+        columns = {row["name"] for row in conn.execute(
+            "PRAGMA table_info(group_summaries)")}
+        if not columns or "board" in columns:
+            return
+        with conn:
+            conn.execute("ALTER TABLE group_summaries RENAME TO group_summaries_old")
+        conn.executescript(SCHEMA)
+        with conn:
+            conn.execute(
+                "INSERT INTO group_summaries (board, period, window_key,"
+                " period_start, period_end, label, text, digest_hash, model,"
+                " input_tokens, output_tokens, generated_at, winner)"
+                " SELECT 'maxing', period, window_key, period_start, period_end,"
+                " label, text, digest_hash, model, input_tokens, output_tokens,"
+                " generated_at, winner FROM group_summaries_old")
+            conn.execute("DROP TABLE group_summaries_old")
+        log.info("group round-ups now belong to a board")
 
     def _add_event_happened_at(self, conn):
         """Separate when an event happened from when it reached us.
@@ -946,16 +974,16 @@ class Database:
         return self.query(sql, params)
 
     def save_group_summary(self, window, text, digest_hash, usage=None,
-                           winner=None):
+                           winner=None, board="maxing"):
         usage = usage or {}
         conn = self.connect()
         with conn:
             conn.execute(
-                "INSERT INTO group_summaries (period, window_key, period_start,"
-                " period_end, label, text, digest_hash, model, input_tokens,"
-                " output_tokens, generated_at, winner)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
-                " ON CONFLICT(period, window_key) DO UPDATE SET"
+                "INSERT INTO group_summaries (board, period, window_key,"
+                " period_start, period_end, label, text, digest_hash, model,"
+                " input_tokens, output_tokens, generated_at, winner)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(board, period, window_key) DO UPDATE SET"
                 "   period_start=excluded.period_start, period_end=excluded.period_end,"
                 "   label=excluded.label, text=excluded.text,"
                 "   digest_hash=excluded.digest_hash, model=excluded.model,"
@@ -963,19 +991,25 @@ class Database:
                 "   output_tokens=excluded.output_tokens,"
                 "   generated_at=excluded.generated_at,"
                 "   winner=excluded.winner",
-                (window.period, window.key, window.start_iso(), window.end_iso(),
+                (board, window.period, window.key, window.start_iso(),
+                 window.end_iso(),
                  window.label, text, digest_hash, usage.get("model"),
                  usage.get("input_tokens"), usage.get("output_tokens"),
                  _utcnow(), winner))
 
-    def group_summary(self, period, window_key):
+    def group_summary(self, period, window_key, board="maxing"):
         return self.query_one(
-            "SELECT * FROM group_summaries WHERE period=? AND window_key=?",
-            (period, window_key))
+            "SELECT * FROM group_summaries"
+            " WHERE board=? AND period=? AND window_key=?",
+            (board, period, window_key))
 
-    def group_summaries(self, period=None, limit=500):
+    def group_summaries(self, period=None, limit=500, board="maxing"):
+        """Round-ups for one board. `board=None` for every board at once."""
         sql = "SELECT * FROM group_summaries WHERE 1=1"
         params = []
+        if board:
+            sql += " AND board=?"
+            params.append(board)
         if period:
             sql += " AND period=?"
             params.append(period)

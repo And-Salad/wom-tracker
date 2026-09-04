@@ -668,7 +668,12 @@ def test_the_gallery_page_shows_a_panel_for_each_kind(client, app):
     assert 'data-category="death"' in page and 'data-category="pet"' in page
 
 
-def test_the_gallery_is_in_the_nav_after_milestones(client):
+def test_the_tabs_are_in_the_order_they_were_asked_for(client):
+    """Pinned because the order is a decision, not an accident of when each
+    page was added."""
     page = client.get("/").get_data(as_text=True)
     nav = page.split("<nav>")[1].split("</nav>")[0]
-    assert nav.index("/milestones") < nav.index("/gallery") < nav.index("/recaps")
+    wanted = ['href="/"', "/maxing", "/grinding", "/recaps", "/milestones",
+              "/gallery", "/players", "/export"]
+    found = sorted(wanted, key=nav.index)
+    assert found == wanted, found

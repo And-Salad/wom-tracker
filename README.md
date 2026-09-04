@@ -105,6 +105,18 @@ leaderboard, which always judges every tracked account - see below.
 - **Data** - every metric as a sortable, filterable table, with export behind a
   button.
 
+## The leaderboards
+
+Two competitions over the same days, on the same readings, disagreeing on
+purpose. **Maxing** counts experience only up to ninety-nine in each skill and
+a ninety-nine takes a day outright; **Grinding** counts all of it and nothing
+else. An account with everything maxed cannot place on the first and can win
+the second, which is the point of having both.
+
+One rule, `winners.key(shown, board)`, and one page template. Grinding shows a
+single Wins column where Maxing splits it: a ninety-nine never takes a grinding
+day, so the split would be a column that could only ever read nothing.
+
 ## The Maxing Leaderboard
 
 The **Maxing** tab colours a calendar by who took each day: whoever reached a 99

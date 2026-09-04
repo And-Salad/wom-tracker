@@ -1,4 +1,6 @@
-/* The Maxing page: expanding standings rows, and the day's trend.
+/* A leaderboard page - Maxing or Grinding: expanding standings rows, and
+ * the day's trend. Which board is on screen comes off the chart card, so one
+ * script serves both.
  *
  * The row is the control, the same as on Players - there is one list of
  * accounts here, not a table and an accordion repeating each other. A day's
@@ -10,6 +12,9 @@
  */
 (function () {
   "use strict";
+
+  var host = document.getElementById("board-trend");
+  var board = (host && host.dataset.board) || "maxing";
 
   var full = new Intl.NumberFormat();
 
@@ -87,7 +92,7 @@
       if (loaded) { return; }
       host.textContent = "";
       host.appendChild(el("p", "hint", "Loading..."));
-      fetch("/api/maxing/player/" + encodeURIComponent(row.dataset.username))
+      fetch("/api/" + board + "/player/" + encodeURIComponent(row.dataset.username))
         .then(function (r) { return r.json(); })
         .then(function (data) {
           loaded = true;
@@ -119,12 +124,12 @@
   document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll("tr.today-row").forEach(wire);
 
-    var card = document.getElementById("maxing-trend");
+    var card = document.getElementById("board-trend");
     if (!card || !window.WOM) { return; }
     var chart = new window.WOM.Chart(card);
     /* Always the day in progress, never the sidebar's period - so this asks
        its own endpoint rather than pretending to be a catalogue entry. */
-    chart.endpoint = function () { return "/api/maxing/trend?" + window.Sidebar.query(); };
+    chart.endpoint = function () { return "/api/" + board + "/trend?" + window.Sidebar.query(); };
     /* The only thing on this page the ticks move. The calendar and the
        standings above judge every account whatever is ticked, so the page
        has nothing to reload - this redraws and they stay as they are. */

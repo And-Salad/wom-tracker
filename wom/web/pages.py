@@ -6,7 +6,7 @@ import re
 from flask import (Blueprint, abort, redirect, render_template, request,
                    send_file, send_from_directory, url_for)
 
-from .. import gallery
+from .. import gallery, winners
 from ..icons import ASSET_DIR, icon_path
 from . import today, views
 from .data import catalog
@@ -35,9 +35,42 @@ def dashboard():
     return render_template("dashboard.html", specs=catalog(), **_shell(scope))
 
 
+# What each leaderboard calls itself and what it counts. Two competitions
+# over the same days, and the only difference is the measure.
+BOARDS = {
+    winners.MAXING: {
+        "key": winners.MAXING, "label": "Maxing",
+        "measure": "XP Towards 99",
+        "measure_hint": "Experience toward a 99 since midnight, which is what"
+                        " the day is judged on",
+        "chart_title": "Experience toward 99 today",
+        "split_wins": True,
+    },
+    winners.GRINDING: {
+        "key": winners.GRINDING, "label": "Grinding",
+        "measure": "XP Gained",
+        "measure_hint": "All experience gained since midnight, which is what"
+                        " the day is judged on",
+        "chart_title": "Experience gained today",
+        # A ninety-nine never takes a day here, so the split that Maxing's
+        # table makes would be a column that can only ever read nothing.
+        "split_wins": False,
+    },
+}
+
+
 @pages.route("/maxing")
 def maxing():
-    """The leaderboard, which is the whole group's or it is nothing.
+    return _leaderboard(winners.MAXING)
+
+
+@pages.route("/grinding")
+def grinding():
+    return _leaderboard(winners.GRINDING)
+
+
+def _leaderboard(board):
+    """One of the two leaderboards, which is the whole group's or it is nothing.
 
     Both the calendar and the standings are given every tracked account, not
     the ticked ones. It is one competition with one answer: narrowed to three
@@ -55,9 +88,12 @@ def maxing():
     scope = page_context()
     everyone = scope["players"]
     return render_template(
-        "maxing.html",
-        calendar=views.winner_calendar(database(), everyone, scope["palette"]),
-        today=today.standings(database(), everyone, scope["palette"]),
+        "board.html",
+        board=BOARDS[board],
+        calendar=views.winner_calendar(database(), everyone, scope["palette"],
+                                       board=board),
+        today=today.standings(database(), everyone, scope["palette"],
+                              board=board),
         **_shell(scope))
 
 

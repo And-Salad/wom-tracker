@@ -33,7 +33,7 @@ def is_whole_group(database, players):
     return len(players) >= len(everyone) > 0
 
 
-def standings(database, players, palette, when=None):
+def standings(database, players, palette, when=None, board=winners.MAXING):
     """Where everyone stands in the day now in progress, and this month.
 
     Deliberately not a verdict - today has not been polled to its end and
@@ -55,7 +55,7 @@ def standings(database, players, palette, when=None):
     start, end = winners.month_range(when, back=0)
     days = winners.gains_by_day(database, players, start, end)
     won = winners.daily_winners(database, players, start, end,
-                                whole_group=whole_group)
+                                whole_group=whole_group, board=board)
     by_nine, by_xp = _month_wins(days, won)
 
     scores = days.get(winners.today_key(when), {}).get("scores", {})
@@ -69,12 +69,16 @@ def standings(database, players, palette, when=None):
             "color": palette.get(player["username"], theme.MUTED),
             "nines": shown["nines"],
             "capped": fmt_int(round(shown["capped"])),
-            "moved": winners.moved(shown),
+            # What this board judges on, ready to print. Maxing counts
+            # experience only up to ninety-nine; Grinding counts all of it.
+            "score": fmt_int(round(
+                shown["raw"] if board == winners.GRINDING else shown["capped"])),
+            "moved": winners.moved(shown, board),
             "nine_wins": by_nine.get(player["username"], 0),
             "xp_wins": by_xp.get(player["username"], 0),
             # Ordered by the same rule the squares are, so the table reads as
             # the day's standings rather than as a second opinion.
-            "rank": winners.key(shown),
+            "rank": winners.key(shown, board),
         })
     rows.sort(key=lambda row: (row["rank"], row["name"]), reverse=True)
     for place, row in enumerate(rows, start=1):
@@ -99,7 +103,7 @@ def _month_wins(days, won):
     return by_nine, by_xp
 
 
-def breakdown(database, player, when=None):
+def breakdown(database, player, when=None, board=winners.MAXING):
     """One account's day so far, skill by skill.
 
     The row above it says how much; this says at what. Both come from
@@ -117,18 +121,23 @@ def breakdown(database, player, when=None):
         return {"rows": [], "total": 0, "beyond": 0, "nines": 0,
                 "note": "Nothing has been read for this account today."}
 
+    grinding = board == winners.GRINDING
     moved = winners.measure_by_skill(before, after)
     rows = []
     for metric, shown in moved.items():
         rows.append({
             "metric": metric,
             "label": pretty_metric(metric),
-            "capped": shown["capped"],
-            "beyond": shown["beyond"],
+            # What this board counts. Grinding counts everything, so there is
+            # nothing "beyond" for it to set aside - saying otherwise would
+            # print a caveat about a rule this board does not have.
+            "capped": (shown["capped"] + shown["beyond"]) if grinding
+                      else shown["capped"],
+            "beyond": 0 if grinding else shown["beyond"],
             "reached_99": shown["reached_99"],
             "at_99": shown["at_99"],
         })
-    # Most experience toward 99 first: the column the day is judged on.
+    # Most of what the day is judged on first.
     rows.sort(key=lambda row: (row["capped"], row["beyond"]), reverse=True)
     total = sum(row["capped"] for row in rows)
     beyond = sum(row["beyond"] for row in rows)
@@ -137,7 +146,7 @@ def breakdown(database, player, when=None):
             "note": None if rows else "No skill has moved since midnight."}
 
 
-def trend(database, players, color_for, when=None):
+def trend(database, players, color_for, when=None, board=winners.MAXING):
     """Experience toward 99 since midnight, as one line per account.
 
     Cumulative rather than per-reading: the question the calendar asks is who
@@ -167,7 +176,10 @@ def trend(database, players, color_for, when=None):
             if at is None:
                 continue
             shown = winners.measure(base, state)
-            points.append([int(at.timestamp() * 1000), round(shown["capped"]),
+            # The judged figure first, whichever it is: the chart plots the
+            # first number and the tooltip explains the second.
+            judged = shown["raw"] if board == winners.GRINDING else shown["capped"]
+            points.append([int(at.timestamp() * 1000), round(judged),
                            round(shown["raw"])])
         # A flat line at zero is worth drawing - it says the account was
         # watched and did nothing, which is not the same as being absent -

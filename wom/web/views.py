@@ -422,7 +422,8 @@ def metric_table(database, players, since, until, palette):
     return rows
 
 
-def winner_calendar(database, players, palette, when=None):
+def winner_calendar(database, players, palette, when=None,
+                    board="maxing"):
     """Two months of squares, each one the colour of who won that day.
 
     Last month beside this one, which is as much as fits side by side and as
@@ -445,9 +446,9 @@ def winner_calendar(database, players, palette, when=None):
     months = []
     for back in (1, 0):
         start, end = winners.month_range(when, back=back)
-        won = winners.daily_winners(database, players, start, end,
+        won = winners.daily_winners(database, players, start, end, board=board,
                                     whole_group=whole_group)
-        took = winners.month_winner(database, players, start, end,
+        took = winners.month_winner(database, players, start, end, board=board,
                                     whole_group=whole_group)
         months.append({
             "label": start.strftime("%B %Y"),
