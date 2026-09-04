@@ -672,6 +672,33 @@ class Database:
         row = self.query_one(sql, params)
         return row["n"] if row is not None else 0
 
+    def feed_events(self, kinds, player_ids=None, since=None, until=None,
+                    limit=300):
+        """Reported events for the milestones feed, newest first.
+
+        Joined to players the way achievements() is, because the feed needs a
+        display name and a colour and both live there. An event stored before
+        we knew the account still finds its player by name.
+        """
+        marks = ",".join("?" * len(kinds))
+        sql = ("SELECT g.*, p.username, p.display_name FROM game_events g"
+               " LEFT JOIN players p ON p.username = g.username"
+               " WHERE g.kind IN ({})".format(marks))
+        params = list(kinds)
+        if player_ids is not None:
+            if not player_ids:
+                return []
+            sql += " AND p.id IN ({})".format(",".join("?" * len(player_ids)))
+            params += list(player_ids)
+        if since:
+            sql += " AND g.happened_at>=?"
+            params.append(since)
+        if until:
+            sql += " AND g.happened_at<?"
+            params.append(until)
+        return self.query(sql + " ORDER BY g.happened_at DESC LIMIT ?",
+                          params + [limit])
+
     def knows_metric(self, kind, metric):
         """True if we already track this metric, so a name can be checked."""
         return self.query_one(

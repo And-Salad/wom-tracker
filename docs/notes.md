@@ -451,11 +451,26 @@ drop it came from and the rank it completed. And where the payload happens to
 *be* a metric we already track, the value is written at the moment it happened
 as a `reported` reading, so the charts stop rounding it to the next poll.
 
-| notification | kept | written through as |
-|---|---|---|
-| `COLLECTION` | item, dropper, rank, counts | `activity/collections_logged` |
-| `KILL_COUNT` | boss, count, kill time, personal best | `boss/<metric>` |
-| `LEVEL` | one row per skill that levelled | nothing, see below |
+| notification | kept | written through as | on the feed |
+|---|---|---|---|
+| `COLLECTION` | item, dropper, rank, counts | `activity/collections_logged` | yes |
+| `KILL_COUNT` | boss, count, kill time, personal best | `boss/<metric>` | no |
+| `LEVEL` | one row per skill that levelled | nothing, see below | no |
+| `QUEST` | quest name, quests completed | nothing we track | yes |
+| `ACHIEVEMENT_DIARY` | area and difficulty together | nothing we track | yes |
+| `COMBAT_ACHIEVEMENT` | task, tier, points | nothing we track | yes |
+
+`FEED_KINDS` decides the last column, and the rule behind it is that the feed
+is for things somebody did once and would mention. A level or a boss count is
+progress and belongs on a chart; a quest is an event. A diary is stored as
+"Varrock Hard" rather than as an area and a difficulty, because neither half
+names a diary on its own.
+
+The feed merges those with Wise Old Man's milestones and sorts the two together
+by date, with anything Wise Old Man could not date at all last - an undated
+milestone is not news, and on top it would push out what happened today. Every
+row carries its kind so the filter above the table can hide one, including the
+rows redrawn from `/api/milestones` when the sidebar changes.
 
 Levels are not written through. Our level total lives in the `level` column of
 the `overall` row, beside overall experience in `value`, and a level reported

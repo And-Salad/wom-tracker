@@ -10,6 +10,16 @@
       {{ feed | length }} achievement{{ '' if feed | length == 1 else 's' }},
       newest first. A leading ~ means Wise Old Man only knows the date roughly.
     </p>
+    {# Every kind is on by default. Unticking is the only way to lose a row,
+       so a reader who ignores this sees everything. #}
+    <div class="row types" id="types">
+      {% for key, label in categories %}
+        <label class="tick">
+          <input type="checkbox" value="{{ key }}" checked>
+          <span>{{ label }}</span>
+        </label>
+      {% endfor %}
+    </div>
     <div class="scroll">
       <table>
         <thead>
@@ -17,7 +27,7 @@
         </thead>
         <tbody id="feed">
           {% for row in feed %}
-            <tr>
+            <tr data-category="{{ row.category }}">
               <td>
                 {% if row.kind %}
                   <img class="feed-icon" src="/icon/{{ row.kind }}/{{ row.metric }}.png"
@@ -27,7 +37,8 @@
               <td>{{ row.when }}</td>
               <td class="dim">{{ row.ago }}</td>
               <td class="named" style="--dot: {{ row.color }}">{{ row.player }}</td>
-              <td>{{ row.name }}</td>
+              <td>{{ row.name }}{% if row.detail %}
+                <span class="dim">{{ row.detail }}</span>{% endif %}</td>
             </tr>
           {% else %}
             <tr><td colspan="5" class="dim">Nothing recorded for this selection.</td></tr>

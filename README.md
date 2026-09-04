@@ -293,8 +293,14 @@ read, never stored.
 
 A player can opt into more. Putting the same URL in **Primary Webhook URLs**
 as well - not instead, the metadata field is what carries the logins - and
-ticking *Collection Log*, *Level Up* and *Kill Count* sends what happens during
-a session too. Every notifier ships off, so nothing else comes with them.
+ticking *Collection Log*, *Level Up*, *Kill Count*, *Quests*, *Achievement
+Diary* and *Combat Achievements* sends what happens during a session too. Every
+notifier ships off, so nothing else comes with them.
+
+Collection log slots, quests, diaries and combat tasks join Wise Old Man's own
+milestones on the **Milestones** page, merged and sorted together, each row
+tagged with what it is so the filter above the table can hide a kind. Levels and
+boss counts stay off it: those are progress, and progress belongs on a chart.
 
 Those land in `game_events` whole, because the interesting part is the detail
 no metric has room for: which item, from which drop, at which rank. Where the

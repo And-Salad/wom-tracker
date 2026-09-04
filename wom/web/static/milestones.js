@@ -8,7 +8,23 @@
 
   var body = document.getElementById("feed");
   var count = document.getElementById("count");
+  var types = document.getElementById("types");
   if (!body || !window.Sidebar) { return; }
+
+  /* Which kinds are showing. Absent from the set means hidden, so a kind the
+     server sends that this does not know about stays visible. */
+  var hidden = Object.create(null);
+
+  function applyFilter() {
+    var shown = 0;
+    Array.prototype.forEach.call(body.rows, function (row) {
+      var kind = row.getAttribute("data-category");
+      var off = kind && hidden[kind];
+      row.hidden = !!off;
+      if (!off && kind) { shown += 1; }
+    });
+    return shown;
+  }
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -21,6 +37,7 @@
      name both come from the Wise Old Man API. */
   function rowNode(row) {
     var tr = el("tr");
+    if (row.category) { tr.setAttribute("data-category", row.category); }
     var icon = el("td");
     if (row.kind) {
       var img = el("img", "feed-icon");
@@ -38,7 +55,12 @@
     var who = el("td", "named", row.player);
     who.style.setProperty("--dot", row.color);
     tr.appendChild(who);
-    tr.appendChild(el("td", null, row.name));
+    var name = el("td", null, row.name);
+    if (row.detail) {
+      name.appendChild(document.createTextNode(" "));
+      name.appendChild(el("span", "dim", row.detail));
+    }
+    tr.appendChild(name);
     return tr;
   }
 
@@ -55,9 +77,25 @@
       feed.forEach(function (row) { frag.appendChild(rowNode(row)); });
       body.appendChild(frag);
     }
-    count.textContent = feed.length +
-      (feed.length === 1 ? " achievement" : " achievements") +
+    say(applyFilter(), feed.length);
+  }
+
+  function say(shown, total) {
+    var text = shown + (shown === 1 ? " milestone" : " milestones");
+    if (total !== undefined && total !== shown) {
+      text += " of " + total;
+    }
+    count.textContent = text +
       ", newest first. A leading ~ means Wise Old Man only knows the date roughly.";
+  }
+
+  if (types) {
+    types.addEventListener("change", function (event) {
+      var box = event.target;
+      if (!box || box.type !== "checkbox") { return; }
+      hidden[box.value] = !box.checked;
+      say(applyFilter(), body.rows.length);
+    });
   }
 
   var seq = 0;

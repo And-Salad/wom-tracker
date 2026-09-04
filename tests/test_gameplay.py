@@ -190,3 +190,109 @@ def test_a_levelup_with_no_skills_named_is_not_an_event(db, player):
 
 def test_a_kind_we_do_not_handle_yields_nothing(db, player):
     assert gameplay.extract("loot", {"extra": {"items": []}}) == []
+
+
+# -- the milestones feed ----------------------------------------------------
+
+def quest(name="Dragon Slayer I", done=22):
+    return {"type": "QUEST", "extra": {"questName": name, "completedQuests": done,
+                                       "totalQuests": 156, "questPoints": 44}}
+
+
+def diary(area="Varrock", difficulty="HARD", total=15):
+    return {"type": "ACHIEVEMENT_DIARY", "extra": {
+        "area": area, "difficulty": difficulty, "total": total,
+        "areaTasksCompleted": 37, "areaTasksTotal": 42}}
+
+
+def combat(task="Peach Conjurer", tier="GRANDMASTER"):
+    return {"type": "COMBAT_ACHIEVEMENT", "extra": {
+        "tier": tier, "task": task, "taskPoints": 6, "totalPoints": 1337}}
+
+
+def test_a_quest_a_diary_and_a_combat_task_are_kept(db, player):
+    for kind, payload in (("quest", quest()), ("diary", diary()),
+                          ("combat_task", combat())):
+        gameplay.store(db, player["username"], kind, WHEN, payload)
+    got = {r["kind"]: r["subject"] for r in db.game_events(player["username"])}
+    assert got == {"quest": "Dragon Slayer I", "diary": "Varrock Hard",
+                   "combat_task": "Peach Conjurer"}
+
+
+def test_a_diary_names_its_area_and_difficulty_together(db, player):
+    """'Varrock' alone does not say which diary, and 'HARD' does not say where."""
+    assert gameplay.extract("diary", diary())[0][0] == "Varrock Hard"
+    assert gameplay.extract("diary", {"extra": {"area": "Varrock"}}) == []
+
+
+def test_the_qualifier_says_how_much_it_meant():
+    assert gameplay.detail("combat_task", combat()) == "Grandmaster"
+    assert gameplay.detail("diary", diary()) == "15 diaries done"
+    assert gameplay.detail("quest", quest()) == "22 of 156"
+    assert gameplay.detail("collection", collection(completed=651)) == "651 of 1,443"
+    assert gameplay.detail("kill_count", kill()) == "", "not a feed kind"
+
+
+def test_none_of_the_three_pretend_to_be_a_metric(db, player):
+    """We track no quest, diary or combat task metric, so nothing is written
+    through - the event is the whole of what we know."""
+    for kind, payload in (("quest", quest()), ("diary", diary()),
+                          ("combat_task", combat())):
+        gameplay.store(db, player["username"], kind, WHEN, payload)
+    assert db.query_one("SELECT COUNT(*) AS n FROM snapshots"
+                        " WHERE origin='reported'")["n"] == 0
+
+
+def test_the_feed_merges_both_sources_newest_first(db, player):
+    from wom.web import views
+    db.save_achievements(player["id"], [{
+        "name": "99 Attack", "metric": "attack", "measure": "experience",
+        "threshold": 13034431, "createdAt": "2026-09-02T10:00:00.000Z",
+        "accuracy": 3600000}])
+    gameplay.store(db, player["username"], "quest", "2026-09-03T21:15:00.000000Z",
+                   quest())
+    gameplay.store(db, player["username"], "collection",
+                   "2026-09-01T08:00:00.000000Z", collection())
+
+    feed = views.milestone_feed(db, [dict(player)], {})
+    assert [row["category"] for row in feed] == ["quest", "milestone", "collection"]
+    assert feed[0]["name"] == "Dragon Slayer I"
+    assert feed[0]["detail"] == "22 of 156"
+
+
+def test_a_milestone_with_no_date_sorts_last(db, player):
+    """It is not news, and on top it would push out what happened today."""
+    from wom.web import views
+    db.save_achievements(player["id"], [{
+        "name": "Undated thing", "metric": "attack", "measure": "experience",
+        "threshold": 1, "createdAt": None, "accuracy": -1}])
+    gameplay.store(db, player["username"], "quest", "2026-09-03T21:15:00.000000Z",
+                   quest())
+    feed = views.milestone_feed(db, [dict(player)], {})
+    assert feed[-1]["name"] == "Undated thing"
+    assert feed[-1]["when"] == "unknown"
+
+
+def test_only_the_selected_players_appear(db, player):
+    from wom.web import views
+    gameplay.store(db, "someone else", "quest", WHEN, quest())
+    gameplay.store(db, player["username"], "quest", WHEN, quest("Cook's Assistant"))
+    feed = views.milestone_feed(db, [dict(player)], {})
+    assert [row["name"] for row in feed] == ["Cook's Assistant"]
+
+
+def test_a_count_that_is_not_a_number_is_shown_as_it_arrived():
+    """The payload is the plugin's, not ours, so nothing here may explode."""
+    assert gameplay.detail("quest", {"extra": {"completedQuests": "many",
+                                               "totalQuests": 156}}) == "many of 156"
+
+
+def test_a_feed_row_with_unreadable_stored_json_still_appears(db, player):
+    from wom.web import views
+    gameplay.store(db, player["username"], "quest", WHEN, quest())
+    conn = db.connect()
+    with conn:
+        conn.execute("UPDATE game_events SET payload='{not json'")
+    feed = views.milestone_feed(db, [dict(player)], {})
+    assert len(feed) == 1, "the event happened whatever the payload says now"
+    assert feed[0]["detail"] == ""

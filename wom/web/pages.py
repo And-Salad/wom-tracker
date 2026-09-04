@@ -67,6 +67,7 @@ def milestones():
         "milestones.html",
         feed=views.milestone_feed(database(), scope["selected"], scope["palette"],
                                   since=span.since, until=span.until),
+        categories=views.FEED_CATEGORIES,
         **_shell(scope))
 
 

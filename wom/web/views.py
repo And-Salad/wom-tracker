@@ -5,9 +5,10 @@ shape of a page was decided and the only place it could be checked. They are
 plain functions of (database, ...) so a test can call them without a request.
 """
 
+import json
 from datetime import datetime, timedelta, timezone
 
-from .. import periods, theme
+from .. import gameplay, periods, theme
 from ..util import (fmt_ago, fmt_datetime, fmt_hours, fmt_int,
                     parse_api_time, pretty_metric)
 
@@ -191,18 +192,37 @@ def player_recaps(database, player):
     return folders
 
 
+# What each feed row is, for the filter above the table. The order is the
+# order the filter offers them in.
+FEED_CATEGORIES = (
+    ("milestone", "Milestones"),
+    ("collection", "Collection log"),
+    ("quest", "Quests"),
+    ("diary", "Diaries"),
+    ("combat_task", "Combat tasks"),
+)
+
+
 def milestone_feed(database, selected, palette, since=None, until=None,
                    limit=300):
-    """The achievements feed, newest first."""
+    """The achievements feed, newest first.
+
+    Two sources. Wise Old Man's milestones, which every account has, and what
+    a player's own client reported, which only the ones who opted in have. A
+    reader should not have to care which is which, so they are merged and
+    sorted together - but each row says what it is, so they can be filtered.
+    """
     from ..icons import icon_kind_for
 
+    ids = [p["id"] for p in selected]
     feed = []
-    for row in database.achievements(player_ids=[p["id"] for p in selected],
-                                     since=since, until=until, limit=limit):
+    for row in database.achievements(player_ids=ids, since=since, until=until,
+                                     limit=limit):
         dated = row["achieved_at"] and row["achieved_at"] > "1990"
         accuracy = row["accuracy"]
         vague = accuracy is None or accuracy < 0 or accuracy > 86400000
         feed.append({
+            "at": row["achieved_at"] if dated else "",
             "when": (("~" if vague else "")
                      + fmt_datetime(row["achieved_at"], "%d %b %Y")) if dated
                     else "unknown",
@@ -210,10 +230,40 @@ def milestone_feed(database, selected, palette, since=None, until=None,
             "player": row["display_name"],
             "color": palette.get(row["username"], theme.MUTED),
             "name": row["name"],
+            "detail": "",
+            "category": "milestone",
             "metric": row["metric"],
             "kind": icon_kind_for(row["metric"]) if row["metric"] else None,
         })
-    return feed
+
+    for row in database.feed_events(gameplay.FEED_KINDS, player_ids=ids,
+                                    since=since, until=until, limit=limit):
+        payload = _payload(row["payload"])
+        feed.append({
+            "at": row["happened_at"],
+            "when": fmt_datetime(row["happened_at"], "%d %b %Y"),
+            "ago": fmt_ago(row["happened_at"]),
+            "player": row["display_name"] or row["username"],
+            "color": palette.get(row["username"], theme.MUTED),
+            "name": row["subject"] or "",
+            "detail": gameplay.detail(row["kind"], payload),
+            "category": row["kind"],
+            "metric": None,
+            "kind": None,
+        })
+
+    # Newest first, and anything Wise Old Man could not date at all last -
+    # a milestone with no date is not news, and putting it on top would push
+    # what actually happened today off the screen.
+    feed.sort(key=lambda row: row["at"] or "", reverse=True)
+    return feed[:limit]
+
+
+def _payload(text):
+    try:
+        return json.loads(text or "{}")
+    except ValueError:
+        return {}
 
 
 def player_rows(database, players, palette):

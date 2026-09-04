@@ -28,7 +28,15 @@ KINDS = {
     "COLLECTION": "collection",
     "LEVEL": "level",
     "KILL_COUNT": "kill_count",
+    "QUEST": "quest",
+    "ACHIEVEMENT_DIARY": "diary",
+    "COMBAT_ACHIEVEMENT": "combat_task",
 }
+
+# The kinds that belong on the milestones feed: things a person did once, that
+# they would tell somebody about. A level or a boss count is progress and
+# belongs on a chart; these are events.
+FEED_KINDS = ("collection", "quest", "diary", "combat_task")
 
 # Where a collection log count lives in our metrics.
 COLLECTION_METRIC = "collections_logged"
@@ -80,7 +88,46 @@ def extract(kind, body):
         if not isinstance(levelled, dict):
             return []
         return [(name, _number(value)) for name, value in sorted(levelled.items())]
+    if kind == "quest":
+        return [(extra.get("questName"), _number(extra.get("completedQuests")))]
+    if kind == "diary":
+        area, difficulty = extra.get("area"), extra.get("difficulty")
+        if not area or not difficulty:
+            return []
+        return [("{} {}".format(area, str(difficulty).title()),
+                 _number(extra.get("total")))]
+    if kind == "combat_task":
+        return [(extra.get("task"), _number(extra.get("taskPoints")))]
     return []
+
+
+def detail(kind, payload):
+    """The qualifier a feed row wants beside its name, or an empty string.
+
+    The tier of a combat task and the progress a collection log slot made are
+    the parts that say how much it meant, and neither belongs in the name.
+    """
+    extra = payload.get("extra")
+    extra = extra if isinstance(extra, dict) else {}
+    if kind == "combat_task":
+        return str(extra.get("tier") or "").title()
+    if kind == "diary":
+        total = extra.get("total")
+        return "{} diaries done".format(_plain(total)) if total else ""
+    pairs = {"collection": ("completedEntries", "totalEntries"),
+             "quest": ("completedQuests", "totalQuests")}.get(kind)
+    if pairs:
+        done, total = extra.get(pairs[0]), extra.get(pairs[1])
+        if done and total:
+            return "{} of {}".format(_plain(done), _plain(total))
+    return ""
+
+
+def _plain(value):
+    try:
+        return "{:,.0f}".format(float(value))
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def store(database, username, kind, happened_at, body):
