@@ -120,7 +120,7 @@ class Config:
 
     def load(self):
         try:
-            with open(self.path, "r", encoding="utf-8") as fh:
+            with open(self.path, encoding="utf-8") as fh:
                 stored = json.load(fh)
         except (OSError, ValueError):
             stored = {}
@@ -156,7 +156,7 @@ class Config:
         tmp = self.path + ".tmp"
         with _lock:
             try:
-                with open(self.path, "r", encoding="utf-8") as fh:
+                with open(self.path, encoding="utf-8") as fh:
                     on_disk = json.load(fh)
                 if not isinstance(on_disk, dict):
                     on_disk = {}

@@ -10,8 +10,8 @@ import json
 from datetime import datetime, timezone
 
 import pytest
-
 from conftest import snapshot
+
 from wom.config import Config
 from wom.web.limits import Budget
 
@@ -67,6 +67,7 @@ def issue(signed_in, username="zezima"):
 def test_an_older_database_keeps_the_logins_it_had(tmp_path):
     """The first cut of this shipped a table that only knew about logins."""
     import sqlite3
+
     from wom.db import Database
 
     path = str(tmp_path / "old.db")
@@ -106,7 +107,7 @@ def test_a_token_that_could_not_have_been_issued_is_a_miss(signed_in, app):
     only runs once there is something to compare against.
     """
     issue(signed_in)
-    assert signed_in.post(u"/hook/dink/ééé",
+    assert signed_in.post("/hook/dink/ééé",
                           json=body()).status_code == 404
 
 
@@ -158,6 +159,7 @@ def test_the_url_handed_out_is_https_even_though_we_cannot_see_it(app):
     GET, the body is lost, and the webhook fails where nobody was watching.
     """
     from flask import request
+
     from wom.web.hooks import public_url
     with app.test_request_context("/admin", base_url="http://wom-tracker.fly.dev"):
         assert not request.is_secure, "the condition this is about"
@@ -418,6 +420,7 @@ def _no_length(app, body, content_type, terminated=False):
 def test_a_multipart_with_no_length_is_refused_rather_than_parsed(app):
     """Werkzeug cannot parse a form it has no length for."""
     from flask import request
+
     from wom.web.hooks import _body
     with _no_length(app, b"whatever", "multipart/form-data"):
         assert request.content_length is None, "the point of the fixture"
@@ -427,7 +430,8 @@ def test_a_multipart_with_no_length_is_refused_rather_than_parsed(app):
 def test_an_undeclared_body_is_still_bounded(app):
     """A chunked request declares no length; the read must still stop."""
     from flask import request
-    from wom.web.hooks import _body, MAX_BODY
+
+    from wom.web.hooks import MAX_BODY, _body
     with _no_length(app, b"x" * (MAX_BODY + 500), "application/json",
                     terminated=True):
         assert request.content_length is None, "the point of the fixture"
@@ -465,7 +469,8 @@ def test_every_attempt_at_the_hook_is_logged(client, caplog):
     with caplog.at_level(logging.INFO):
         client.get("/hook/dink/sixteen-chars-xy")
         client.post("/hook/nonsense")
-    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("hook:")]
+    lines = [r.getMessage() for r in caplog.records
+             if r.getMessage().startswith("hook:")]
     assert len(lines) == 2, "both the wrong method and the wrong path"
     assert "GET" in lines[0] and "16 characters" in lines[0]
     assert "sixteen-chars-xy" not in " ".join(lines), "the secret is never written"
@@ -481,6 +486,7 @@ def test_an_unknown_token_is_a_miss_whatever_the_method(client):
 
 def _state(kind, minutes_ago, world=302):
     from datetime import datetime, timedelta, timezone
+
     from wom.web.admin import session_state
     when = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
     return session_state({"kind": kind, "world": world,

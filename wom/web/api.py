@@ -6,15 +6,14 @@ on a machine that also runs the update schedule.
 
 import re
 
-from flask import (Blueprint, Response, abort, current_app, jsonify, request,
-                   session)
+from flask import Blueprint, Response, abort, current_app, jsonify, request, session
 
-from . import data as web_data
-from .data import NOBODY_PICKED
-from . import today, views
 from .. import winners
 from ..context import ViewContext
 from ..util import parse_api_time, pretty_metric
+from . import data as web_data
+from . import today, views
+from .data import NOBODY_PICKED
 from .selection import database, scope
 
 api = Blueprint("api", __name__)

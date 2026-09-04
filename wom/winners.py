@@ -21,7 +21,8 @@ from datetime import datetime, timedelta, timezone
 
 from .periods import coverage_slack
 from .scheduler import zone
-from .util import api_stamp as _stamp, parse_api_time
+from .util import api_stamp as _stamp
+from .util import parse_api_time
 
 
 def month_range(when=None, back=0):
@@ -257,7 +258,8 @@ def reading_at_or_before(database, player_id, boundary):
     seen = database.query_one(
         "SELECT MAX(captured_at) AS at FROM snapshots"
         " WHERE player_id=? AND captured_at<=?", (player_id, boundary))
-    return ((seen["at"] if seen and seen["at"] else max(r["captured_at"] for r in rows)),
+    return ((seen["at"] if seen and seen["at"]
+             else max(r["captured_at"] for r in rows)),
             state)
 
 

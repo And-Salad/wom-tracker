@@ -9,8 +9,8 @@ happened so the charts stop rounding it to the next poll.
 import json
 
 import pytest
-
 from conftest import snapshot
+
 from wom import gameplay
 
 
@@ -116,7 +116,8 @@ def test_an_event_for_an_account_we_have_never_seen_is_still_kept(db):
 # -- reading it as a metric -------------------------------------------------
 
 def test_a_collection_slot_becomes_a_reading_at_that_moment(db, player):
-    gameplay.store(db, player["username"], "collection", WHEN, collection(completed=651))
+    gameplay.store(db, player["username"], "collection", WHEN,
+                   collection(completed=651))
     standing = {r["metric"]: r["value"]
                 for r in db.state_at(player["id"], WHEN, "activity")}
     assert standing["collections_logged"] == 651
@@ -149,7 +150,8 @@ def test_an_untracked_boss_keeps_the_event_and_writes_no_reading(db, player):
 def test_a_reported_reading_is_not_cleared_by_recomputing_attribution(db, player):
     """Attribution clears what it worked out and must not touch what it was
     told - one is arithmetic, the other is evidence."""
-    gameplay.store(db, player["username"], "collection", WHEN, collection(completed=651))
+    gameplay.store(db, player["username"], "collection", WHEN,
+                   collection(completed=651))
     db.clear_derived_state(player["id"], "2026-09-01")
     standing = {r["metric"]: r["value"]
                 for r in db.state_at(player["id"], WHEN, "activity")}

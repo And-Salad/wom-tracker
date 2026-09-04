@@ -2,8 +2,7 @@
 
 import time
 
-from wom.web.limits import (TRUSTED_HEADER_ENV, Budget, Tripwire,
-                            client_address)
+from wom.web.limits import TRUSTED_HEADER_ENV, Budget, Tripwire, client_address
 
 
 def test_a_budget_allows_its_allowance_then_refuses():
@@ -271,8 +270,9 @@ def test_a_quiet_key_is_eventually_forgotten():
 def test_a_second_job_is_refused_while_one_is_running():
     """Two update passes over the same rows is twice the API traffic for the
     same answer, and for summaries twice the Claude bill."""
-    from wom.web.jobs import JobRunner
     import threading
+
+    from wom.web.jobs import JobRunner
 
     runner = JobRunner()
     holding, release = threading.Event(), threading.Event()
@@ -334,6 +334,7 @@ def test_an_interpreter_without_zoneinfo_is_refused_loudly():
     degrades rather than crashes, and on too old an interpreter that same
     path turns every zone but US Eastern into UTC."""
     import io as _io
+
     from wom import runtime
 
     said = _io.StringIO()

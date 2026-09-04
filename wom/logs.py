@@ -18,7 +18,8 @@ def setup_logging(verbose=False, role="app"):
     os.makedirs(data_dir(), exist_ok=True)
     handler = RotatingFileHandler(log_path_for(role), maxBytes=512_000,
                                   backupCount=3, encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if verbose else logging.INFO)
     root.addHandler(handler)

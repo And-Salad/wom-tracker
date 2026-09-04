@@ -207,8 +207,9 @@ def test_the_digest_hash_changes_only_when_the_figures_do(db, config, player):
 def test_slots_sit_on_wall_clock_boundaries(monkeypatch):
     """Predictable across a restart, and a missed one is still recognisably
     missed - counting from whenever the process started is neither."""
-    from wom import scheduler
     from datetime import datetime, timezone
+
+    from wom import scheduler
     for minute, expected in ((0, 0), (7, 0), (9, 0), (10, 10), (59, 50)):
         now = datetime(2026, 9, 1, 15, minute, 30, tzinfo=timezone.utc)
         assert scheduler.previous_slot(now).minute == expected
@@ -217,8 +218,9 @@ def test_slots_sit_on_wall_clock_boundaries(monkeypatch):
 
 def test_milestones_are_fetched_on_the_hour_not_every_run():
     """A request per player for something that moves rarely."""
-    from wom import scheduler
     from datetime import datetime, timezone
+
+    from wom import scheduler
     on_the_hour = [m for m in range(0, 60, scheduler.SLOT_MINUTES)
                    if scheduler.wants_achievements(
                        datetime(2026, 9, 1, 15, m, tzinfo=timezone.utc))]
@@ -228,13 +230,15 @@ def test_milestones_are_fetched_on_the_hour_not_every_run():
 def test_history_is_thinned_once_a_day_not_every_run(db, player, tmp_path):
     """Nothing had ever called compaction: it was a command somebody had to
     remember, which is a thing that does not happen."""
-    import web_app
     from conftest import snapshot
+
+    import web_app
     from wom.config import Config
 
     for hour in ("00", "06", "12", "18"):
         db.save_snapshot(player["id"], snapshot(
-            "2020-01-01T{}:00:00.000Z".format(hour), skills={"attack": (int(hour) + 1, 40)}))
+            "2020-01-01T{}:00:00.000Z".format(hour),
+            skills={"attack": (int(hour) + 1, 40)}))
     as_polled(db)
     settings = Config()
 

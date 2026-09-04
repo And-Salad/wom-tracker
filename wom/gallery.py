@@ -16,6 +16,7 @@ its own contents, which also means the same screenshot delivered twice is
 stored once.
 """
 
+import contextlib
 import hashlib
 import logging
 import os
@@ -122,10 +123,8 @@ def _forget(database, row):
     File first: a row with no file is a broken picture, a file with no row is
     bytes nothing will ever look at or count.
     """
-    try:
+    with contextlib.suppress(OSError):
         os.remove(path_for(row["digest"], row["format"]))
-    except OSError:
-        pass
     database.forget_image(row["digest"])
     return 1
 

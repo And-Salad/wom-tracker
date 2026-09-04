@@ -10,8 +10,15 @@ import io
 import json
 from datetime import datetime
 
-from flask import (Blueprint, Response, abort, current_app, render_template,
-                   request, session)
+from flask import (
+    Blueprint,
+    Response,
+    abort,
+    current_app,
+    render_template,
+    request,
+    session,
+)
 
 from .dates import BadRequest, day_bound, offset_minutes
 from .selection import chosen, database, roster, settings
@@ -25,8 +32,8 @@ COLUMNS = ("captured_at", "player", "username", "kind", "metric",
 
 @exporting.route("/export")
 def export_page():
-    from .selection import page_context
     from .pages import _shell
+    from .selection import page_context
     scope = page_context()
     return render_template("export.html", kinds=KINDS, **_shell(scope))
 

@@ -26,9 +26,9 @@ from wom.runtime import require as require_python
 require_python()
 
 from wom.api import WomClient
-from wom.logs import setup_logging
 from wom.config import Config, db_path
 from wom.db import Database
+from wom.logs import setup_logging
 from wom.scheduler import stamp_now
 from wom.updater import backfill_player, update_all
 
@@ -65,7 +65,7 @@ def run_headless_update():
 
 
 def run_backfill(names=None):
-    """Re-import stored history for every tracked player, ignoring the once-only flag."""
+    """Re-import stored history for every player, ignoring the once-only flag."""
     config = Config()
     names = names or config.get("usernames", [])
     if not names:
@@ -123,7 +123,8 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
                     key, path,
                     "IN USE" if os.path.exists(path) else "(not present)"))
             print()
-            print(open(base, encoding="utf-8").read().rstrip())
+            with open(base, encoding="utf-8") as handle:
+                print(handle.read().rstrip())
             print()
         return 0
 
@@ -189,7 +190,8 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
                 print("=" * 68)
                 print(digest)
                 print()
-        print("nothing was sent. Worst case for all of the above: ${:.3f}".format(total))
+        print("nothing was sent. Worst case for all of the above:"
+              " ${:.3f}".format(total))
         return 0
 
     results = summaries.summarise_all(
@@ -206,25 +208,26 @@ def main(argv=None):
     parser.add_argument("--update", action="store_true",
                         help="run one update pass now, without starting the server")
     parser.add_argument("--backfill", nargs="*", metavar="NAME",
-                        help="re-import stored history, for the given names or all of them")
+                        help="re-import stored history, for these names or all")
     parser.add_argument("--summarize", "--summarise", dest="summarize",
                         action="store_true", help="write the Claude summaries")
     parser.add_argument("--period", action="append", metavar="KEY",
                         help="which period to summarise (repeatable); default week")
     parser.add_argument("--player", metavar="NAME", help="summarise just this player")
     parser.add_argument("--due", action="store_true",
-                        help="with --summarize, write exactly what the schedule owes now")
+                        help="with --summarize, write what the schedule owes now")
     parser.add_argument("--force", action="store_true",
                         help="regenerate even when the data has not changed")
     parser.add_argument("--show-prompt", action="store_true",
                         help="print the tunable summary prompt and its path")
     parser.add_argument("--compact", action="store_true",
-                        help="thin history older than --keep-days to one snapshot a day")
+                        help="thin history past --keep-days to one a day")
     parser.add_argument("--keep-days", type=int, default=30, metavar="N",
                         help="how much recent history --compact leaves untouched")
     parser.add_argument("--dry-run", action="store_true",
                         help="report what would happen without doing it")
-    parser.add_argument("--list", action="store_true", help="print the tracked usernames")
+    parser.add_argument("--list", action="store_true",
+                        help="print the tracked usernames")
     parser.add_argument("--verbose", action="store_true", help="debug logging")
     args = parser.parse_args(argv)
 

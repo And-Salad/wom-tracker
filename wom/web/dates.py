@@ -30,8 +30,8 @@ def day_bound(value, end_of_day=False, offset_minutes=0):
         return None
     try:
         day = datetime.strptime(text, "%Y-%m-%d")
-    except ValueError:
-        raise BadRequest("{!r} is not a date. Use yyyy-mm-dd.".format(text))
+    except ValueError as exc:
+        raise BadRequest("{!r} is not a date. Use yyyy-mm-dd.".format(text)) from exc
     if end_of_day:
         day += timedelta(days=1)          # `to` is inclusive of the day named
     return api_stamp((day - timedelta(minutes=offset_minutes))

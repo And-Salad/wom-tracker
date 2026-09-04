@@ -3,8 +3,16 @@
 import os
 import re
 
-from flask import (Blueprint, abort, redirect, render_template, request,
-                   send_file, send_from_directory, url_for)
+from flask import (
+    Blueprint,
+    abort,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    send_from_directory,
+    url_for,
+)
 
 from .. import gallery, winners
 from ..icons import ASSET_DIR, icon_path

@@ -415,7 +415,8 @@ class Database:
             # an unranked metric stays unranked without a row on every update.
             conn.execute("""
                 INSERT INTO metrics_sparse
-                SELECT player_id, kind, metric, captured_at, value, rank, level, efficiency
+                SELECT player_id, kind, metric, captured_at, value, rank,
+                       level, efficiency
                 FROM (
                     SELECT m.*,
                            LAG(m.value) OVER w AS pv,
@@ -471,7 +472,8 @@ class Database:
                 """
                 INSERT INTO players (id, username, display_name, type, build, status,
                                      country, combat_level, exp, ehp, ehb, ttm,
-                                     registered_at, updated_at, last_changed_at, last_fetched_at)
+                                     registered_at, updated_at, last_changed_at,
+                                     last_fetched_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     username=excluded.username,
@@ -495,7 +497,8 @@ class Database:
                     (details.get("username") or details.get("displayName", "")).lower(),
                     details.get("displayName") or details.get("username", ""),
                     details.get("type"), details.get("build"), details.get("status"),
-                    details.get("country"), details.get("combatLevel"), details.get("exp"),
+                    details.get("country"), details.get("combatLevel"),
+                    details.get("exp"),
                     details.get("ehp"), details.get("ehb"), details.get("ttm"),
                     details.get("registeredAt"), details.get("updatedAt"),
                     details.get("lastChangedAt"), now,
@@ -574,12 +577,13 @@ class Database:
                 (r["value"], r["level"], r["efficiency"]) for r in rows}
 
     def save_snapshots(self, player_id, snapshots):
-        """Store many snapshots, skipping any already held. Returns how many were new."""
+        """Store many snapshots, skipping any held. Returns how many were new."""
         return sum(1 for s in snapshots if self.save_snapshot(player_id, s) is not None)
 
     def needs_backfill(self, player_id):
         """True until this player's history has been imported once."""
-        row = self.query_one("SELECT backfilled_at FROM players WHERE id=?", (player_id,))
+        row = self.query_one("SELECT backfilled_at FROM players WHERE id=?",
+                             (player_id,))
         return row is not None and not row["backfilled_at"]
 
     def mark_backfilled(self, player_id, when=None):
@@ -952,7 +956,8 @@ class Database:
         """One stored summary - a specific window, or the most recent."""
         if window_key:
             return self.query_one(
-                "SELECT * FROM summaries WHERE player_id=? AND period=? AND window_key=?",
+                "SELECT * FROM summaries"
+                " WHERE player_id=? AND period=? AND window_key=?",
                 (player_id, period, window_key))
         return self.query_one(
             "SELECT * FROM summaries WHERE player_id=? AND period=?"
@@ -1030,7 +1035,8 @@ class Database:
         conn = self.connect()
         with conn:
             conn.execute(
-                "UPDATE runs SET finished_at=?, ok_count=?, fail_count=?, notes=? WHERE id=?",
+                "UPDATE runs SET finished_at=?, ok_count=?, fail_count=?, notes=?"
+                " WHERE id=?",
                 (_utcnow(), ok_count, fail_count, notes, run_id),
             )
 
@@ -1142,7 +1148,8 @@ class Database:
         return self.query("SELECT * FROM players ORDER BY display_name COLLATE NOCASE")
 
     def player_by_username(self, username):
-        return self.query_one("SELECT * FROM players WHERE username=?", (username.lower(),))
+        return self.query_one("SELECT * FROM players WHERE username=?",
+                              (username.lower(),))
 
     def observations(self, player_id, since=None, until=None):
         """When this account was read, oldest first.
@@ -1310,10 +1317,12 @@ class Database:
         nearer of the two is wrong by less.
         """
         before = self.query_one(
-            "SELECT id, player_id, captured_at FROM snapshots WHERE player_id=? AND captured_at<=?"
+            "SELECT id, player_id, captured_at FROM snapshots"
+            " WHERE player_id=? AND captured_at<=?"
             " ORDER BY captured_at DESC LIMIT 1", (player_id, since))
         after = self.query_one(
-            "SELECT id, player_id, captured_at FROM snapshots WHERE player_id=? AND captured_at>?"
+            "SELECT id, player_id, captured_at FROM snapshots"
+            " WHERE player_id=? AND captured_at>?"
             + (" AND captured_at<?" if until else "") +
             " ORDER BY captured_at ASC LIMIT 1",
             (player_id, since, until) if until else (player_id, since))
@@ -1359,7 +1368,8 @@ class Database:
 
     def snapshot_at_or_before(self, player_id, when):
         return self.query_one(
-            "SELECT id, player_id, captured_at FROM snapshots WHERE player_id=? AND captured_at<?"
+            "SELECT id, player_id, captured_at FROM snapshots"
+            " WHERE player_id=? AND captured_at<?"
             " ORDER BY captured_at DESC LIMIT 1", (player_id, when))
 
     def metric_gains(self, player_id, since, kind="skill", bounds=None, until=None):

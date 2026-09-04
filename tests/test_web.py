@@ -121,7 +121,8 @@ def test_the_time_zone_is_a_setting_and_is_checked_before_it_is_stored(signed_in
 
     # And the day boundaries follow it: Perth is far enough east that its
     # midnight is the previous afternoon in UTC.
-    from datetime import datetime, timezone as utc
+    from datetime import datetime
+    from datetime import timezone as utc
     window = periods.latest_window("day",
                                    datetime(2026, 9, 1, 12, tzinfo=utc.utc))
     assert window.start.utcoffset().total_seconds() == 8 * 3600
@@ -377,9 +378,9 @@ def test_the_experience_line_sits_under_the_bar_chart_it_explains(client, app):
 
 
 def test_a_builder_for_an_unknown_chart_is_refused():
-    from wom.catalog import chart
-
     import pytest
+
+    from wom.catalog import chart
     with pytest.raises(KeyError):
         chart("no_such_chart")(lambda ctx, choice: None)
 
@@ -560,9 +561,11 @@ def test_the_table_filters_are_distinct_and_kind_is_always_one(client, app):
     # second control here could disagree with the chart below the table.
     assert 'id="who-filter"' not in body, "the player dropdown is gone"
     assert 'name="player"' in body, "the sidebar ticks are the player control"
-    kind = body[body.index('id="kind"'):body.index("</select>", body.index('id="kind"'))]
+    opens = body.index('id="kind"')
+    kind = body[opens:body.index("</select>", opens)]
     assert 'value=""' not in kind, "kind must always name one kind"
-    assert kind.index('value="skill"') < kind.index('value="boss"'),         "skills first, so the page opens on them"
+    assert kind.index('value="skill"') < kind.index('value="boss"'), (
+        "skills first, so the page opens on them")
 
 
 def test_history_plots_one_line_per_player_for_one_metric(client, app):
@@ -633,7 +636,8 @@ def test_updated_is_when_they_last_moved_not_when_we_last_asked(client, app):
     database.save_snapshot(1, snapshot("2026-09-01T12:00:00.000Z",
                                        skills={"attack": (5000, 40)},
                                        bosses={"zulrah": 50}))
-    assert database.last_change(1) == "2026-08-31T12:00:00.000Z",         "a reading that changed nothing is not a change"
+    assert database.last_change(1) == "2026-08-31T12:00:00.000Z", (
+        "a reading that changed nothing is not a change")
 
     body = client.get("/api/players").get_json()
     assert body["rows"][0]["updated"] == fmt_ago("2026-08-31T12:00:00.000Z")
@@ -764,7 +768,8 @@ def test_the_sidebar_dates_are_not_submitted_by_the_no_script_form(client, app):
     server honours any date it is given - so Apply turned Week into Custom."""
     seed(app)
     body = client.get("/").get_data(as_text=True)
-    dates = body[body.index('id="dates"'):body.index("</div>", body.index('id="dates"'))]
+    opens = body.index('id="dates"')
+    dates = body[opens:body.index("</div>", opens)]
     assert 'name="from"' not in dates and 'name="to"' not in dates
     # The controls that do work without JavaScript keep their names.
     assert 'id="period" name="period"' in body
@@ -860,8 +865,9 @@ def _polled(database, players, days):
 def test_a_long_gap_is_not_counted_as_one_days_work(app):
     """Measured from the far side of a seven-week gap, an account that came
     back on the 30th would have all seven weeks folded into that day."""
-    from wom import winners
     from datetime import datetime, timezone
+
+    from wom import winners
     database = _calendar_seed(app)
     players = database.players()
     start, end = winners.month_range(
@@ -877,8 +883,9 @@ def test_a_long_gap_is_not_counted_as_one_days_work(app):
 def test_a_day_without_a_reading_is_a_quiet_day_not_an_unknown_one(app):
     """Wise Old Man records a snapshot when the hiscores move, so no reading
     means the account did not play - it must not drop out of the day."""
-    from wom import winners
     from datetime import datetime, timezone
+
+    from wom import winners
     database = _calendar_seed(app)
     players = database.players()
     start, end = winners.month_range(
@@ -890,8 +897,9 @@ def test_a_day_without_a_reading_is_a_quiet_day_not_an_unknown_one(app):
 
 
 def test_the_round_up_overrules_the_figures_only_for_the_whole_group(app):
-    from wom import periods, winners
     from datetime import datetime, timezone
+
+    from wom import periods, winners
     database = _calendar_seed(app)
     players = database.players()
     window = periods.latest_window("day", datetime(2026, 8, 31, 12,
@@ -1024,8 +1032,9 @@ def test_a_round_up_that_named_a_winner_stores_it_apart_from_its_prose(app):
 def test_a_day_is_blank_until_every_account_was_being_tracked(app):
     """An account nobody was watching yet cannot lose a day, so whoever was
     being watched would win it by default - a whole month of them."""
-    from wom import winners
     from datetime import datetime, timezone
+
+    from wom import winners
     database = _calendar_seed(app)
     players = database.players()
     start, end = winners.month_range(
@@ -1049,8 +1058,9 @@ def test_a_day_is_blank_until_every_account_was_being_tracked(app):
 
 def test_a_day_nobody_played_is_blank_not_a_win(app):
     """Nothing happened, and a colour would say something did."""
-    from wom import winners
     from datetime import datetime, timezone
+
+    from wom import winners
     database = _calendar_seed(app)
     # Both on file, both flat: a genuinely quiet day with nobody excluded.
     for pid in (1, 2):
@@ -1069,8 +1079,9 @@ def test_a_day_nobody_played_is_blank_not_a_win(app):
 def test_a_ninety_nine_takes_the_day_off_a_bigger_number(app):
     """Past 99 a skill stops levelling, so experience there cannot outrank
     somebody who actually reached one."""
-    from wom import winners
     from datetime import datetime, timezone
+
+    from wom import winners
     database = app.config["DATABASE"]
     for pid, name in ((1, "Climber"), (2, "Maxed")):
         database.save_player_details({"id": pid, "username": name.lower(),
@@ -1104,8 +1115,9 @@ def test_a_ninety_nine_takes_the_day_off_a_bigger_number(app):
 
 
 def test_a_day_spent_entirely_past_99_has_no_winner(app):
-    from wom import winners
     from datetime import datetime, timezone
+
+    from wom import winners
     database = app.config["DATABASE"]
     database.save_player_details({"id": 1, "username": "maxed",
                                   "displayName": "Maxed", "type": "regular"})
@@ -1127,8 +1139,9 @@ def test_a_day_nobody_was_polled_on_is_blank(app):
     """Wise Old Man records a reading when the hiscores move, so no reading
     means "played nothing" only if somebody asked. Where nobody asked, the one
     account that submits its own readings would take the day unopposed."""
-    from wom import winners
     from datetime import datetime, timezone
+
+    from wom import winners
     database = _calendar_seed(app, polled=False)
     players = database.players()
     start, end = winners.month_range(
@@ -1154,6 +1167,7 @@ def test_the_tab_icon_is_linked_and_survives_its_file_being_absent(client, app):
     head = client.get("/").get_data(as_text=True)
     assert 'rel="icon" type="image/png" href="/assets/favicon.png"' in head
     import os
+
     from wom.web.pages import FAVICON
     expected = 200 if os.path.exists(FAVICON) else 404
     assert client.get("/favicon.ico").status_code == expected
@@ -1174,9 +1188,10 @@ def test_today_follows_the_grid_in_a_card_of_its_own(app, client):
 
 
 def test_today_is_ordered_by_the_same_rule_as_the_squares(app):
+    from datetime import datetime, timedelta
+
     from wom import winners
     from wom.web.today import standings
-    from datetime import datetime, timedelta
     database = app.config["DATABASE"]
     for pid, name in ((1, "Climber"), (2, "Maxed")):
         database.save_player_details({"id": pid, "username": name.lower(),
@@ -1208,10 +1223,11 @@ def test_today_is_ordered_by_the_same_rule_as_the_squares(app):
 def test_the_day_in_progress_leads_but_has_not_won(app):
     """Leading at four in the afternoon is not a day won, and must not count
     toward the month either."""
+    from datetime import datetime, timedelta
+
     from wom import winners
     from wom.web.today import standings
     from wom.web.views import winner_calendar
-    from datetime import datetime, timedelta
     database = app.config["DATABASE"]
     database.save_player_details({"id": 1, "username": "zezima",
                                   "displayName": "Zezima", "type": "regular"})
@@ -1251,9 +1267,10 @@ def test_the_day_in_progress_leads_but_has_not_won(app):
 def test_wins_are_split_by_how_the_day_was_taken(app):
     """A day is taken either by reaching a 99 or, where nobody did, on
     experience - so the tallies are kept apart."""
+    from datetime import datetime
+
     from wom import winners
     from wom.web.today import standings
-    from datetime import datetime
     database = app.config["DATABASE"]
     for pid, name in ((1, "Climber"), (2, "Grinder")):
         database.save_player_details({"id": pid, "username": name.lower(),
@@ -1351,16 +1368,16 @@ def test_saving_an_override_writes_that_period_not_the_base(signed_in, app):
     base - so saving through it would silently overwrite the base prompt."""
     from wom import summaries as core
     base = _base_prompt("player")
-    with open(base, "r", encoding="utf-8") as handle:
+    with open(base, encoding="utf-8") as handle:
         before = handle.read()
     override = core.period_prompt_path("quarter", kind="player")
     try:
         signed_in.post("/admin/prompts", data={
             "kind": "player", "period": "quarter", "text": "Only for quarters."})
         assert os.path.exists(override), "the override was written"
-        with open(override, "r", encoding="utf-8") as handle:
+        with open(override, encoding="utf-8") as handle:
             assert handle.read().strip() == "Only for quarters."
-        with open(base, "r", encoding="utf-8") as handle:
+        with open(base, encoding="utf-8") as handle:
             assert handle.read() == before, "and the base was left alone"
     finally:
         if os.path.exists(override):
@@ -1374,7 +1391,7 @@ def test_an_override_can_be_seeded_and_then_removed(signed_in, app):
     try:
         signed_in.post("/admin/prompts", data={"seed": "1", "add": "group:day"})
         assert os.path.exists(override), "seeded from the base prompt"
-        with open(override, "r", encoding="utf-8") as handle:
+        with open(override, encoding="utf-8") as handle:
             assert handle.read().strip(), "and not left empty"
 
         signed_in.post("/admin/prompts", data={
@@ -1388,10 +1405,10 @@ def test_an_override_can_be_seeded_and_then_removed(signed_in, app):
 def test_a_prompt_cannot_be_saved_empty(signed_in, app):
     """An empty system prompt is not an edit, it is a broken round-up."""
     base = _base_prompt("player")
-    with open(base, "r", encoding="utf-8") as handle:
+    with open(base, encoding="utf-8") as handle:
         before = handle.read()
     signed_in.post("/admin/prompts", data={"kind": "player", "text": "   "})
-    with open(base, "r", encoding="utf-8") as handle:
+    with open(base, encoding="utf-8") as handle:
         assert handle.read() == before
 
 
@@ -1589,6 +1606,7 @@ def _midnight_jump(app):
     reading opens the day therefore decides whose day it counts toward.
     """
     from datetime import timedelta
+
     from wom import winners
     database = app.config["DATABASE"]
     database.save_player_details({"id": 1, "username": "zezima",
@@ -1861,7 +1879,8 @@ def test_grinding_judges_on_all_experience_and_maxing_only_up_to_99():
     maxed = {"nines": 0, "raw": 900000.0, "capped": 0.0}
     climbing = {"nines": 0, "raw": 100000.0, "capped": 100000.0}
     assert winners.key(climbing, winners.MAXING) > winners.key(maxed, winners.MAXING)
-    assert winners.key(maxed, winners.GRINDING) > winners.key(climbing, winners.GRINDING)
+    assert (winners.key(maxed, winners.GRINDING)
+            > winners.key(climbing, winners.GRINDING))
 
 
 def test_a_ninety_nine_wins_a_maxing_day_and_counts_for_nothing_extra_grinding():
@@ -1901,7 +1920,9 @@ def test_levels_today_counts_from_midnight(db, player):
     """Read at the two edges, and a missing edge is no answer rather than a
     guess - treated as zero it would report the account's whole total level."""
     from datetime import timedelta, timezone
+
     from conftest import snapshot as snap
+
     from wom.web import today
 
     opens = today.winners.today_range()[0]
@@ -1945,9 +1966,11 @@ def test_a_grinding_day_counts_experience_past_99(db, player):
     board that ignored the distinction entirely.
     """
     from datetime import timedelta, timezone
-    from wom.web import today
-    from wom import winners
+
     from conftest import snapshot as snap
+
+    from wom import winners
+    from wom.web import today
 
     # Anchored to the day the app is actually judging, not to a UTC hour:
     # picking 01:00 and 02:00 put both readings on the previous local day for
@@ -2003,6 +2026,7 @@ def test_the_same_window_can_be_written_for_both_boards(db):
 def test_round_ups_written_before_there_were_two_boards_are_maxing(tmp_path):
     """Everything already written was about the leaderboard that existed."""
     import sqlite3
+
     from wom.db import Database
     path = str(tmp_path / "old.db")
     conn = sqlite3.connect(path)

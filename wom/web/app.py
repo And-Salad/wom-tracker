@@ -14,10 +14,11 @@ from flask import Flask, Response, request, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .. import theme
-from ..util import is_local_host
 from ..config import db_path
 from ..db import Database
-from .admin import PASSWORD_ENV, admin as admin_blueprint, admin_enabled
+from ..util import is_local_host
+from .admin import PASSWORD_ENV, admin_enabled
+from .admin import admin as admin_blueprint
 from .api import api as api_blueprint
 from .dates import BadRequest
 from .exporting import exporting as exporting_blueprint

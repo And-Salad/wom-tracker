@@ -169,7 +169,8 @@ def test_only_the_newest_payload_is_kept(db, player):
 def test_the_old_shape_migrates_without_changing_a_single_answer(tmp_path):
     """The migration is the risky half: it rewrites 66,000 rows in place."""
     import sqlite3
-    from wom.db import Database, SCHEMA
+
+    from wom.db import SCHEMA, Database
 
     path = str(tmp_path / "old.db")
     conn = sqlite3.connect(path)
@@ -263,8 +264,9 @@ def test_a_players_own_notes_survive_that_drop(tmp_path):
 
 def test_a_reading_we_caused_is_marked_as_ours(db, player):
     """Wise Old Man stamped it as we asked for it, so we can ask again."""
-    from wom.util import api_stamp
     from datetime import datetime, timezone
+
+    from wom.util import api_stamp
     db.save_snapshot(player["id"], snapshot(api_stamp(datetime.now(timezone.utc)),
                                             skills={"attack": (100, 40)}))
     assert db.query_one("SELECT origin FROM snapshots")["origin"] == "poll"
@@ -309,9 +311,9 @@ def test_an_archive_reading_still_says_what_it_said(db, player):
     with conn:
         conn.execute("UPDATE snapshots SET origin='archive'"
                      " WHERE captured_at LIKE '2026-01-05T07%'")
-    reading = lambda: {r["metric"]: r["value"] for r in
-                       db.state_at(player["id"], "2026-01-05T07:00:00.000Z",
-                                   kind="boss")}
+    def reading():
+        return {r["metric"]: r["value"] for r in
+                db.state_at(player["id"], "2026-01-05T07:00:00.000Z", kind="boss")}
     before = reading()
     assert before["zulrah"] == 25, "what that moment said before we thinned"
 

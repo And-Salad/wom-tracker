@@ -9,8 +9,14 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from .. import gameplay, periods, theme
-from ..util import (fmt_ago, fmt_datetime, fmt_hours, fmt_int,
-                    parse_api_time, pretty_metric)
+from ..util import (
+    fmt_ago,
+    fmt_datetime,
+    fmt_hours,
+    fmt_int,
+    parse_api_time,
+    pretty_metric,
+)
 
 # A player's own notes cover every window, named the same way everywhere.
 SUMMARY_FOLDERS = (("day", "Daily"), ("week", "Weekly"), ("month", "Monthly"),

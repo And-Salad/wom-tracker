@@ -13,6 +13,7 @@ from ..config import Config
 from ..scheduler import next_slot, parse_last_run
 from ..util import fmt_ago
 
+
 def database():
     return current_app.config["DATABASE"]
 
