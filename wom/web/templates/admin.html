@@ -10,6 +10,18 @@
     {% endif %}
   {% endwith %}
 
+  {# Which commit is answering, and since when. First thing on the page
+     because it is the thing that gets checked in a hurry, straight after a
+     deploy, to find out whether the deploy is the one being looked at. #}
+  <p class="hint build">
+    {% if build.sha %}
+      Build <code>{{ build.short }}</code>
+    {% else %}
+      Build <code>unknown</code> - no commit was baked in
+    {% endif %}
+    &middot; this process started {{ build.ago }}
+  </p>
+
   <div class="card">
     <div class="card-head">
       <div>

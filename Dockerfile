@@ -29,6 +29,17 @@ COPY wom/ ./wom/
 COPY assets/ ./assets/
 COPY web_app.py wom_tracker.py ./
 
+# Which commit this image is, so the running app can say so and a deploy can
+# be confirmed rather than assumed - see wom/build.py. A container has no git
+# and no repository to ask, so it has to be baked in.
+#
+# Last, deliberately. An ENV invalidates every layer after it, and this one
+# changes on every single commit; up beside the pip install it would throw
+# away the dependency cache each time and turn a thirty second build into a
+# two minute one.
+ARG GIT_SHA=""
+ENV WOM_BUILD_SHA=$GIT_SHA
+
 # The volume mounts here; the app writes its database, config, prompts and
 # logs into it, so everything survives a redeploy.
 VOLUME /data

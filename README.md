@@ -65,6 +65,13 @@ one always-on machine with the update schedule inside it - a deploy restarts the
 tracker and interrupts whatever pass was mid-flight. The schedule catches the
 slot up afterwards, but the moment is worth choosing.
 
+To confirm it landed, `/admin` says which commit is answering and how long
+that process has been up - a deploy that went out and a deploy that arrived
+look identical from outside, because the old one was answering too. The commit
+is baked into the image at build time; running from a clone it comes from git
+instead, and if neither can say, the page says that rather than showing a
+blank.
+
 It needs one secret, set once:
 
 ```bash
@@ -491,6 +498,7 @@ package.json         jsdom, for the browser tests
 wom/
   api.py             Wise Old Man client, rate limiting and retries
   config.py          settings file, with secrets overridable by environment
+  build.py           which commit is running, for confirming a deploy
   db.py              the name everything imports; wom/store is the code
   updater.py         one update pass over the username list
   scheduler.py       the ten-minute timer, the configured zone, the busy flag

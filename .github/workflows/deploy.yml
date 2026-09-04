@@ -63,10 +63,16 @@ jobs:
 
       # --remote-only builds on Fly's own builder, so this runner needs no
       # Docker of its own and the image is built where it is deployed.
+      #
+      # GIT_SHA is baked into the image so the running app can say which
+      # commit it is, and the admin page prints it. The check below still only
+      # asks whether the site answers - confirming it answers *as this commit*
+      # would need that commit readable from outside, which is a public
+      # endpoint this does not have.
       - name: Deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl deploy --remote-only
+        run: flyctl deploy --remote-only --build-arg GIT_SHA=${{ github.sha }}
 
       # flyctl calls a deploy done when the machine starts, which is not the
       # same as the app answering. A container that boots and then throws on

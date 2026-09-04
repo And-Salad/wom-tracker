@@ -108,7 +108,13 @@ def main(argv=None):
             return 0
 
         print("deploying...")
-        subprocess.run([flyctl(), "deploy", "--now"], cwd=HERE, check=True)
+        # The commit goes into the image so the running app can say which one
+        # it is - the admin page prints it. Safe to bake in here because the
+        # tree is checked clean above, so HEAD really is what is being built.
+        sha = run(["git", "rev-parse", "HEAD"])
+        subprocess.run([flyctl(), "deploy", "--now",
+                        "--build-arg", "GIT_SHA=" + sha],
+                       cwd=HERE, check=True)
 
         if args.skip_push:
             print("not pushing, as asked - the repo is now behind what is live")
