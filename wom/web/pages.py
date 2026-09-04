@@ -73,6 +73,17 @@ def milestones():
         **_shell(scope))
 
 
+@pages.route("/help")
+def help_page():
+    """How the whole thing works, for the people it is for.
+
+    Not in the nav: it is read once and then never again, and a seventh tab
+    for it would cost every page a little clarity to save one visit. The
+    sidebar carries the link instead.
+    """
+    return render_template("help.html")
+
+
 @pages.route("/gallery")
 def gallery_page():
     scope = page_context()

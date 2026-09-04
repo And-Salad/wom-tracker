@@ -1811,3 +1811,40 @@ def test_a_picture_with_no_player_of_ours_is_not_shown(client, app):
                   "2026-09-03T21:00:00.000000Z",
                   b"\x89PNG\r\n\x1a\n" + b"stranger", caption="not ours")
     assert "not ours" not in client.get("/gallery").get_data(as_text=True)
+
+
+def test_the_help_page_answers_the_questions_it_is_for(client):
+    page = client.get("/help").get_data(as_text=True)
+    assert page.count("<h4") >= 5, "one heading per question it answers"
+    for phrase in ("Custom Metadata Handler",      # how to set Dink up
+                   "ten minutes",                  # how polling works
+                   "log out",                      # why numbers arrive late
+                   "You do not need it",           # the WOM plugin
+                   "ninety-nine",                  # how the day is won
+                   "average of its days"):         # how the month is won
+        assert phrase in page, phrase
+    assert 'href="https://wiseoldman.net"' in page
+
+
+def test_the_help_page_is_linked_from_every_page_with_a_sidebar(client, app):
+    seed(app)
+    for path in ("/", "/maxing", "/milestones", "/gallery", "/recaps",
+                 "/players", "/export"):
+        page = client.get(path).get_data(as_text=True)
+        assert 'class="side-help"' in page, path
+        assert 'href="/help"' in page, path
+
+
+def test_the_help_box_sits_under_the_sidebar_not_beside_the_page(client):
+    """Both live in one column; without the wrapper the box becomes a third
+    thing in a flex row and lands next to the charts."""
+    page = client.get("/").get_data(as_text=True)
+    rail = page.split('class="rail"')[1].split("</div>")
+    assert 'class="side"' in page.split('class="rail"')[1].split('class="content"')[0]
+    assert page.index('class="side-help"') < page.index('class="content"')
+
+
+def test_the_help_page_carries_no_sidebar_of_its_own(client):
+    """It is not about a selection of players or a window of time."""
+    page = client.get("/help").get_data(as_text=True)
+    assert 'class="rail"' not in page and 'id="filters"' not in page

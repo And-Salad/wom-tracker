@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% set page = 'help' %}
+{% set bare = true %}
+{% block title %}How this works - WOM Tracker{% endblock %}
+
+{% block content %}
+  <div class="card prose">
+    <h3>How this works</h3>
+
+    <h4>Where the numbers come from</h4>
+    <p>
+      The hiscores only change when you log out. Nothing moves while you are
+      playing, so everything you earn turns up in one lump after you leave the
+      game.
+    </p>
+    <p>
+      Every ten minutes we ask <a href="https://wiseoldman.net"
+      target="_blank" rel="noopener">Wise Old Man</a> for everyone's numbers,
+      and it reads the hiscores for us. That is why a long session can appear
+      all at once a few minutes after you stop.
+    </p>
+
+    <h4>Dink, if you want to</h4>
+    <p>
+      Dink is a RuneLite plugin. With it, your own game client tells us when
+      you log in and out, so a four hour evening is credited to the evening
+      instead of to the minute you logged off.
+    </p>
+    <p>
+      Install <strong>Dink</strong> from RuneLite's Plugin Hub. Then paste the
+      link you were given into the box called
+      <strong>Custom Metadata Handler</strong>. That one box is all it needs -
+      leave the Discord one empty. You have to log out and back in once before
+      anything arrives.
+    </p>
+    <p>
+      Optional extra: paste the same link into
+      <strong>Primary Webhook URLs</strong> as well, and tick
+      <em>Collection Log</em>, <em>Level Up</em>,
+      <em>Kill Count</em>, <em>Quests</em>, <em>Achievement Diary</em>,
+      <em>Combat Achievements</em>, <em>Pets</em> and <em>Deaths</em>. Those
+      then land as they happen rather than at the next ten minute check, and
+      deaths and pets can send a screenshot for the Gallery.
+    </p>
+    <p class="dim">
+      Your link is a password - it is yours alone, so do not share it. Nothing
+      about your Discord account or your clan is kept, whatever Dink offers to
+      send.
+    </p>
+
+    <h4>The Wise Old Man plugin</h4>
+    <p>
+      You do not need it. We look everybody up ourselves every ten minutes,
+      whether or not anyone has it installed. If you already use it, keep it -
+      it asks Wise Old Man to refresh you the moment you log out, which makes
+      our next check a little more current. Either way the numbers are the
+      same in the end.
+    </p>
+
+    <h4>Winning the day</h4>
+    <p>
+      A ninety-nine takes the day outright, and two beat one. Failing that it
+      goes to whoever gained the most experience, counting only up to
+      ninety-nine in each skill - so an account that is already maxed does not
+      win every day just by logging in. Where people are level on ninety-nines,
+      total experience separates them.
+    </p>
+
+    <h4>Winning the month</h4>
+    <p>
+      The month is the average of its days rather than one big total, so a
+      single enormous day is worth one good day and not the whole month. At
+      least a fortnight of days has to have been watched before anyone is
+      named at all.
+    </p>
+    <p>
+      Days run midnight to midnight in the group's own time zone.
+    </p>
+  </div>
+{% endblock %}

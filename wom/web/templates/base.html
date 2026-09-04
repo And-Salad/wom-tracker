@@ -41,6 +41,9 @@
 </header>
 <main>
   {% if not bare %}
+  {# The sidebar and the help box are one column, so the box sits under the
+     controls rather than beside the page. #}
+  <div class="rail">
   <form class="side" method="get" id="filters"
         data-reload="{{ '1' if reloads else '0' }}">
     <div class="side-head">
@@ -93,6 +96,12 @@
       <p class="live-note">The dates need JavaScript; the period does not.</p>
     </noscript>
   </form>
+  <aside class="side-help">
+    <a href="/help">How this works</a>
+    <span class="dim">Where the numbers come from, setting up Dink, and how
+      the day and the month are won.</span>
+  </aside>
+  </div>
   {% endif %}
   <div class="content">
     {% block content %}{% endblock %}

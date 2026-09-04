@@ -132,11 +132,25 @@
     display: flex; gap: 18px; padding: 18px var(--space-5);
     align-items: flex-start;
   }
-  .side {
-    flex: 0 0 var(--sidebar); background: var(--card);
-    border: 1px solid var(--line); border-radius: var(--radius-lg);
-    padding: 14px; position: sticky; top: 18px;
+  /* The sidebar and the help box below it travel together, so the column
+     holds the width and the stickiness and each card inside it is just a
+     card. */
+  .rail {
+    flex: 0 0 var(--sidebar); position: sticky; top: 18px;
+    display: flex; flex-direction: column; gap: var(--space-3);
   }
+  .side {
+    background: var(--card);
+    border: 1px solid var(--line); border-radius: var(--radius-lg);
+    padding: 14px;
+  }
+  .side-help {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius-lg); padding: 10px 14px 12px;
+    display: flex; flex-direction: column; gap: 3px;
+    font-size: var(--text-xs); line-height: 1.5;
+  }
+  .side-help a { font-size: var(--text-sm); }
   .side h2 {
     font-size: var(--text-sm); text-transform: uppercase; letter-spacing: .04em;
     color: var(--muted); margin: 0 0 10px;
@@ -175,9 +189,10 @@
       flex-direction: column; align-items: stretch;
       gap: var(--space-3); padding: var(--space-3);
     }
-    .side {
-      position: static; flex: 1 1 auto; width: 100%; padding: var(--space-3);
+    .rail {
+      position: static; flex: 1 1 auto; width: 100%; gap: var(--space-3);
     }
+    .side { width: 100%; padding: var(--space-3); }
     .side label {
       display: inline-flex; width: auto; margin-right: 14px; padding: 4px 0;
     }
@@ -188,6 +203,12 @@
 
 /* ==================================================================== */
 @layer components {
+
+  /* The one page that is only words. Narrow, because a paragraph the width
+     of a chart is hard to read back to the start of. */
+  .prose { max-width: 62ch; }
+  .prose h4 { margin: var(--space-4) 0 var(--space-2); }
+  .prose p { margin: 0 0 var(--space-2); line-height: 1.6; }
 
   /* -- cards ---------------------------------------------------------- */
   .card {

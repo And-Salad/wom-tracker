@@ -78,6 +78,13 @@ fly ssh console -C "python /app/wom_tracker.py --compact"
 
 ## The pages
 
+`/help` explains the whole thing to the people it is for - where the numbers
+come from, how to set Dink up, and how the day and the month are won - in
+plain language and without a word about how any of it is built. It is not in
+the nav, because it is read once: a box under the sidebar links to it from
+every page that has one.
+
+
 Six public pages, with the player ticks and the period in a sidebar that drives
 all of them, plus **Admin** behind the password. The one exception is the
 leaderboard, which always judges every tracked account - see below.
