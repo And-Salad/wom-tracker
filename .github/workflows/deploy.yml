@@ -1,0 +1,97 @@
+# Deploying to Fly, from a commit rather than from somebody's working
+# directory.
+#
+# `fly deploy` builds whatever is on disk. That is the whole reason deploy.py
+# exists: run from a laptop it will cheerfully ship code that was never
+# committed, and nothing afterwards can tell you it did - which is how the
+# running site once ended up ahead of its own history for most of a week.
+# Here that cannot happen. Actions checks out one commit into an empty
+# machine, so what ships is exactly what is pushed, by construction rather
+# than by a check somebody has to remember to run.
+#
+# Deliberately a button, not a merge hook. This is one always-on machine with
+# the update schedule inside it, so a deploy restarts the tracker and
+# interrupts whatever pass was mid-flight. That is worth choosing the moment
+# for; the schedule catches the slot up afterwards either way.
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "What is being deployed, for the run log"
+        required: false
+        default: ""
+
+# One deploy at a time, and never cancel one half way: there is a single
+# machine behind this, and two runs racing it would leave which image is live
+# down to whichever build finished last.
+concurrency:
+  group: deploy-fly
+  cancel-in-progress: false
+
+jobs:
+  # The same jobs that guard a pull request, run again against this exact
+  # commit. Called rather than copied - see the workflow_call trigger in
+  # tests.yml. If any of them fails, the deploy below never starts.
+  checks:
+    uses: ./.github/workflows/tests.yml
+
+  deploy:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # On the run's own summary page, so "why was this deployed" is
+      # answerable six weeks later without anybody having to remember.
+      - name: Say what this is
+        run: |
+          {
+            echo "### Deploying \`${GITHUB_SHA:0:7}\` from \`${GITHUB_REF_NAME}\`"
+            echo
+            echo "> ${DEPLOY_REASON:-no reason given}"
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DEPLOY_REASON: ${{ inputs.reason }}
+
+      # Pinned, not @master as Fly's own docs suggest: this repository pins
+      # its base image for the same reason, and an action that installs the
+      # tool doing the deploying is not the place to accept whatever landed
+      # on somebody else's default branch this morning.
+      - uses: superfly/flyctl-actions/setup-flyctl@1.6
+
+      # --remote-only builds on Fly's own builder, so this runner needs no
+      # Docker of its own and the image is built where it is deployed.
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --remote-only
+
+      # flyctl calls a deploy done when the machine starts, which is not the
+      # same as the app answering. A container that boots and then throws on
+      # every request is a successful deploy by that measure and an outage by
+      # any other, so the run only goes green once a page comes back.
+      - name: Check the site is answering
+        run: |
+          # Read from fly.toml rather than asking flyctl: the app name is
+          # committed right there, and it is one less command whose output
+          # shape has to keep matching across flyctl versions.
+          app=$(sed -n 's/^app *= *"\(.*\)".*/\1/p' fly.toml | head -1)
+          test -n "$app" || { echo "::error::no app name in fly.toml"; exit 1; }
+          url="https://${app}.fly.dev/"
+          echo "smoke-testing ${url}"
+          for attempt in $(seq 1 12); do
+            # curl writes the code itself and prints 000 when it never got
+            # one, so the fallback only covers curl producing nothing at all.
+            # `|| echo 000` on the end of it read "HTTP 000000" in the log.
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" || true)
+            if [ "${code:-000}" = "200" ]; then
+              echo "answering with 200 after ${attempt} attempt(s)"
+              exit 0
+            fi
+            echo "  attempt ${attempt}: HTTP ${code:-000}"
+            sleep 5
+          done
+          echo "::error::${url} never answered 200 - the deploy is live but the app is not"
+          exit 1
