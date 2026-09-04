@@ -580,3 +580,93 @@ def test_a_ramp_does_not_blank_the_level_beside_it(db, player):
               for row in db.metric_history(player["id"], "attack")}
     assert levels["2026-09-04T20:30:00.000Z"] == 40, "the level they still had"
     assert all(v is not None for v in levels.values())
+
+
+# -- and never below the window it can be taken back from -----------------
+
+def derived_below(db, player, since):
+    return [r["captured_at"] for r in db.query(
+        "SELECT captured_at FROM metrics WHERE player_id=? AND origin='derived'"
+        " AND captured_at < ? ORDER BY captured_at", (player["id"], since))]
+
+
+def test_a_ramp_is_never_written_below_the_window_it_is_cleared_from(db, player):
+    """attribute() clears from `since` and never looks lower.
+
+    A login can predate the window by up to sixteen hours, so the span does
+    too - and a row written under `since` is one no later run can revise. If
+    the session were still open when it was written it would keep values
+    interpolated towards an end that later moved, leaving a kink in the line
+    that nothing could ever correct.
+    """
+    from wom.sessions import attribute
+    since = "2026-09-04T12:00:00.000000Z"
+    # Logged in three hours before the window opened and still going when it
+    # did, which is what reaches a span back past `since`.
+    _trained(db, player,
+             [("2026-09-04T09:30:00.000Z", 1000),
+              ("2026-09-04T10:30:00.000Z", 1000),
+              ("2026-09-04T11:30:00.000Z", 1000),
+              ("2026-09-04T12:30:00.000Z", 1000),
+              ("2026-09-04T13:10:00.000Z", 101000)],
+             [("login", "2026-09-04T09:00:00.000000Z"),
+              ("logout", "2026-09-04T13:00:00.000000Z")])
+
+    assert attribute(db, zone(), player, since) > 0, "the session is still placed"
+    assert derived_below(db, player, since) == [], (
+        "written where the next run could never take it back")
+
+
+def test_everything_attribution_writes_can_be_withdrawn_again(db, player):
+    """The rule the module is built on, asserted on the storage: run it, then
+    clear the same window, and nothing invented should survive."""
+    from wom.sessions import attribute
+    since = "2026-09-04T12:00:00.000000Z"
+    # 10:30 has to be here and has to be flat. The reading that first
+    # establishes a value carries a real metric row, and INSERT OR IGNORE
+    # keeps a ramp off it - so a window whose only reading below `since` is
+    # that one cannot catch this at all.
+    _trained(db, player,
+             [("2026-09-04T09:30:00.000Z", 1000),
+              ("2026-09-04T10:30:00.000Z", 1000),
+              ("2026-09-04T12:30:00.000Z", 1000),
+              ("2026-09-04T13:10:00.000Z", 101000)],
+             [("login", "2026-09-04T09:00:00.000000Z"),
+              ("logout", "2026-09-04T13:00:00.000000Z")])
+    attribute(db, zone(), player, since)
+    assert db.query("SELECT 1 FROM metrics WHERE player_id=? AND origin='derived'",
+                    (player["id"],)), "something was written to withdraw"
+
+    db.clear_derived_state(player["id"], since)
+    assert db.query("SELECT 1 FROM metrics WHERE player_id=? AND origin='derived'",
+                    (player["id"],)) == [], "a correction nobody can withdraw"
+    assert db.query("SELECT 1 FROM snapshots WHERE player_id=? AND origin='derived'",
+                    (player["id"],)) == []
+
+
+def test_a_midnight_below_the_floor_is_not_written_either(db, player):
+    """A session that opened before the window carries its first midnight in
+    with it, and that midnight is under the floor as surely as a ramp is."""
+    from wom.sessions import attribute
+    since = "2026-09-04T05:00:00.000000Z"
+    # 02:00 to 07:00 UTC is 22:00 to 03:00 in New York, so local midnight -
+    # 04:00 UTC - falls inside the session and below the window.
+    _trained(db, player,
+             [("2026-09-04T03:00:00.000Z", 1000),
+              ("2026-09-04T05:30:00.000Z", 1000),
+              ("2026-09-04T06:00:00.000Z", 1000),
+              ("2026-09-04T07:30:00.000Z", 101000)],
+             [("login", "2026-09-04T02:00:00.000000Z"),
+              ("logout", "2026-09-04T07:00:00.000000Z")])
+    attribute(db, zone(), player, since)
+    assert derived_below(db, player, since) == [], (
+        "the midnight split landed where nothing can revise it")
+
+
+def test_the_ordinary_session_is_untouched_by_the_floor(db, player):
+    """The guard must only bite at the window's edge. A session that began
+    inside it still slopes across every reading it ran through."""
+    from wom.sessions import attribute
+    _trained(db, player, HOUR, PLAYED)
+    assert attribute(db, zone(), player, "2026-09-01") > 0
+    assert standing_at(db, player, "2026-09-04T20:30:00.000Z") == 51000.0

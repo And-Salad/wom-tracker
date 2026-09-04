@@ -207,12 +207,24 @@ def attribute(database, zone, player, since, max_hours=MAX_SESSION_HOURS):
 
     Existing interpolations in the window are cleared first, so a late
     logout - or a change to the rule - corrects rather than accumulates.
+
+    That clearing is also the floor on what may be written. A span reaches
+    back as far as its login, which can be up to `max_hours` before the first
+    reading in the window, and anything written below `since` would be outside
+    the only thing that can ever take it back: the next run clears from
+    `since` and never looks lower. Those rows would be permanent, and a
+    session still open when they were written would leave them interpolated
+    towards an end that later moved. So nothing is written below `since` - see
+    _ramp. Nothing is lost by that either, because the readings under the
+    floor were inside the window on earlier runs and were corrected then; a
+    three day window is hundreds of runs wide.
     """
     username = player["username"]
     if not database.session_events(username, limit=1):
         return 0
 
     database.clear_derived_state(player["id"], since)
+    floor = parse_api_time(since)
     readings = [r["captured_at"] for r in database.query(
         "SELECT captured_at FROM snapshots WHERE player_id=? AND captured_at>=?"
         " AND COALESCE(origin,'poll') <> 'derived' ORDER BY captured_at",
@@ -230,7 +242,7 @@ def attribute(database, zone, player, since, max_hours=MAX_SESSION_HOURS):
         if moved is None:
             continue
         written += _split_one(database, zone, player, previous_at, reading_at,
-                              max_hours)
+                              max_hours, floor)
     return written
 
 
@@ -239,7 +251,7 @@ def attribute(database, zone, player, since, max_hours=MAX_SESSION_HOURS):
 LATE_BY_SECONDS = 60
 
 
-def _split_one(database, zone, player, previous_at, reading_at, max_hours):
+def _split_one(database, zone, player, previous_at, reading_at, max_hours, floor):
     """Put one gain where it was earned, if we know better than the reading.
 
     Three corrections, and the second is the common one.
@@ -272,14 +284,18 @@ def _split_one(database, zone, player, previous_at, reading_at, max_hours):
                           1.0, zone)
 
     crossing = boundary_in(span, zone)
-    if crossing is not None:
+    # The midnight can fall below the floor too: a session that opened before
+    # the window did carries its first midnight in with it. The end above
+    # cannot - it is later than `previous_at`, which is inside the window by
+    # construction - so only this one is checked.
+    if crossing is not None and crossing >= floor:
         written += _place(database, player, previous_at, reading_at, crossing,
                           share_before(span, crossing), zone)
 
-    return written + _ramp(database, player, previous_at, reading_at, span)
+    return written + _ramp(database, player, previous_at, reading_at, span, floor)
 
 
-def _ramp(database, player, previous_at, reading_at, span):
+def _ramp(database, player, previous_at, reading_at, span, floor):
     """Spread a measured session's experience across the time it ran for.
 
     Everything above places the gain at one moment. That is right for the
@@ -316,7 +332,14 @@ def _ramp(database, player, previous_at, reading_at, span):
     # need filling in mostly sit *before* the gap this gain was noticed in.
     # The pairs that bracket them were stepped over for showing no change,
     # which is what leaves them free to be written here.
-    first = span.start.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    #
+    # But never below `floor`, which is where attribute() clears from. A login
+    # can predate the window by up to MAX_SESSION_HOURS, and a row written
+    # under the floor is one no later run can revise: it would keep whatever
+    # end the session appeared to have at the time, which for a session still
+    # open is not the end it turned out to have. Readings under the floor were
+    # inside the window on earlier runs and were ramped then.
+    first = max(span.start, floor).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     written = 0
     for stamp in database.observations(player["id"], first, reading_at):
         when = parse_api_time(stamp)
