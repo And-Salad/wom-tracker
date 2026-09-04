@@ -105,6 +105,15 @@ leaderboard, which always judges every tracked account - see below.
 - **Data** - every metric as a sortable, filterable table, with export behind a
   button.
 
+What the reader picks is remembered by their browser, so opening the site
+tomorrow starts where they left it rather than back at every account over the
+last week: the sidebar's ticks and window, the Milestones and Gallery kind
+filters, and each Overview card's dropdown and mode. It is `localStorage`, so
+it never leaves the machine and nothing about it reaches the server - see
+[Selections, and where they are kept](docs/notes.md#selections-and-where-they-are-kept).
+A link with a query string always wins over it, so a shared view still means
+the same thing to whoever opens it.
+
 ## The leaderboards
 
 Two competitions over the same days, on the same readings, disagreeing on

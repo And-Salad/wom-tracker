@@ -771,11 +771,12 @@
 
   /* -- what a page may use --------------------------------------------- */
 
-  window.WOM = {
-    Chart: Chart,
-    hideTip: hideTip,
-    escapeHtml: escapeHtml
-  };
+  // Added to whatever is already there rather than replacing it: store.js
+  // loads first and puts WOM.Remember on the same handle.
+  window.WOM = window.WOM || {};
+  window.WOM.Chart = Chart;
+  window.WOM.hideTip = hideTip;
+  window.WOM.escapeHtml = escapeHtml;
 
   // A finger has no "mouseleave", so a tap anywhere else puts the tip away.
   document.addEventListener("touchstart", function (event) {

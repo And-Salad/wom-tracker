@@ -112,6 +112,9 @@
   Read-only view &middot; updates run automatically every ten minutes.
   {% if admin_enabled and not signed_in %}<a href="/admin" class="muted-text">Admin</a>{% endif %}
 </footer>
+{# First: the sidebar and every page script below it read what the reader
+   last chose off window.WOM.Remember. #}
+<script src="/static/store.js?v={{ assets }}"></script>
 <script src="/static/fit.js?v={{ assets }}"></script>
 {% if not bare %}<script src="/static/sidebar.js?v={{ assets }}"></script>{% endif %}
 {% block scripts %}{% endblock %}

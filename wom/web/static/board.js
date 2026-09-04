@@ -134,6 +134,7 @@
        standings above judge every account whatever is ticked, so the page
        has nothing to reload - this redraws and they stay as they are. */
     window.Sidebar.onChange(function (query) { chart.load(query); });
-    chart.load(window.Sidebar.query());
+    // A restored sidebar has already asked for this; see Sidebar.restored.
+    if (!window.Sidebar.restored) { chart.load(window.Sidebar.query()); }
   });
 })();
