@@ -124,6 +124,22 @@ def test_a_rejected_key_is_dropped_and_the_call_retried_without_it():
     assert "x-api-key" not in client.session.calls[1]["headers"]
 
 
+def test_dropping_a_rejected_key_slows_down_to_what_that_allows():
+    """Dropping the key without dropping the rate it bought is not a fallback.
+
+    The keyed spacing is five times the anonymous one, so a run that carried
+    on at it after losing the key would ask for five times what an anonymous
+    caller may have and collect the 429s the drop existed to avoid.
+    """
+    client = _client([FakeResponse(403, payload={"message": "Invalid API key"}),
+                      FakeResponse(payload={"id": 1})], api_key="stale")
+    keyed = client._min_interval
+    client.get_player("zezima")
+    assert client.api_key == ""
+    assert client._min_interval > keyed
+    assert client._min_interval == _client([])._min_interval
+
+
 def test_a_403_that_is_not_about_the_key_is_raised():
     client = _client([FakeResponse(403, payload={"message": "banned"})],
                      api_key="fine")
