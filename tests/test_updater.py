@@ -354,3 +354,21 @@ def test_the_history_call_asks_only_for_the_gap(db):
     asked = (now - client.asked_from).total_seconds() / 60
     assert asked < RECENT_MINUTES / 2, (
         "the window should follow the last reading, not the ceiling")
+
+
+def test_the_window_never_starts_in_the_future(db):
+    """A player's clock can run fast. Dink's logout is believed within half an
+    hour of ours and attribution writes a reading at that moment, so the
+    newest reading we hold can be ahead of now - and a window starting there
+    asks for a stretch that has not happened yet.
+    """
+    from datetime import datetime, timedelta, timezone
+    from wom.updater import _recent_since
+
+    now = datetime.now(timezone.utc)
+    db.save_player_details({"id": 1, "username": "zezima",
+                            "displayName": "Zezima", "type": "regular"})
+    db.save_snapshot(1, snapshot(
+        (now + timedelta(minutes=25)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        skills={"attack": (500, 40)}))
+    assert _recent_since(db, 1, now) <= now, "asked for a window not yet lived"

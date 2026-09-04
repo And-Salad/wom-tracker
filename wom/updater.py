@@ -185,7 +185,12 @@ def _recent_since(database, player_id, now=None):
     held = parse_api_time(latest["captured_at"]) if latest else None
     if held is None:
         return floor
-    return max(floor, held - timedelta(minutes=OVERLAP_MINUTES))
+    # Never ask from the future. A client's clock may run fast, its logout is
+    # believed within half an hour of ours, and attribution writes a reading
+    # at that moment - so the newest reading we hold can be ahead of now, and
+    # a window starting there would ask for a stretch that has not happened
+    # and quietly recover nothing until real time caught up.
+    return min(now, max(floor, held - timedelta(minutes=OVERLAP_MINUTES)))
 
 
 def collect_recent(client, database, username, player_id):
