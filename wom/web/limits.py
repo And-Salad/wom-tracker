@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 from flask import request
 
+from ..config import Config
 from ..util import api_stamp, parse_api_time
 
 log = logging.getLogger(__name__)
@@ -271,7 +272,6 @@ class ConfigLatch:
     """
 
     def load(self):
-        from ..config import Config
         settings = Config()
         stored = settings.get("api_tripped_at", "")
         when = parse_api_time(stored) if stored else None
@@ -280,14 +280,12 @@ class ConfigLatch:
         return when, settings.get("api_tripped_by") or "?"
 
     def save(self, when, address):
-        from ..config import Config
         settings = Config()
         settings["api_tripped_at"] = api_stamp(when)
         settings["api_tripped_by"] = address or "?"
         settings.save()
 
     def clear(self):
-        from ..config import Config
         settings = Config()
         settings["api_tripped_at"] = ""
         settings["api_tripped_by"] = ""

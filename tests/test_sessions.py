@@ -10,8 +10,8 @@ and the answer has to be exactly what the app did before.
 from datetime import datetime, timedelta, timezone
 
 from conftest import as_polled, snapshot
-from wom.sessions import (
-    INFERRED, MEASURED, Span, resolve)
+
+from wom.sessions import INFERRED, MEASURED, Span, resolve
 
 
 def at(hour, minute=0):

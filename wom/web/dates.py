@@ -7,6 +7,8 @@ conversion, in both directions, so it lives in one place rather than twice.
 
 from datetime import datetime, timedelta, timezone
 
+from flask import request
+
 from ..util import api_stamp
 
 
@@ -30,8 +32,8 @@ def day_bound(value, end_of_day=False, offset_minutes=0):
         return None
     try:
         day = datetime.strptime(text, "%Y-%m-%d")
-    except ValueError:
-        raise BadRequest("{!r} is not a date. Use yyyy-mm-dd.".format(text))
+    except ValueError as exc:
+        raise BadRequest("{!r} is not a date. Use yyyy-mm-dd.".format(text)) from exc
     if end_of_day:
         day += timedelta(days=1)          # `to` is inclusive of the day named
     return api_stamp((day - timedelta(minutes=offset_minutes))
@@ -59,7 +61,6 @@ def viewer_offset():
     sees a "To" of tomorrow until they touch something. The cookie is written
     by sidebar.js and holds nothing but a number of minutes.
     """
-    from flask import request
     given = request.args.get("tzoffset")
     if given is not None:
         return offset_minutes(given)

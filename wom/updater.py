@@ -4,8 +4,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from . import scheduler, sessions
-from .util import parse_api_time
 from .api import HISTORY_LIMIT, WomError
+from .util import parse_api_time
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +22,8 @@ class PlayerResult:
         self.milestones = milestones  # achievements seen for the first time
 
     def __repr__(self):
-        return "<PlayerResult {} {}>".format(self.username, "ok" if self.ok else "failed")
+        return "<PlayerResult {} {}>".format(self.username,
+                                             "ok" if self.ok else "failed")
 
 
 # How far back a run reconsiders session attribution. Long enough that a
@@ -296,10 +297,12 @@ def backfill_player(client, database, username, player_id=None, force=False):
         return 0, "history not saved ({})".format(exc)
 
     database.mark_backfilled(player_id)
-    log.info("imported %d/%d historic snapshots for %s", imported, len(snapshots), username)
+    log.info("imported %d/%d historic snapshots for %s",
+             imported, len(snapshots), username)
     if not snapshots:
         return 0, "no history on record"
-    note = "imported {} historic snapshot{}".format(imported, "" if imported == 1 else "s")
+    note = "imported {} historic snapshot{}".format(
+        imported, "" if imported == 1 else "s")
     if len(snapshots) >= HISTORY_LIMIT:
         # Pages arrive newest first, so the oldest end is what got left behind.
         note += " (capped at {}; older history skipped)".format(HISTORY_LIMIT)

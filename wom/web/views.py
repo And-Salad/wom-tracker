@@ -8,9 +8,17 @@ plain functions of (database, ...) so a test can call them without a request.
 import json
 from datetime import datetime, timedelta, timezone
 
-from .. import gameplay, periods, theme
-from ..util import (fmt_ago, fmt_datetime, fmt_hours, fmt_int,
-                    parse_api_time, pretty_metric)
+from .. import gameplay, periods, theme, winners
+from ..icons import icon_kind_for
+from ..util import (
+    fmt_ago,
+    fmt_datetime,
+    fmt_hours,
+    fmt_int,
+    parse_api_time,
+    pretty_metric,
+)
+from .today import is_whole_group
 
 # A player's own notes cover every window, named the same way everywhere.
 SUMMARY_FOLDERS = (("day", "Daily"), ("week", "Weekly"), ("month", "Monthly"),
@@ -48,7 +56,6 @@ def group_verdicts(database, rows, board="maxing"):
     walked a month of readings per row, which across a year of daily recaps
     is the same work three hundred times over.
     """
-    from .. import winners
 
     players = database.players()
     days = [row["window_key"] for row in rows if row["period"] == "day"]
@@ -131,7 +138,6 @@ def recap_feed(database, players, palette, board="maxing"):
 
 def recap_feeds(database, players, palette):
     """Both boards' feeds, so the page can offer one at a time."""
-    from .. import winners
     return [{"key": board, "label": winners.BOARD_LABELS[board],
              "entries": recap_feed(database, players, palette, board)}
             for board in winners.BOARDS]
@@ -152,7 +158,6 @@ def recap_tree(database, players, palette):
     five, with no verdict, because a quarter of one account's progress is not
     something either leaderboard has an opinion about.
     """
-    from .. import winners
 
     tree = []
     for board in winners.BOARDS:
@@ -230,7 +235,6 @@ def milestone_feed(database, selected, palette, since=None, until=None,
     reader should not have to care which is which, so they are merged and
     sorted together - but each row says what it is, so they can be filtered.
     """
-    from ..icons import icon_kind_for
 
     ids = [p["id"] for p in selected]
     feed = []
@@ -452,8 +456,6 @@ def winner_calendar(database, players, palette, when=None,
     included: it judged the whole group, and against three of six it is
     answering a different question from the one on screen.
     """
-    from .. import winners
-    from .today import is_whole_group
 
     # The same test the standings beside this make, from the same helper: two
     # copies of it is two chances for the squares and the tally to answer

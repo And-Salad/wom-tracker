@@ -25,6 +25,7 @@ require_python()
 
 from wom.config import Config
 from wom.logs import setup_logging
+from wom.scheduler import zone
 from wom.web import create_app
 
 log = logging.getLogger("wom.web")
@@ -61,7 +62,6 @@ def _thin_history(database, settings):
     than a month-wide chart can draw. Nothing had ever called this: it was a
     command somebody had to remember, which is a thing that does not happen.
     """
-    from wom.scheduler import zone
     today = datetime.now(timezone.utc).astimezone(zone()).strftime("%Y-%m-%d")
     if settings.get("last_compact") == today:
         return

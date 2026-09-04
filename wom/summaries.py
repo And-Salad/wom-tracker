@@ -13,11 +13,13 @@ import hashlib
 import logging
 import os
 import re
+from datetime import datetime, timezone
 
-from . import periods
+from . import periods, winners
+from .config import data_dir
 from .icons import SKILL_ORDER
-from .util import (fmt_datetime, fmt_hours, fmt_int, parse_api_time,
-                   pretty_metric)
+from .scheduler import zone
+from .util import fmt_datetime, fmt_hours, fmt_int, parse_api_time, pretty_metric
 
 log = logging.getLogger(__name__)
 
@@ -79,7 +81,8 @@ def period_prompt_path(period_key, kind="player"):
     return _prompt_file("{}_{}".format(stem, period_key))
 
 
-GROUP_PROMPT = """You write a short group round-up for a handful of friends who track each
+GROUP_PROMPT = """\
+You write a short group round-up for a handful of friends who track each
 other's Old School RuneScape accounts.
 
 You will be given every tracked player's figures for one period, side by side.
@@ -118,8 +121,7 @@ def prompt_path(config=None, period=None, kind="player"):
 
 
 def _prompt_file(name):
-    from .config import DATA_DIR
-    return os.path.join(DATA_DIR, name + ".txt")
+    return os.path.join(data_dir(), name + ".txt")
 
 
 def load_prompt(config=None, period=None, kind="player"):
@@ -129,7 +131,7 @@ def load_prompt(config=None, period=None, kind="player"):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(DEFAULT_PROMPT if kind == "player" else GROUP_PROMPT)
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         return handle.read().strip()
 
 
@@ -209,7 +211,6 @@ def _week_context(database, players, window, board):
     competition nobody is playing. What it is for is review: who took each of
     its days, and where that leaves the month it sits in.
     """
-    from . import winners
 
     lines = ["", "Days of this week, and who took each:"]
     won = winners.daily_winners(database, players, window.start, window.end,
@@ -254,7 +255,6 @@ def _ranking_lines(ranked):
     Worked out here rather than left to the model, so the round-up and the
     calendar square beside it cannot name different winners.
     """
-    from . import winners
 
     averaged = ranked and ranked[0]["points"] is not None
     voided = bool(ranked and ranked[0].get("voided"))
@@ -273,7 +273,8 @@ def _ranking_lines(ranked):
     else:
         lines.append("")
     for place, row in enumerate(ranked, start=1):
-        lines.append("  {}. {} - {}{} new 99s, {} xp toward 99s, {} xp in total{}".format(
+        lines.append("  {}. {} - {}{} new 99s, {} xp toward 99s,"
+                     " {} xp in total{}".format(
             place, row["name"],
             "{:.2f} pts a day, ".format(row["points"]) if averaged else "",
             row["nines"], fmt_int(row["capped"]), fmt_int(row["raw"]),
@@ -317,7 +318,6 @@ def build_group_digest(database, config, players, window, board="maxing"):
     same figures judged differently and a round-up handed only the numbers
     would pick the winner the numbers suggest rather than the one who won.
     """
-    from . import winners
 
     since, until = window.start_iso(), window.end_iso()
     lines = ["Competition: {}".format(BOARD_RULES.get(board, board)),
@@ -355,7 +355,8 @@ def build_group_digest(database, config, players, window, board="maxing"):
             if best_boss else ""))
         if levels:
             lines.append("  Levels: {}".format(", ".join(
-                "{} +{} (now {})".format(pretty_metric(m), g, n) for m, g, n in levels)))
+                "{} +{} (now {})".format(pretty_metric(m), g, n)
+                for m, g, n in levels)))
         clues = sum(v for m, v in activities.items() if m.startswith("clue_scrolls_")
                     and m != "clue_scrolls_all")
         log_slots = activities.get("collections_logged", 0)
@@ -509,7 +510,8 @@ def _client(config):
         return anthropic.Anthropic(api_key=key)
     # No key in the config: fall back to the environment or a logged-in
     # profile, which is how the SDK resolves credentials by default.
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+    if not (os.environ.get("ANTHROPIC_API_KEY")
+            or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         raise SummaryError(
             "no Anthropic API key - add one under Options, or set ANTHROPIC_API_KEY")
     return anthropic.Anthropic()
@@ -542,18 +544,20 @@ def generate(config, system, digest):
             system=system,
             messages=[{"role": "user", "content": digest}],
         )
-    except anthropic.AuthenticationError:
-        raise SummaryError("the Anthropic API key was rejected")
-    except anthropic.PermissionDeniedError:
-        raise SummaryError("that API key is not allowed to use this model")
-    except anthropic.NotFoundError:
-        raise SummaryError("unknown model: {}".format(model))
-    except anthropic.RateLimitError:
-        raise SummaryError("rate limited by the Anthropic API; try again shortly")
+    except anthropic.AuthenticationError as exc:
+        raise SummaryError("the Anthropic API key was rejected") from exc
+    except anthropic.PermissionDeniedError as exc:
+        raise SummaryError("that API key is not allowed to use this model") from exc
+    except anthropic.NotFoundError as exc:
+        raise SummaryError("unknown model: {}".format(model)) from exc
+    except anthropic.RateLimitError as exc:
+        raise SummaryError(
+            "rate limited by the Anthropic API; try again shortly") from exc
     except anthropic.APIStatusError as exc:
-        raise SummaryError("Anthropic API error {}: {}".format(exc.status_code, exc.message))
-    except anthropic.APIConnectionError:
-        raise SummaryError("could not reach the Anthropic API")
+        raise SummaryError("Anthropic API error {}: {}".format(
+            exc.status_code, exc.message)) from exc
+    except anthropic.APIConnectionError as exc:
+        raise SummaryError("could not reach the Anthropic API") from exc
 
     if response.stop_reason == "refusal":
         raise SummaryError("the model declined to answer")
@@ -594,8 +598,7 @@ def due_periods(database, now=None):
     Everything is judged in the configured time zone so it lines up with the
     update schedule rather than drifting against the viewer's own clock.
     """
-    from .scheduler import zone
-    from datetime import datetime, timezone
+
     now = (now or datetime.now(timezone.utc)).astimezone(zone())
 
     # A period is owed when its newest complete window has not been written
@@ -623,7 +626,6 @@ def _missing(database, period, window_key):
         return False
     # Every board owes its own round-up for the window. Asking about one of
     # them would call the window done while the other had nothing written.
-    from . import winners
     return any(database.group_summary(period, window_key, board) is None
                for board in winners.BOARDS)
 
@@ -735,7 +737,6 @@ def summarise_all(database, config, players, period_keys=None, force=False,
     # It always compares the whole roster, never the caller's subset: there is
     # a single stored recap per window, so writing one from a partial
     # selection would file a two-player comparison as the verdict for everyone.
-    from . import winners
 
     roster = database.players()
     for key in [k for k in keys if k in periods.GROUP_PERIODS]:

@@ -5,11 +5,29 @@ import os
 import threading
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 # A container mounts its volume somewhere other than the source tree, so the
 # whole data directory can be pointed elsewhere. Everything derives from it.
-DATA_DIR = os.environ.get("WOM_DATA_DIR") or os.path.join(APP_DIR, "data")
-CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
-DB_PATH = os.path.join(DATA_DIR, "wom.db")
+#
+# Resolved on each call rather than bound to a module constant at import time.
+# Constants were read the first time anything imported this module, which made
+# the location of the database, the config and the prompts a property of
+# import order: a test that wanted a directory of its own had to set the
+# environment before the first import of anything at all, and could never
+# change its mind afterwards. Nothing here is hot enough for an os.environ
+# lookup and a join to matter.
+def data_dir():
+    """The directory holding the database, the config, the prompts and the logs."""
+    return os.environ.get("WOM_DATA_DIR") or os.path.join(APP_DIR, "data")
+
+
+def config_path():
+    return os.path.join(data_dir(), "config.json")
+
+
+def db_path():
+    return os.path.join(data_dir(), "wom.db")
 
 
 def log_path_for(role):
@@ -20,7 +38,7 @@ def log_path_for(role):
     as long as it runs, so a CLI job sharing that file would fail to roll over
     and grow past its cap. One file per role, and they never collide.
     """
-    return os.path.join(DATA_DIR, "wom-{}.log".format(role or "app"))
+    return os.path.join(data_dir(), "wom-{}.log".format(role or "app"))
 
 DEFAULTS = {
     # Player names to keep updated, in display order.
@@ -90,8 +108,8 @@ def env_value(key):
 class Config:
     """Dict-like settings object that writes through to disk on save()."""
 
-    def __init__(self, path=CONFIG_PATH):
-        self.path = path
+    def __init__(self, path=None):
+        self.path = path or config_path()
         self._data = dict(DEFAULTS)
         # Keys this instance has actually been asked to change. save() writes
         # only these, so a long-lived object cannot revert a key some other
@@ -102,7 +120,7 @@ class Config:
 
     def load(self):
         try:
-            with open(self.path, "r", encoding="utf-8") as fh:
+            with open(self.path, encoding="utf-8") as fh:
                 stored = json.load(fh)
         except (OSError, ValueError):
             stored = {}
@@ -138,7 +156,7 @@ class Config:
         tmp = self.path + ".tmp"
         with _lock:
             try:
-                with open(self.path, "r", encoding="utf-8") as fh:
+                with open(self.path, encoding="utf-8") as fh:
                     on_disk = json.load(fh)
                 if not isinstance(on_disk, dict):
                     on_disk = {}

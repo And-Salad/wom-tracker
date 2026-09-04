@@ -85,13 +85,15 @@ class WomClient:
 
             if resp.status_code == 429:
                 # Respect Retry-After when the server sends one.
-                delay = float(resp.headers.get("Retry-After") or 0) or 15 * (attempt + 1)
+                delay = (float(resp.headers.get("Retry-After") or 0)
+                         or 15 * (attempt + 1))
                 last = WomError("rate limited by the API", 429)
                 time.sleep(delay)
                 continue
 
             if 500 <= resp.status_code < 600:
-                last = WomError("server error {}".format(resp.status_code), resp.status_code)
+                last = WomError("server error {}".format(resp.status_code),
+                                resp.status_code)
                 time.sleep(2 ** attempt)
                 continue
 
@@ -113,8 +115,9 @@ class WomClient:
 
             try:
                 return resp.json()
-            except ValueError:
-                raise WomError("the API returned a non-JSON response", resp.status_code)
+            except ValueError as exc:
+                raise WomError("the API returned a non-JSON response",
+                               resp.status_code) from exc
 
         raise last or WomError("request failed")
 
@@ -165,8 +168,7 @@ class WomClient:
                 limit=SNAPSHOT_PAGE_SIZE, offset=page * SNAPSHOT_PAGE_SIZE)
             if not batch:
                 return
-            for snapshot in batch:
-                yield snapshot
+            yield from batch
             if len(batch) < SNAPSHOT_PAGE_SIZE:
                 return
 

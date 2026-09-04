@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
+from .scheduler import zone
 from .util import api_stamp
 
 
@@ -116,7 +117,6 @@ def latest_window(period, now=None, offset=0):
     is anchored to midnight in the configured zone, so the boundaries line up
     with the update schedule rather than drifting against a viewer's clock.
     """
-    from .scheduler import zone
     now = (now or datetime.now(timezone.utc)).astimezone(zone())
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
 

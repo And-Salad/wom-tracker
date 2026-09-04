@@ -3,36 +3,30 @@
 import os
 import re
 
-from flask import (Blueprint, abort, redirect, render_template, request,
-                   send_file, send_from_directory, url_for)
+from flask import (
+    Blueprint,
+    abort,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    send_from_directory,
+    url_for,
+)
 
 from .. import gallery, winners
 from ..icons import ASSET_DIR, icon_path
 from . import today, views
 from .data import catalog
-from .selection import database, page_context
+from .selection import database, page_context, shell
 
 pages = Blueprint("pages", __name__)
-
-
-def _shell(scope):
-    """What every page hands the sidebar: who, and over what window.
-
-    Not `status`: the header line is the same on every page including admin,
-    so the app factory's context processor supplies it. Passing it here as
-    well only overrode an identical value that had already been computed.
-    """
-    return {"players": scope["players"],
-            "selected": {p["username"] for p in scope["selected"]},
-            "colors": scope["palette"],
-            "span": scope["span"].as_dict(),
-            "period_labels": scope["period_labels"]}
 
 
 @pages.route("/")
 def dashboard():
     scope = page_context()
-    return render_template("dashboard.html", specs=catalog(), **_shell(scope))
+    return render_template("dashboard.html", specs=catalog(), **shell(scope))
 
 
 # What each leaderboard calls itself and what it counts. Two competitions
@@ -99,7 +93,7 @@ def _leaderboard(board):
                                        board=board),
         today=today.standings(database(), everyone, scope["palette"],
                               board=board),
-        **_shell(scope))
+        **shell(scope))
 
 
 @pages.route("/milestones")
@@ -111,7 +105,7 @@ def milestones():
         feed=views.milestone_feed(database(), scope["selected"], scope["palette"],
                                   since=span.since, until=span.until),
         categories=views.FEED_CATEGORIES,
-        **_shell(scope))
+        **shell(scope))
 
 
 @pages.route("/help")
@@ -132,7 +126,7 @@ def gallery_page():
         "gallery.html",
         panels=views.gallery_panels(database(), scope["selected"],
                                     scope["palette"]),
-        **_shell(scope))
+        **shell(scope))
 
 
 @pages.route("/gallery/<digest>.<fmt>")
@@ -169,7 +163,7 @@ def recaps_page():
         feeds=feeds,
         any_latest=any(feed["entries"] for feed in feeds),
         tree=views.recap_tree(database(), scope["selected"], scope["palette"]),
-        **_shell(scope))
+        **shell(scope))
 
 
 @pages.route("/summaries")
@@ -184,7 +178,7 @@ def players_page():
     return render_template(
         "players.html",
         rows=views.player_rows(database(), scope["selected"], scope["palette"]),
-        **_shell(scope))
+        **shell(scope))
 
 
 # -- files ----------------------------------------------------------------
