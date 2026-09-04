@@ -2,6 +2,47 @@
 from conftest import calendar_seed, record_runs, section, snapshot
 
 
+def test_a_window_opens_on_what_stood_before_it(db, player):
+    """skill_states reads the changes inside its window and asks for the rest.
+
+    A skill that last moved months earlier has no row inside the window at
+    all, and dropping it would open every day at zero and report an account's
+    entire experience as one afternoon's work. The walk used to reach this by
+    reading the account's whole history on every call.
+    """
+    from wom import winners
+    db.save_snapshot(1, snapshot("2026-06-01T12:00:00.000Z",
+                                 skills={"attack": (5000, 40),
+                                         "mining": (700, 20)}))
+    db.save_snapshot(1, snapshot("2026-08-30T12:00:00.000Z",
+                                 skills={"attack": (5500, 41),
+                                         "mining": (700, 20)}))
+    states = winners.skill_states(db, player["id"], "2026-08-01T00:00:00.000Z",
+                                  "2026-09-01T00:00:00.000Z")
+    assert [stamp for stamp, _state in states] == ["2026-08-30T12:00:00.000Z"]
+    # Mining never moved inside the window and is still worth 700, not absent.
+    assert states[0][1] == {"attack": 5500.0, "mining": 700.0}
+
+
+def test_a_skill_that_falls_off_the_hiscores_keeps_its_last_real_value(db, player):
+    """The API sends -1 for an unranked metric, which is stored as NULL.
+
+    The walk skips those rows, so the value before the window has to be the
+    newest *real* one rather than simply the newest - or a skill that went
+    unranked would vanish from the day it opens instead of standing still.
+    """
+    from wom import winners
+    db.save_snapshot(1, snapshot("2026-06-01T12:00:00.000Z",
+                                 skills={"attack": (5000, 40)}))
+    db.save_snapshot(1, snapshot("2026-07-01T12:00:00.000Z",
+                                 skills={"attack": (-1, -1)}))
+    db.save_snapshot(1, snapshot("2026-08-30T12:00:00.000Z",
+                                 skills={"attack": (-1, -1)}))
+    states = winners.skill_states(db, player["id"], "2026-08-01T00:00:00.000Z",
+                                  "2026-09-01T00:00:00.000Z")
+    assert states[0][1] == {"attack": 5000.0}
+
+
 def test_a_long_gap_is_not_counted_as_one_days_work(app):
     """Measured from the far side of a seven-week gap, an account that came
     back on the 30th would have all seven weeks folded into that day."""

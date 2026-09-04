@@ -93,19 +93,38 @@ def skill_states(database, player_id, since, until):
     reading - it says the account stood where it stood at that moment, which
     is exactly what a day needs to be measured from. So the walk is driven by
     when the account was read, with each change laid over a running copy.
+
+    The window bounds the changes read, and what stood before it is asked for
+    directly. Read from the beginning of time instead - which is what the
+    lower bound below used to be missing - this pulled an account's entire
+    history into memory to answer a question about one day, and a year of
+    ten-minute readings is fifty thousand rows of it per player per call.
     """
+    # The newest value each skill held strictly before the window. Written out
+    # rather than taken from state_at because that answers with the newest row
+    # per metric whatever it holds, and a skill that has fallen off the
+    # hiscores has a NULL one - which would drop a skill the walk below,
+    # filtering the same way, still carries forward from its last real value.
+    running = {row["metric"]: row["value"] for row in database.query(
+        "SELECT metric, value FROM metrics m"
+        " WHERE player_id=? AND kind='skill' AND value IS NOT NULL"
+        "   AND captured_at<? AND captured_at=("
+        "     SELECT MAX(captured_at) FROM metrics x"
+        "      WHERE x.player_id=m.player_id AND x.kind='skill'"
+        "        AND x.metric=m.metric AND x.value IS NOT NULL"
+        "        AND x.captured_at<?)",
+        (player_id, since, since))}
     changes = database.query(
         "SELECT captured_at, metric, value FROM metrics"
         " WHERE player_id=? AND kind='skill' AND value IS NOT NULL"
-        "   AND captured_at<? ORDER BY captured_at",
-        (player_id, until))
+        "   AND captured_at>=? AND captured_at<? ORDER BY captured_at",
+        (player_id, since, until))
     stamps = database.observations(player_id, since, until)
     if not stamps:
         return []
 
     states = []
     at = 0
-    running = {}
     for stamp in stamps:
         moved = False
         while at < len(changes) and changes[at]["captured_at"] <= stamp:
@@ -293,6 +312,13 @@ def _player_days(states, boundaries):
     Measured from the far side, an account first seen at 17:44 after seven
     quiet weeks had all seven folded into that one day.
     """
+    # Each boundary formatted once, not once per reading. These are the same
+    # thirty-odd stamps however many readings sit between them, and being
+    # asked for inside the walk below they cost one strftime per reading per
+    # day: on a year of ten-minute readings for six accounts that was 648,000
+    # calls and most of the three seconds the Round-ups page took to render.
+    marks = [_stamp(boundary) for boundary in boundaries]
+
     out = []
     index = 0
     carried = None                       # (stamp, {skill: experience})
@@ -300,29 +326,29 @@ def _player_days(states, boundaries):
     # was consumed during the first day's own iteration, so that day had no
     # reading behind it and was measured from its first reading instead of
     # from the day before's close - wrong for the 1st of every month.
-    while index < len(states) and states[index][0] <= _stamp(boundaries[0]):
+    while index < len(states) and states[index][0] <= marks[0]:
         carried = states[index]
         index += 1
-    for position in range(len(boundaries) - 1):
-        opens, closes = boundaries[position], boundaries[position + 1]
+    for position in range(len(marks) - 1):
+        opens, closes = marks[position], marks[position + 1]
         before = carried
         inside = None
-        while index < len(states) and states[index][0] <= _stamp(closes):
-            if inside is None and states[index][0] > _stamp(opens):
+        while index < len(states) and states[index][0] <= closes:
+            if inside is None and states[index][0] > opens:
                 inside = states[index]
             carried = states[index]
             index += 1
         if carried is None:
             out.append(None)             # never seen by the end of this day
             continue
-        baseline = opening_reading(before, inside, _stamp(opens))
+        baseline = opening_reading(before, inside, opens)
         if baseline is None:
             out.append(None)
             continue
         # Short only when the day was measured from well into itself. A
         # reading a little after midnight is the schedule working, not thin
         # coverage; see periods.coverage_slack for where the line sits.
-        short = _gap(baseline[0], _stamp(opens)) > coverage_slack(86400)
+        short = _gap(baseline[0], opens) > coverage_slack(86400)
         out.append((measure(baseline[1], carried[1]), short))
     return out
 
