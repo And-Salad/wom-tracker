@@ -520,3 +520,21 @@ feed can look further back without anyone having to play again first - under a
 about two megabytes. The count is the usual limit; the byte budget exists for
 the case where a run of enormous screenshots stays under the count and over the
 disk.
+
+
+### Opening a picture
+
+Each thumbnail is a `<button>` wrapping the image, not an image with a click
+handler on it. Opening a picture is something you can do, so it answers the
+keyboard and announces itself without any help from us; the button keeps its
+focus ring and none of a button's other appearance.
+
+The viewer is one `<dialog>` for the whole page, filled in on click. It closes
+three ways - the close button, a click on the backdrop, and Escape - and the
+third is handled in the script rather than left to the browser. Escape is
+supposed to close a modal dialog on its own; in at least one browser the key
+arrives at the page and the dialog stays open. That was found by checking, not
+by reading, and it is why the listener is there.
+
+Closing releases the image's `src`. Ten screenshots is already a lot for a
+browser to hold and there is no reason to keep an eleventh copy decoded.

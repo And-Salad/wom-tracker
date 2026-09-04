@@ -1773,3 +1773,41 @@ def test_the_json_feed_carries_the_kind_too(client, app):
     row = [r for r in feed if r["name"] == "Peach Conjurer"][0]
     assert row["category"] == "combat_task"
     assert row["detail"] == "Grandmaster"
+
+
+def _shot(app, kind="pet", caption="Ikkle hydra", extra=b"clickable"):
+    from wom import gallery
+    return gallery.store(app.config["DATABASE"], "zezima", kind,
+                         "2026-09-03T21:00:00.000000Z",
+                         b"\x89PNG\r\n\x1a\n" + extra, caption=caption)
+
+
+def test_a_gallery_picture_is_a_button_not_a_bare_image(client, app):
+    """Something you can do should answer the keyboard and say so, without
+    any help from us."""
+    seed(app)
+    _shot(app)
+    page = client.get("/gallery").get_data(as_text=True)
+    shots = page.split('class="shots"')[1].split("</section>")[0]
+    assert '<button type="button" class="shot"' in shots
+    assert shots.count("<img") == shots.count("data-full="), (
+        "every picture needs the full-size URL the viewer opens")
+    assert 'id="viewer"' in page and 'id="viewer-image"' in page
+
+
+def test_the_viewer_caption_names_who_and_when(client, app):
+    seed(app)
+    _shot(app, kind="death", caption="lost 42 gp", extra=b"captioned")
+    page = client.get("/gallery").get_data(as_text=True)
+    caption = page.split("data-caption=")[1][:140]
+    assert "lost 42 gp" in caption and "Zezima" in caption
+
+
+def test_a_picture_with_no_player_of_ours_is_not_shown(client, app):
+    """The page is scoped to the sidebar's selection like every other."""
+    from wom import gallery
+    seed(app)
+    gallery.store(app.config["DATABASE"], "somebody-else", "pet",
+                  "2026-09-03T21:00:00.000000Z",
+                  b"\x89PNG\r\n\x1a\n" + b"stranger", caption="not ours")
+    assert "not ours" not in client.get("/gallery").get_data(as_text=True)
