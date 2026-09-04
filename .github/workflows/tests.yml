@@ -44,6 +44,19 @@ jobs:
       - name: Test
         run: pytest
 
+  browser:
+    # The 2300 lines of JavaScript the app serves. Its own job, because it
+    # needs a runtime nothing else here does - and until now it was the half
+    # of the codebase with no tests at all.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+
   lint:
     runs-on: ubuntu-latest
     steps:
