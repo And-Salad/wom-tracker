@@ -584,3 +584,17 @@ by reading, and it is why the listener is there.
 
 Closing releases the image's `src`. Ten screenshots is already a lot for a
 browser to hold and there is no reason to keep an eleventh copy decoded.
+
+
+### Remembering the recaps toggle
+
+The board picker on Recaps is stored as the board chosen, not as the ones
+hidden - the opposite of the kind filters on Milestones and the Gallery, and
+for a reason. Those offer a list that grows: a category added later must
+default to visible, so what is stored has to be the exceptions. The picker
+offers exactly two, both always present, so storing the choice is the simpler
+thing and a stored name that no longer matches anything simply leaves the
+server's default standing.
+
+Which is worth knowing before adding a third board: the moment the picker's
+options can change, this should store the exceptions like the others do.

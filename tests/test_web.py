@@ -2081,3 +2081,36 @@ def test_a_daily_digest_says_which_competition_it_is(db, player):
         digest = summaries.build_group_digest(db, Config(), [player], window,
                                               board=board)
         assert phrase in digest, board
+
+
+def test_the_store_is_loaded_before_anything_that_reads_it(client, app):
+    """Load-bearing ordering in a template, which is the kind of thing that
+    gets tidied.
+
+    store.js puts WOM.Remember on the page. Every script that restores
+    something falls back to a silent no-op when it is not there yet, so
+    loading it late does not break anything - it just quietly stops
+    remembering, which is the worst way for this to fail.
+    """
+    seed(app)
+    page = client.get("/").get_data(as_text=True)
+    assert page.index("store.js") < page.index("sidebar.js")
+    for reader in ("overview.js", "chartkit.js"):
+        assert page.index("store.js") < page.index(reader), reader
+
+
+def test_every_page_that_remembers_something_loads_the_store(client, app):
+    seed(app)
+    for path in ("/", "/maxing", "/grinding", "/recaps", "/milestones",
+                 "/gallery", "/export"):
+        assert "store.js" in client.get(path).get_data(as_text=True), path
+
+
+def test_the_recaps_toggle_is_remembered(client, app):
+    """It is a choice like every other control on the site."""
+    _round_ups(app.config["DATABASE"])
+    seed(app)
+    page = client.get("/recaps").get_data(as_text=True)
+    assert "recaps.js" in page
+    script = client.get("/static/recaps.js").get_data(as_text=True)
+    assert "WOM.Remember" in script and "recaps.board" in script
