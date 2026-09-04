@@ -31,12 +31,14 @@ KINDS = {
     "QUEST": "quest",
     "ACHIEVEMENT_DIARY": "diary",
     "COMBAT_ACHIEVEMENT": "combat_task",
+    "PET": "pet",
+    "DEATH": "death",
 }
 
 # The kinds that belong on the milestones feed: things a person did once, that
 # they would tell somebody about. A level or a boss count is progress and
 # belongs on a chart; these are events.
-FEED_KINDS = ("collection", "quest", "diary", "combat_task")
+FEED_KINDS = ("collection", "quest", "diary", "combat_task", "pet")
 
 # Where a collection log count lives in our metrics.
 COLLECTION_METRIC = "collections_logged"
@@ -98,6 +100,12 @@ def extract(kind, body):
                  _number(extra.get("total")))]
     if kind == "combat_task":
         return [(extra.get("task"), _number(extra.get("taskPoints")))]
+    if kind == "pet":
+        # petName only arrives if the game announced it in chat, so a pet with
+        # no name is normal rather than broken.
+        return [(extra.get("petName") or "A pet", None)]
+    if kind == "death":
+        return [(None, _number(extra.get("valueLost")))]
     return []
 
 
@@ -111,6 +119,10 @@ def detail(kind, payload):
     extra = extra if isinstance(extra, dict) else {}
     if kind == "combat_task":
         return str(extra.get("tier") or "").title()
+    if kind == "pet":
+        if extra.get("duplicate"):
+            return "duplicate"
+        return str(extra.get("milestone") or "")
     if kind == "diary":
         total = extra.get("total")
         return "{} diaries done".format(_plain(total)) if total else ""

@@ -266,6 +266,41 @@ def _payload(text):
         return {}
 
 
+# The gallery's panels, in the order they appear. Each is a kind of thing
+# worth a picture, and the only kinds whose images the webhook accepts.
+GALLERY_PANELS = (("death", "Deaths"), ("pet", "Pets"))
+
+# How many of each are shown. More are kept - see wom/gallery.py - so this can
+# grow without anyone having to play again first.
+GALLERY_SHOWN = 10
+
+
+def gallery_panels(database, selected, palette, shown=GALLERY_SHOWN):
+    """The pictures, newest first, grouped by what they are.
+
+    A panel with nothing in it is still returned, so the page can say which
+    kinds exist and are simply empty rather than silently offering fewer
+    toggles than the last time somebody looked.
+    """
+    ids = [p["id"] for p in selected]
+    panels = []
+    for key, label in GALLERY_PANELS:
+        rows = database.images(kind=key, player_ids=ids, limit=shown)
+        panels.append({
+            "key": key,
+            "label": label,
+            "images": [{
+                "src": "/gallery/{}.{}".format(row["digest"], row["format"]),
+                "player": row["display_name"] or row["username"],
+                "color": palette.get(row["username"], theme.MUTED),
+                "caption": row["caption"] or "",
+                "when": fmt_datetime(row["happened_at"], "%d %b %Y %H:%M"),
+                "ago": fmt_ago(row["happened_at"]),
+            } for row in rows],
+        })
+    return panels
+
+
 def player_rows(database, players, palette):
     """The table on /players: one row of headline figures each."""
     rows = []

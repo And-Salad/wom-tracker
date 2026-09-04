@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, Response, current_app, request
 
-from .. import gameplay
+from .. import gallery, gameplay
 from ..config import Config
 from ..util import api_stamp, is_local_host, parse_api_time
 
@@ -43,6 +43,12 @@ hooks = Blueprint("hooks", __name__)
 # room for a bigger account than any of ours and still refuses anything that
 # could only be someone using us as free storage.
 MAX_BODY = 64 * 1024
+
+# A body carrying a screenshot is a different size of thing. Decided from the
+# content type, which arrives in the headers, so an oversized JSON post is
+# still refused without reading it - and only the gallery kinds get to keep
+# what comes through here.
+MAX_MULTIPART_BODY = gallery.MAX_IMAGE_BYTES + MAX_BODY
 
 # Both ends of a session, as Dink names them. A LOGIN carries the account's
 # live experience; a LOGOUT carries only the fact and the moment, and unlike
@@ -152,10 +158,11 @@ def dink(token):
     happened_at = _happened_at(kept)
 
     if playing is not None:
-        written = gameplay.store(database, username, playing,
-                                 happened_at or api_stamp(datetime.now(timezone.utc)),
-                                 kept)
-        log.info("dink: %s reported a %s (%d rows)", username, playing, written)
+        moment = happened_at or api_stamp(datetime.now(timezone.utc))
+        written = gameplay.store(database, username, playing, moment, kept)
+        picture = _picture(database, username, playing, moment, kept)
+        log.info("dink: %s reported a %s (%d rows%s)", username, playing,
+                 written, ", with a picture" if picture else "")
         return Response(status=204)
 
     extra = kept.get("extra")
@@ -210,7 +217,9 @@ def _body():
     reaches us - so the URL handed to a player has to be https.
     """
     declared = request.content_length
-    if declared is not None and declared > MAX_BODY:
+    ceiling = (MAX_MULTIPART_BODY if request.mimetype == "multipart/form-data"
+               else MAX_BODY)
+    if declared is not None and declared > ceiling:
         return None, True
     if request.mimetype == "multipart/form-data":
         # Werkzeug needs the length to parse a form, and okhttp always sends
@@ -224,13 +233,30 @@ def _body():
             return json.loads(raw), False
         except ValueError:
             return None, False
-    raw = request.stream.read(MAX_BODY + 1)
-    if len(raw) > MAX_BODY:
+    raw = request.stream.read(ceiling + 1)
+    if len(raw) > ceiling:
         return None, True
     try:
         return json.loads(raw.decode("utf-8")), False
     except (ValueError, UnicodeDecodeError):
         return None, False
+
+
+def _picture(database, username, kind, moment, body):
+    """Keep the screenshot that came with this, if we take them for this kind.
+
+    Read from the multipart part rather than the payload, and only for the
+    kinds the gallery shows: everything else Dink can attach an image to is
+    something nobody would go and look at, and each one we accept is more
+    that a leaked URL can push at us.
+    """
+    if kind not in gallery.IMAGE_KINDS:
+        return None
+    upload = request.files.get("file") if request.files else None
+    if upload is None:
+        return None
+    return gallery.store(database, username, kind, moment, upload.read(),
+                         caption=gallery.caption_for(kind, body))
 
 
 def _happened_at(body, now=None):

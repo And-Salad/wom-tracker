@@ -577,3 +577,98 @@ def test_opting_in_does_not_disturb_the_session_events(signed_in, app):
                                         "completedEntries": 5}})
     assert len(app.config["DATABASE"].session_events("zezima")) == 1
     assert len(app.config["DATABASE"].game_events("zezima")) == 1
+
+
+# -- screenshots ----------------------------------------------------------
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"pixels for the gallery test"
+
+
+def multipart(payload, data=PNG_BYTES, name="shot.png"):
+    import io as _io
+    return {"payload_json": json.dumps(payload),
+            "file": (_io.BytesIO(data), name)}
+
+
+def test_a_death_screenshot_is_kept(signed_in, app):
+    url = issue(signed_in)
+    response = signed_in.post(url, content_type="multipart/form-data",
+                              data=multipart({"type": "DEATH", "extra":
+                                              {"valueLost": 1234567}}))
+    assert response.status_code == 204
+    rows = app.config["DATABASE"].images(kind="death", limit=5)
+    assert len(rows) == 1
+    assert rows[0]["caption"] == "lost 1,234,567 gp"
+
+
+def test_a_screenshot_for_a_kind_off_the_gallery_is_dropped(signed_in, app):
+    """The event is kept; only the picture is refused."""
+    url = issue(signed_in)
+    signed_in.post(url, content_type="multipart/form-data",
+                   data=multipart({"type": "COLLECTION", "extra":
+                                   {"itemName": "Dragon pickaxe",
+                                    "completedEntries": 5}},
+                                  data=PNG_BYTES + b"clog"))
+    assert app.config["DATABASE"].image_bytes_stored() == 0
+    assert len(app.config["DATABASE"].game_events("zezima")) == 1
+
+
+def test_something_that_is_not_an_image_is_refused_but_the_death_is_kept(
+        signed_in, app):
+    url = issue(signed_in)
+    signed_in.post(url, content_type="multipart/form-data",
+                   data=multipart({"type": "DEATH", "extra": {"valueLost": 5}},
+                                  data=b"<script>alert(1)</script>"))
+    assert app.config["DATABASE"].images(kind="death", limit=5) == []
+    assert len(app.config["DATABASE"].game_events("zezima", kind="death")) == 1
+
+
+def test_a_pet_arrives_on_the_feed_and_in_the_gallery(signed_in, app):
+    url = issue(signed_in)
+    signed_in.post(url, content_type="multipart/form-data",
+                   data=multipart({"type": "PET", "extra":
+                                   {"petName": "Ikkle hydra"}},
+                                  data=PNG_BYTES + b"pet"))
+    db = app.config["DATABASE"]
+    assert db.game_events("zezima", kind="pet")[0]["subject"] == "Ikkle hydra"
+    assert db.images(kind="pet", limit=5)[0]["caption"] == "Ikkle hydra"
+
+
+def test_a_stored_picture_is_served_with_the_type_we_read_not_the_one_claimed(
+        signed_in, app):
+    url = issue(signed_in)
+    signed_in.post(url, content_type="multipart/form-data",
+                   data=multipart({"type": "DEATH", "extra": {"valueLost": 9}},
+                                  data=PNG_BYTES + b"served", name="evil.html"))
+    digest = app.config["DATABASE"].images(kind="death", limit=1)[0]["digest"]
+    response = signed_in.get("/gallery/{}.png".format(digest))
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("image/png")
+
+
+def test_a_crafted_image_url_goes_nowhere(client):
+    for path in ("/gallery/../../etc/passwd.png", "/gallery/nothex.png",
+                 "/gallery/{}.png".format("a" * 64)):
+        assert client.get(path).status_code == 404, path
+
+
+def test_the_wrong_extension_for_a_stored_picture_is_a_miss(signed_in, app):
+    url = issue(signed_in)
+    signed_in.post(url, content_type="multipart/form-data",
+                   data=multipart({"type": "DEATH", "extra": {"valueLost": 3}},
+                                  data=PNG_BYTES + b"ext"))
+    digest = app.config["DATABASE"].images(kind="death", limit=1)[0]["digest"]
+    assert signed_in.get("/gallery/{}.jpeg".format(digest)).status_code == 404
+
+
+def test_the_gallery_page_shows_a_panel_for_each_kind(client, app):
+    page = client.get("/gallery").get_data(as_text=True)
+    for label in ("Deaths", "Pets"):
+        assert label in page
+    assert 'data-category="death"' in page and 'data-category="pet"' in page
+
+
+def test_the_gallery_is_in_the_nav_after_milestones(client):
+    page = client.get("/").get_data(as_text=True)
+    nav = page.split("<nav>")[1].split("</nav>")[0]
+    assert nav.index("/milestones") < nav.index("/gallery") < nav.index("/recaps")

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% set page = 'gallery' %}
+{% set live_note = "Pictures arrive as they happen." %}
+{% block title %}Gallery - WOM Tracker{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <h3>Gallery</h3>
+    <p class="hint">
+      Screenshots a player's own client sent, for the two things worth
+      looking at. Nothing here comes from Wise Old Man, and an account only
+      appears once its owner has opted in.
+    </p>
+    {# Every panel is on by default, so unticking is the only way to lose one. #}
+    <div class="row types" id="types">
+      {% for panel in panels %}
+        <label class="tick">
+          <input type="checkbox" value="{{ panel.key }}" checked>
+          <span>{{ panel.label }}</span>
+          <span class="dim">{{ panel.images | length }}</span>
+        </label>
+      {% endfor %}
+    </div>
+
+    {% for panel in panels %}
+      <section class="panel" data-category="{{ panel.key }}">
+        <h4>{{ panel.label }}</h4>
+        {% if panel.images %}
+          <div class="shots">
+            {% for shot in panel.images %}
+              <figure>
+                {# Lazy, because ten screenshots is a lot of picture for a
+                   page somebody may only be passing through. #}
+                <img src="{{ shot.src }}" loading="lazy" decoding="async"
+                     alt="{{ panel.label }} - {{ shot.player }}">
+                <figcaption>
+                  <span class="named" style="--dot: {{ shot.color }}"
+                    >{{ shot.player }}</span>
+                  {% if shot.caption %}
+                    <span class="dim">{{ shot.caption }}</span>
+                  {% endif %}
+                  <br><span class="dim">{{ shot.when }} ({{ shot.ago }})</span>
+                </figcaption>
+              </figure>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="dim">
+            Nothing yet. A player sends these by ticking
+            {% if panel.key == 'death' %}<em>Deaths</em>{% else %}<em>Pets</em>{% endif %}
+            in Dink, with its screenshot option on.
+          </p>
+        {% endif %}
+      </section>
+    {% endfor %}
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/gallery.js?v={{ assets }}"></script>
+{% endblock %}

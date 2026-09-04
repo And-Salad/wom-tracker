@@ -649,6 +649,24 @@
   .types { margin: 0 0 var(--space-2); gap: var(--space-2) 14px; }
   .types .tick { margin: 0; font-size: var(--text-sm); }
 
+  /* The gallery. A grid that gives each screenshot room without a fixed
+     column count, so it reflows on a phone rather than scrolling sideways. */
+  .panel { margin: 0 0 var(--space-3); }
+  .panel h4 { margin: 0 0 var(--space-2); }
+  .shots {
+    display: grid; gap: var(--space-2);
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+  .shots figure { margin: 0; }
+  .shots img {
+    width: 100%; height: auto; display: block; border-radius: var(--radius);
+    border: 1px solid var(--line); background: var(--raised);
+  }
+  .shots figcaption {
+    font-size: var(--text-xs); color: var(--ink); margin-top: 4px;
+    line-height: 1.5;
+  }
+
   .tick {
     display: flex; gap: var(--space-2); align-items: center; margin: 0 0 10px;
   }

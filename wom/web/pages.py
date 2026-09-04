@@ -1,10 +1,12 @@
 """The pages people are given. Read-only, and thin: they gather, then render."""
 
 import os
+import re
 
 from flask import (Blueprint, abort, redirect, render_template, request,
                    send_file, send_from_directory, url_for)
 
+from .. import gallery
 from ..icons import ASSET_DIR, icon_path
 from . import today, views
 from .data import catalog
@@ -69,6 +71,41 @@ def milestones():
                                   since=span.since, until=span.until),
         categories=views.FEED_CATEGORIES,
         **_shell(scope))
+
+
+@pages.route("/gallery")
+def gallery_page():
+    scope = page_context()
+    return render_template(
+        "gallery.html",
+        panels=views.gallery_panels(database(), scope["selected"],
+                                    scope["palette"]),
+        **_shell(scope))
+
+
+@pages.route("/gallery/<digest>.<fmt>")
+def gallery_image(digest, fmt):
+    """One stored screenshot.
+
+    The digest names the file and is checked against the database before it
+    reaches the filesystem, so a crafted URL cannot walk anywhere: only a
+    64-character hex string we put there ourselves resolves at all. The type
+    served is the one we read out of the bytes when they arrived, never the
+    one the sender claimed.
+    """
+    if not re.fullmatch(r"[0-9a-f]{64}", digest or ""):
+        abort(404)
+    row = database().image(digest)
+    if row is None or row["format"] != fmt:
+        abort(404)
+    path = gallery.path_for(digest, row["format"])
+    if not os.path.exists(path):
+        abort(404)
+    response = send_file(path, mimetype=gallery.MIME[row["format"]])
+    # Named by their own contents, so a URL can only ever mean one picture.
+    response.headers["Cache-Control"] = "public, max-age=604800"
+    response.headers["Content-Disposition"] = "inline"
+    return response
 
 
 @pages.route("/recaps")

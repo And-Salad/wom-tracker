@@ -488,3 +488,35 @@ A name that does not resolve keeps the event and writes no reading.
 Experience cannot be streamed at all. Dink's `XP_MILESTONE` fires only for
 skills already at level 99, at intervals of a million experience or more, so
 it is a milestone rather than a measurement.
+
+
+### Pictures
+
+`wom/gallery.py` is the only place the app takes arbitrary bytes off the
+internet, so most of it is about refusing them.
+
+Images are accepted for deaths and pets and for nothing else. Dink can attach
+one to most of its notifications, but a level-up screenshot is not something
+anybody would go and look at, and every kind we accept is more that a leaked
+URL can push at us.
+
+Three rules make the rest safe. The format is read from the first bytes of the
+file, never from the content type - that is the one part of the request nobody
+had to prove, and a mislabelled file served back with the label it claimed is
+how a picture becomes a script. The file is named by the sha256 of its own
+contents, so nothing a client sends is ever used as a path and the same
+screenshot delivered twice is stored once. And the route checks the digest
+against the database before it touches the filesystem, serving the type we
+recorded rather than the one that was asked for.
+
+They sit on the volume, not in the database. A few hundred megabytes of PNG
+inside `wom.db` would ride along on every backup pull for something decorative,
+and losing a picture costs a picture where losing a snapshot costs history that
+cannot be fetched again. `backup.py` does not carry them, deliberately.
+
+Forty of each kind are kept - the page shows ten, and the rest are held so a
+feed can look further back without anyone having to play again first - under a
+250 MB ceiling as a backstop, on a volume of one gigabyte holding a database of
+about two megabytes. The count is the usual limit; the byte budget exists for
+the case where a run of enormous screenshots stays under the count and over the
+disk.
