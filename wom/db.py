@@ -63,6 +63,13 @@ CREATE TABLE IF NOT EXISTS metrics (
     rank        INTEGER,
     level       INTEGER,                          -- skills only
     efficiency  REAL,                             -- ehp for skills, ehb for bosses
+    -- NULL for anything Wise Old Man told us. Otherwise the same words the
+    -- snapshots table uses: `derived` where we worked the value out, and
+    -- `reported` where a plugin said it outright. A derived value may now sit
+    -- at the same moment as a real reading - a session's ramp is written at
+    -- the readings it runs past - so the snapshot beside it can no longer say
+    -- which this is, and recomputing has to withdraw exactly what it wrote.
+    origin      TEXT,
     PRIMARY KEY (player_id, kind, metric, captured_at)
 ) WITHOUT ROWID;
 
@@ -267,6 +274,7 @@ class Database:
         self._drop_ungrouped_recaps(conn)
         self._widen_logins_to_sessions(conn)
         self._label_snapshot_origins(conn)
+        self._label_metric_origins(conn)
         self._add_event_happened_at(conn)
         self._add_group_summary_board(conn)
 
@@ -313,6 +321,37 @@ class Database:
             conn.execute("UPDATE session_events SET happened_at=received_at"
                          " WHERE happened_at IS NULL")
         log.info("session events gained a happened_at")
+
+    def _label_metric_origins(self, conn):
+        """Let a metric row say for itself where its value came from.
+
+        Until now the snapshot beside it carried that. Everything we worked
+        out was written at a moment Wise Old Man had never read, so a
+        `derived` snapshot was enough to find those rows again. Ramping a
+        session across the readings it ran through breaks that: those moments
+        are real readings, whose `poll` snapshots have to survive, so the mark
+        moves onto the row it actually describes.
+
+        Rows already on file all predate the ramp, so they take their
+        snapshot's word - exact rather than a guess, which is the only reason
+        this column can be added after the fact.
+        """
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(metrics)")}
+        if not columns or "origin" in columns:
+            return
+        with conn:
+            conn.execute("ALTER TABLE metrics ADD COLUMN origin TEXT")
+            conn.execute(
+                "UPDATE metrics SET origin = (SELECT s.origin FROM snapshots s"
+                "  WHERE s.player_id=metrics.player_id"
+                "    AND s.captured_at=metrics.captured_at)")
+            # `poll` and `archive` are both Wise Old Man reading the hiscores,
+            # and a row with no snapshot at all is older than the distinction.
+            # Only the two words meaning "we did not read this" are kept.
+            conn.execute("UPDATE metrics SET origin=NULL"
+                         " WHERE origin IS NOT NULL"
+                         "   AND origin NOT IN ('derived','reported')")
+        log.info("metric rows can now say where they came from")
 
     def _label_snapshot_origins(self, conn):
         """Fill in `origin` for readings stored before it was recorded.
@@ -632,18 +671,19 @@ class Database:
         the correction: experience credited to the time it was earned rather
         than to the minute we found out about it.
 
-        Written as metric rows at a moment that usually already has a
-        snapshot. That is deliberate. Nothing is overwritten, because a
-        session leaves no metric rows behind it at all - every metric was
-        unchanged as far as the hiscores were concerned - so these fill a gap
-        rather than contradict a reading.
+        Written as metric rows at a moment that often already has a snapshot.
+        That is deliberate, and it contradicts nothing: a session leaves no
+        metric rows behind it at all - every metric was unchanged as far as
+        the hiscores were concerned - so these fill a gap rather than argue
+        with a reading. INSERT OR IGNORE keeps it that way at the edges, where
+        a real row may already hold the moment.
 
-        A snapshot is created only if the moment has none, and marked so
-        compaction keeps it and nothing mistakes it for something Wise Old Man
-        said: `derived` when we worked the value out ourselves, `reported`
-        when a plugin told us outright. The difference matters because
-        recomputing attribution clears the first and must not touch the
-        second - a reported value is evidence, not arithmetic.
+        Both the row and, if the moment has no snapshot yet, the snapshot are
+        marked so compaction keeps them and nothing mistakes them for
+        something Wise Old Man said: `derived` when we worked the value out
+        ourselves, `reported` when a plugin told us outright. The difference
+        matters because recomputing attribution clears the first and must not
+        touch the second - a reported value is evidence, not arithmetic.
         """
         conn = self.connect()
         written = 0
@@ -655,8 +695,8 @@ class Database:
             for kind, metric, value in rows:
                 cur = conn.execute(
                     "INSERT OR IGNORE INTO metrics (player_id, kind, metric,"
-                    " captured_at, value) VALUES (?,?,?,?,?)",
-                    (player_id, kind, metric, when, value))
+                    " captured_at, value, origin) VALUES (?,?,?,?,?,?)",
+                    (player_id, kind, metric, when, value, origin))
                 written += cur.rowcount
         return written
 
@@ -665,15 +705,18 @@ class Database:
 
         The rule that produces them will change, and a correction nobody can
         withdraw is worse than no correction.
+
+        Keyed on the row's own origin rather than on the snapshot beside it,
+        because a ramped value is written at a real reading's moment and that
+        reading has to stay. `reported` rows are left alone either way: a
+        plugin saying a boss died is evidence, not arithmetic.
         """
         conn = self.connect()
         where = "player_id=?" + (" AND captured_at>=?" if since else "")
         params = [player_id] + ([since] if since else [])
         with conn:
-            conn.execute(
-                "DELETE FROM metrics WHERE " + where + " AND captured_at IN ("
-                "  SELECT captured_at FROM snapshots WHERE " + where +
-                "    AND origin='derived')", params + params)
+            conn.execute("DELETE FROM metrics WHERE " + where +
+                         " AND origin='derived'", params)
             cur = conn.execute(
                 "DELETE FROM snapshots WHERE " + where + " AND origin='derived'",
                 params)
@@ -1181,7 +1224,7 @@ class Database:
         the first reading inside it happens to fall.
         """
         changes = self.query(
-            "SELECT captured_at, value, rank, level, efficiency FROM metrics"
+            "SELECT captured_at, value, rank, level, efficiency, origin FROM metrics"
             " WHERE player_id=? AND metric=? AND kind=?"
             + (" AND captured_at<?" if until else "") + " ORDER BY captured_at",
             [player_id, metric, kind] + ([until] if until else []))
@@ -1196,15 +1239,32 @@ class Database:
         rows = []
         at = 0
         held = None
+        # A row we worked out ourselves carries a value and nothing else - a
+        # session's ramp is about experience, and inventing a rank to go with
+        # it would be a number nobody could check. So level, rank and
+        # efficiency carry forward from the last reading that had one, exactly
+        # as the value does. Without this a level series went blank for the
+        # length of every session, which is the opposite of the point.
+        beside = {"rank": None, "level": None, "efficiency": None}
         for stamp in stamps:
             while at < len(changes) and changes[at]["captured_at"] <= stamp:
                 held = changes[at]
+                for field in beside:
+                    if held[field] is not None:
+                        beside[field] = held[field]
                 at += 1
             if held is None:
                 continue          # the metric was not on file this early
+            # A point is only called interpolated where the row landing on it
+            # is one. A reading that merely carries an interpolated value
+            # forward - every poll in the ten minutes after a session closed -
+            # is reporting the hiscores correctly and should not be drawn as
+            # a guess.
             rows.append({"captured_at": stamp, "value": held["value"],
-                         "rank": held["rank"], "level": held["level"],
-                         "efficiency": held["efficiency"]})
+                         "rank": beside["rank"], "level": beside["level"],
+                         "efficiency": beside["efficiency"],
+                         "interpolated": held["captured_at"] == stamp
+                         and held["origin"] == "derived"})
         if bucket == "day":
             by_day = {}
             for row in rows:

@@ -257,8 +257,8 @@ def _from_zero(ctx, player, series):
     series = dict(series)
     # Readings before the one the gain is measured from would draw a negative
     # tail into the window, so the line starts where the measurement does.
-    series["points"] = [[stamp, value - base, raw]
-                        for stamp, value, raw in series["points"]
+    series["points"] = [[stamp, value - base, raw, guessed]
+                        for stamp, value, raw, guessed in series["points"]
                         if stamp >= opened]
     return series
 
@@ -383,9 +383,12 @@ def trend_series(database, players, color_for, kind, metric, field,
             when = parse_api_time(row["captured_at"])
             if when is None or row[field] is None:
                 continue
-            # [epoch ms, plotted value, the raw metric behind it] - the last
-            # is the XP behind a level, and is what the tooltip spells out.
-            points.append([int(when.timestamp() * 1000), row[field], row["value"]])
+            # [epoch ms, plotted value, the raw metric behind it, whether we
+            # worked the value out rather than read it]. The third is the XP
+            # behind a level, and is what the tooltip spells out; the fourth
+            # is how the chart knows to draw that stretch as a guess.
+            points.append([int(when.timestamp() * 1000), row[field], row["value"],
+                           1 if row["interpolated"] else 0])
         if not points:
             continue
         series.append({"username": player["username"],

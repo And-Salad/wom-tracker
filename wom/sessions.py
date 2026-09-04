@@ -240,7 +240,7 @@ LATE_BY_SECONDS = 60
 def _split_one(database, zone, player, previous_at, reading_at, max_hours):
     """Put one gain where it was earned, if we know better than the reading.
 
-    Two corrections, and the second is the common one.
+    Three corrections, and the second is the common one.
 
     A session that crossed a local midnight is divided at it, so the evening
     half counts for the evening.
@@ -249,6 +249,10 @@ def _split_one(database, zone, player, previous_at, reading_at, max_hours):
     it ended. Somebody who logged out at 23:55 and was noticed at 00:10 had
     their whole evening credited to the next day - no midnight falls inside
     that session, so dividing it was never going to help.
+
+    And a session we know the start of is drawn out across the readings it
+    ran through, so a chart of it slopes rather than jumps. That one changes
+    no total and is only about how the hours in between are drawn; see _ramp.
     """
     before = parse_api_time(previous_at) - timedelta(hours=max_hours)
     span = resolve(parse_api_time(previous_at), parse_api_time(reading_at),
@@ -266,11 +270,64 @@ def _split_one(database, zone, player, previous_at, reading_at, max_hours):
                           1.0, zone)
 
     crossing = boundary_in(span, zone)
-    if crossing is None:
-        return written      # the whole session sits inside one day
+    if crossing is not None:
+        written += _place(database, player, previous_at, reading_at, crossing,
+                          share_before(span, crossing), zone)
 
-    return written + _place(database, player, previous_at, reading_at, crossing,
-                            share_before(span, crossing), zone)
+    return written + _ramp(database, player, previous_at, reading_at, span)
+
+
+def _ramp(database, player, previous_at, reading_at, span):
+    """Spread a measured session's experience across the time it ran for.
+
+    Everything above places the gain at one moment. That is right for the
+    ledger and wrong for a chart: the readings taken during a session all
+    repeat the value from before it, because the hiscores are frozen while
+    somebody is logged in, so a line drawn through them lies flat for three
+    hours and then goes vertical. What was earned steadily reads as a jump.
+
+    So at each reading the session ran past, we write what the account had
+    reached by then. Linear in time, and invented - `interpolate` says why it
+    is still closer than the alternative - but it contradicts nothing. A
+    frozen reading recorded no metric row at all, which is exactly the gap
+    these fill, and they are marked `derived` so the chart can draw them as a
+    guess and a recomputation can take them back.
+
+    Only where the *start* was measured. Without a login there is no moment to
+    ramp from, and sloping up from the previous reading would be asserting a
+    session we have no evidence of.
+
+    Skills only. Experience is the thing that accrues continuously; a boss
+    count genuinely does jump, and the plugin already reports those exactly as
+    they happen (see gameplay.py), so smearing them would replace evidence
+    with arithmetic.
+    """
+    if span.start_from != MEASURED or span.seconds <= 0:
+        return 0
+    opened = {r["metric"]: r["value"]
+              for r in database.state_at(player["id"], previous_at, "skill")}
+    closed = {r["metric"]: r["value"]
+              for r in database.state_at(player["id"], reading_at, "skill")}
+
+    # From the login, not from the previous reading. A four hour session
+    # crosses several readings without moving any of them, so the ones that
+    # need filling in mostly sit *before* the gap this gain was noticed in.
+    # The pairs that bracket them were stepped over for showing no change,
+    # which is what leaves them free to be written here.
+    first = span.start.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    written = 0
+    for stamp in database.observations(player["id"], first, reading_at):
+        when = parse_api_time(stamp)
+        # Strictly inside: the reading that opens the gap is real, and the
+        # moment the session closed already carries the whole gain.
+        if when is None or when <= span.start or when >= span.end:
+            continue
+        fraction = (when - span.start).total_seconds() / span.seconds
+        rows = [("skill", metric, value) for metric, value
+                in interpolate(opened, closed, fraction).items()]
+        if rows:
+            written += database.record_derived_state(player["id"], stamp, rows)
+    return written
 
 
 def _place(database, player, previous_at, reading_at, when, fraction, _zone):

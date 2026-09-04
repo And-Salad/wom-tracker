@@ -403,3 +403,180 @@ def test_a_crossing_session_that_gained_nothing_writes_nothing(db, player):
         db.record_session_event(player["username"], kind, {"total_exp": None},
                                 {}, when=when)
     assert attribute(db, zone(), player, "2026-09-01") == 0
+
+
+# -- drawing the hour it was earned in, rather than the minute we found out --
+
+def _trained(db, player, readings, events):
+    """One account, some readings, and whatever Dink said around them."""
+    for stamp, xp in readings:
+        db.save_snapshot(player["id"], snapshot(stamp, skills={"attack": (xp, 40)}))
+    for kind, when in events:
+        db.record_session_event(player["username"], kind, {"total_exp": None},
+                                {}, when=when)
+
+
+# 20:00 to 21:00 UTC, read every fifteen minutes. The hiscores are frozen for
+# the whole session, so every reading inside it repeats the value from before.
+HOUR = [("2026-09-04T19:55:00.000Z", 1000),
+        ("2026-09-04T20:15:00.000Z", 1000),
+        ("2026-09-04T20:30:00.000Z", 1000),
+        ("2026-09-04T20:45:00.000Z", 1000),
+        ("2026-09-04T21:05:00.000Z", 101000)]
+PLAYED = [("login", "2026-09-04T20:00:00.000000Z"),
+          ("logout", "2026-09-04T21:00:00.000000Z")]
+
+
+def standing_at(db, player, when):
+    return {r["metric"]: r["value"]
+            for r in db.state_at(player["id"], when, "skill")}["attack"]
+
+
+def test_a_session_slopes_across_the_readings_it_ran_through(db, player):
+    """The point of all this: an hour of training is drawn as an hour.
+
+    Halfway through the session the account had earned about half of the
+    100,000, and that is what the reading at 20:30 should now say - not the
+    1,000 the frozen hiscores reported to it.
+    """
+    from wom.sessions import attribute
+    _trained(db, player, HOUR, PLAYED)
+    assert attribute(db, zone(), player, "2026-09-01") > 0
+
+    assert standing_at(db, player, "2026-09-04T20:15:00.000Z") == 26000.0
+    assert standing_at(db, player, "2026-09-04T20:30:00.000Z") == 51000.0
+    assert standing_at(db, player, "2026-09-04T20:45:00.000Z") == 76000.0
+
+
+def test_the_line_is_flat_until_they_log_in(db, player):
+    """A reading between the previous one and the login saw nothing, because
+    nothing had happened yet. Sloping from it would date the session early."""
+    from wom.sessions import attribute
+    _trained(db, player, [("2026-09-04T19:30:00.000Z", 1000)] + HOUR, PLAYED)
+    attribute(db, zone(), player, "2026-09-01")
+    assert standing_at(db, player, "2026-09-04T19:55:00.000Z") == 1000.0
+
+
+def test_the_whole_gain_is_still_there_at_the_end(db, player):
+    """The ramp is about the shape in between. It must not change the total,
+    or every leaderboard on the site moves."""
+    from wom.sessions import attribute
+    _trained(db, player, HOUR, PLAYED)
+    attribute(db, zone(), player, "2026-09-01")
+    assert standing_at(db, player, "2026-09-04T21:00:00.000000Z") == 101000.0
+    assert standing_at(db, player, "2026-09-04T21:05:00.000Z") == 101000.0
+
+
+def test_a_long_session_fills_in_the_readings_before_the_gain_was_noticed(db, player):
+    """A four hour session is noticed in one ten minute gap, and the readings
+    that need filling in nearly all sit before it. Ramping only inside that
+    gap would leave the line flat for the first three and a half hours."""
+    from wom.sessions import attribute
+    _trained(db, player,
+             [("2026-09-04T18:55:00.000Z", 1000),
+              ("2026-09-04T20:00:00.000Z", 1000),
+              ("2026-09-04T21:00:00.000Z", 1000),
+              ("2026-09-04T22:00:00.000Z", 1000),
+              ("2026-09-04T23:05:00.000Z", 401000)],
+             [("login", "2026-09-04T19:00:00.000000Z"),
+              ("logout", "2026-09-04T23:00:00.000000Z")])
+    attribute(db, zone(), player, "2026-09-01")
+    assert standing_at(db, player, "2026-09-04T20:00:00.000Z") == 101000.0
+    assert standing_at(db, player, "2026-09-04T22:00:00.000Z") == 301000.0
+
+
+def test_nothing_is_ramped_without_a_login_to_ramp_from(db, player):
+    """Half of Dink sharpens the end of a span, but a slope needs a start.
+    Sloping up from the previous reading would assert a session nobody
+    reported."""
+    from wom.sessions import attribute
+    _trained(db, player, HOUR, [("logout", "2026-09-04T21:00:00.000000Z")])
+    attribute(db, zone(), player, "2026-09-01")
+    assert standing_at(db, player, "2026-09-04T20:30:00.000Z") == 1000.0
+
+
+def test_counts_are_not_smeared_across_the_hour(db, player):
+    """Experience accrues; a boss count jumps. Half a Zulrah kill at 20:30 is
+    not a better answer than none, and the plugin reports the real ones as
+    they happen."""
+    from wom.sessions import attribute
+    db.save_snapshot(player["id"], snapshot("2026-09-04T19:55:00.000Z",
+                                            skills={"attack": (1000, 40)},
+                                            bosses={"zulrah": 10}))
+    db.save_snapshot(player["id"], snapshot("2026-09-04T20:30:00.000Z",
+                                            skills={"attack": (1000, 40)},
+                                            bosses={"zulrah": 10}))
+    db.save_snapshot(player["id"], snapshot("2026-09-04T21:05:00.000Z",
+                                            skills={"attack": (101000, 60)},
+                                            bosses={"zulrah": 40}))
+    for kind, when in PLAYED:
+        db.record_session_event(player["username"], kind, {"total_exp": None},
+                                {}, when=when)
+    attribute(db, zone(), player, "2026-09-01")
+    midway = {r["metric"]: r["value"]
+              for r in db.state_at(player["id"], "2026-09-04T20:30:00.000Z", "boss")}
+    assert midway["zulrah"] == 10, "no kills invented part-way through"
+
+
+def test_a_ramp_written_over_a_real_reading_is_withdrawn_again(db, player):
+    """The ramp is the first thing we write at a moment Wise Old Man really
+    read, so `derived` had to move from the snapshot onto the row. If it had
+    not, recomputing would leave the invented values behind for good."""
+    from wom.sessions import attribute
+    _trained(db, player, HOUR, PLAYED)
+    attribute(db, zone(), player, "2026-09-01")
+    assert standing_at(db, player, "2026-09-04T20:30:00.000Z") == 51000.0
+
+    db.clear_derived_state(player["id"], "2026-09-01")
+    assert standing_at(db, player, "2026-09-04T20:30:00.000Z") == 1000.0
+    assert db.query_one("SELECT COUNT(*) AS n FROM snapshots"
+                        " WHERE captured_at='2026-09-04T20:30:00.000Z'")["n"] == 1, \
+        "the reading itself is not a derived row and has to survive"
+
+
+def test_running_it_twice_leaves_the_same_slope(db, player):
+    from wom.sessions import attribute
+    _trained(db, player, HOUR, PLAYED)
+    attribute(db, zone(), player, "2026-09-01")
+    first = db.query("SELECT * FROM metrics ORDER BY captured_at, metric")
+    attribute(db, zone(), player, "2026-09-01")
+    after = db.query("SELECT * FROM metrics ORDER BY captured_at, metric")
+    assert [tuple(r) for r in after] == [tuple(r) for r in first]
+
+
+def test_a_reported_kill_is_never_cleared_as_arithmetic(db, player):
+    """`reported` rows sit at the same kind of moment and mean the opposite:
+    a plugin saw it happen. Recomputing must not take them with it."""
+    db.record_derived_state(player["id"], "2026-09-04T20:30:00.000Z",
+                            [("boss", "zulrah", 11.0)], origin="reported")
+    db.clear_derived_state(player["id"], "2026-09-01")
+    kept = db.state_at(player["id"], "2026-09-04T21:00:00.000Z", "boss")
+    assert {r["metric"]: r["value"] for r in kept} == {"zulrah": 11.0}
+
+
+# -- and what the chart is told about it ----------------------------------
+
+def test_the_chart_is_told_which_points_we_invented(db, player):
+    """A ramped point is drawn as a guess, and a reading that merely carries
+    one forward is not - it reported the hiscores correctly."""
+    from wom.sessions import attribute
+    _trained(db, player, HOUR, PLAYED)
+    attribute(db, zone(), player, "2026-09-01")
+    guessed = {row["captured_at"]: row["interpolated"]
+               for row in db.metric_history(player["id"], "attack")}
+    assert guessed["2026-09-04T19:55:00.000Z"] is False, "a real reading"
+    assert guessed["2026-09-04T20:30:00.000Z"] is True, "part-way up the ramp"
+    assert guessed["2026-09-04T21:05:00.000Z"] is False, (
+        "the hiscores had caught up by here; only its provenance is old")
+
+
+def test_a_ramp_does_not_blank_the_level_beside_it(db, player):
+    """A derived row carries a value and nothing else. If the level went with
+    it, every session would punch a hole in the level chart."""
+    from wom.sessions import attribute
+    _trained(db, player, HOUR, PLAYED)
+    attribute(db, zone(), player, "2026-09-01")
+    levels = {row["captured_at"]: row["level"]
+              for row in db.metric_history(player["id"], "attack")}
+    assert levels["2026-09-04T20:30:00.000Z"] == 40, "the level they still had"
+    assert all(v is not None for v in levels.values())

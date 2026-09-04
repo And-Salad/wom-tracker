@@ -173,24 +173,20 @@ def test_the_old_shape_migrates_without_changing_a_single_answer(tmp_path):
 
     path = str(tmp_path / "old.db")
     conn = sqlite3.connect(path)
-    conn.executescript(SCHEMA.replace(
-        """CREATE TABLE IF NOT EXISTS metrics (
-    player_id   INTEGER NOT NULL,
-    kind        TEXT NOT NULL,                    -- skill | boss | activity | computed
-    metric      TEXT NOT NULL,                    -- e.g. overall, zulrah, ehp
-    captured_at TEXT NOT NULL,
-    value       REAL,                             -- experience | kills | score | value
-    rank        INTEGER,
-    level       INTEGER,                          -- skills only
-    efficiency  REAL,                             -- ehp for skills, ehb for bosses
-    PRIMARY KEY (player_id, kind, metric, captured_at)
-) WITHOUT ROWID;""",
-        """CREATE TABLE metrics (
+    # The current definition is cut out of SCHEMA rather than quoted, so that
+    # adding a column to metrics does not silently turn this test into one
+    # that builds the new shape and asserts the migration left it alone.
+    opening = SCHEMA.index("CREATE TABLE IF NOT EXISTS metrics (")
+    current = SCHEMA[opening:SCHEMA.index(";", opening) + 1]
+    conn.executescript(SCHEMA.replace(current, """CREATE TABLE metrics (
     snapshot_id INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
     player_id   INTEGER NOT NULL, captured_at TEXT NOT NULL,
     kind TEXT NOT NULL, metric TEXT NOT NULL,
     value REAL, rank INTEGER, level INTEGER, efficiency REAL,
     PRIMARY KEY (snapshot_id, kind, metric));"""))
+    assert "snapshot_id" in conn.execute(
+        "SELECT sql FROM sqlite_master WHERE name='metrics'").fetchone()[0], \
+        "the point of this test is that it starts from the old shape"
     conn.execute("INSERT INTO players (id, username, display_name) VALUES (1,'z','Z')")
     # Three readings, the middle one identical to the first.
     for sid, (stamp, xp) in enumerate((("2026-08-01T00:00:00.000Z", 1000),

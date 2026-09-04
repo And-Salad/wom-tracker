@@ -230,7 +230,7 @@
         // negative tail into the window, so the line starts where the
         // measurement does.
         points: s.points.filter(function (p) { return p[0] >= opening[0]; })
-          .map(function (p) { return [p[0], p[1] - base, p[2]]; })
+          .map(function (p) { return [p[0], p[1] - base, p[2], p[3]]; })
       };
     });
   }
@@ -677,38 +677,64 @@
     var line = d3.line()
       .x(function (p) { return x(p[0]); })
       .y(function (p) { return y(p[1]); });
-    // Wise Old Man's history has holes - weeks or months with no snapshot at
-    // all. Joining across one draws a straight line through time nobody
-    // measured, which reads as steady progress that may never have happened.
-    // Those stretches are dashed: the two ends are real, the middle is a guess.
+    /* Three kinds of stretch, and only one of them is a measurement.
+
+       SOLID joins two readings taken close enough together to believe the
+       line between them.
+
+       GAP is Wise Old Man's history having holes - weeks or months with no
+       snapshot at all. Joining across one draws a straight line through time
+       nobody measured, which reads as steady progress that may never have
+       happened. Long dashes, faded: the two ends are real, the middle is
+       anybody's guess, and the guess spans months.
+
+       RAMP is a session we know both ends of. The hiscores are frozen while
+       somebody is logged in, so those readings all repeat the value from
+       before and the honest-looking line is flat for three hours and then
+       vertical - which is not what happened either. sessions.py fills the
+       stretch in at an even rate. Dotted rather than dashed, and at full
+       strength: the shape is invented, but the hour it covers is one we know
+       they were playing, which is a much better class of guess than GAP. */
+    var SOLID = 0, GAP = 1, RAMP = 2;
+    var STYLE = {};
+    STYLE[GAP] = { width: 1.2, opacity: 0.5, dash: "4,4" };
+    STYLE[RAMP] = { width: 1.6, opacity: 0.9, dash: "1,3" };
     var gapLimit = Math.max(1.5 * 86400000, (ends - data.since) * 0.04);
     shown.forEach(function (s) {
-      var run = [s.points[0]];
+      // A run collects consecutive stretches of one kind, so a session is one
+      // path rather than a path per reading it ran through.
+      var run = [s.points[0]], kind = SOLID;
       for (var i = 1; i < s.points.length; i++) {
         var previous = s.points[i - 1];
         var point = s.points[i];
-        if (point[0] - previous[0] > gapLimit) {
-          stroke(run, false);
-          stroke([previous, point], true);
-          run = [point];
-        } else {
-          run.push(point);
+        var next = point[0] - previous[0] > gapLimit ? GAP
+          : (point[3] ? RAMP : SOLID);
+        if (next !== kind) {
+          stroke(run, kind);
+          run = [previous];         // the shared point belongs to both runs
+          kind = next;
         }
+        run.push(point);
       }
-      stroke(run, false);
-      if (s.points.length < 80) {
-        plot.append("g").selectAll("circle").data(s.points).join("circle")
+      stroke(run, kind);
+      // A dot asserts a reading, so only the real ones get one. Interpolated
+      // points are the line's shape, not evidence of anything.
+      var real = s.points.filter(function (p) { return !p[3]; });
+      if (real.length < 80) {
+        plot.append("g").selectAll("circle").data(real).join("circle")
           .attr("cx", function (p) { return x(p[0]); })
           .attr("cy", function (p) { return y(p[1]); })
           .attr("r", 2.2).attr("fill", s.color);
       }
 
-      function stroke(points, guessed) {
+      function stroke(points, of) {
         if (points.length < 2) { return; }
+        var style = STYLE[of];
         plot.append("path").datum(points).attr("fill", "none")
-          .attr("stroke", s.color).attr("stroke-width", guessed ? 1.2 : 1.8)
-          .attr("stroke-opacity", guessed ? 0.5 : 1)
-          .attr("stroke-dasharray", guessed ? "4,4" : null)
+          .attr("stroke", s.color).attr("stroke-width", style ? style.width : 1.8)
+          .attr("stroke-opacity", style ? style.opacity : 1)
+          .attr("stroke-dasharray", style ? style.dash : null)
+          .attr("stroke-linecap", of === RAMP ? "round" : null)
           .attr("stroke-linejoin", "round").attr("d", line);
       }
     });
@@ -762,8 +788,11 @@
               ? "level " + full.format(d.p[1]) + " (" + full.format(d.p[2]) + " XP)"
               : full.format(d.p[1]) + " " + escapeHtml(fmt.unit || "");
           }
+          // Part-way through a session nobody read this number - it is where
+          // an even rate across the session would have put them. Said with a
+          // sign rather than a sentence, because it is in a row of six.
           html += '<div class="tip-sub">' + swatch(d.s.color, d.s.name) +
-            " &middot; " + value + "</div>";
+            " &middot; " + (d.p[3] ? "&approx; " : "") + value + "</div>";
         });
         showTip(event, html);
       });
