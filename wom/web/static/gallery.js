@@ -10,6 +10,14 @@
   var types = document.getElementById("types");
   var panels = document.querySelectorAll(".panel[data-category]");
 
+  /* Which kinds are turned off, kept between visits. Stored that way round -
+     the off ones, not the on ones - so a kind of screenshot that starts being
+     collected later shows up rather than being silently hidden by a list
+     written before it existed. */
+  var HIDDEN = "gallery.hidden";
+  var remember = (window.WOM && window.WOM.Remember) ||
+    {read: function (_n, fallback) { return fallback; }, write: function () {}};
+
   function apply() {
     var wanted = Object.create(null);
     Array.prototype.forEach.call(
@@ -23,9 +31,23 @@
   }
 
   if (types) {
+    var stored = remember.read(HIDDEN, []);
+    if (Array.isArray(stored)) {
+      Array.prototype.forEach.call(
+        types.querySelectorAll("input[type=checkbox]"),
+        function (box) {
+          if (stored.indexOf(box.value) !== -1) { box.checked = false; }
+        });
+    }
     types.addEventListener("change", function (event) {
-      if (event.target && event.target.type === "checkbox") { apply(); }
+      if (!event.target || event.target.type !== "checkbox") { return; }
+      remember.write(HIDDEN, Array.prototype.filter.call(
+        types.querySelectorAll("input[type=checkbox]"),
+        function (box) { return !box.checked; }
+      ).map(function (box) { return box.value; }));
+      apply();
     });
+    apply();
   }
 
   var viewer = document.getElementById("viewer");

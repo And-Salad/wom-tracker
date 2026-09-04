@@ -339,6 +339,7 @@
     });
 
     window.Sidebar.onChange(load);
-    load(window.Sidebar.query());
+    // A restored sidebar has already asked for this; see Sidebar.restored.
+    if (!window.Sidebar.restored) { load(window.Sidebar.query()); }
   });
 })();

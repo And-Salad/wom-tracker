@@ -65,6 +65,52 @@ kills than a week. Unranked means below the hiscore cutoff, so zero is the right
 thing to measure from - as it is for a boss that did not exist yet when the
 baseline was taken.
 
+### Selections, and where they are kept
+
+Every control on the site is a choice about what somebody wanted to see, and
+each one was thrown away on the next visit. The sidebar came back with every
+account ticked over the last week, the Milestones kinds came back all on, and
+each Overview card came back on the first entry of its dropdown. A tracker is
+a page people open every morning, so that was the same handful of clicks every
+morning.
+
+They are kept in `localStorage` now, by `static/store.js` - a wrapper over
+about six lines, but the wrapping is the point. Reading `window.localStorage`
+at all throws in a browser set to block site data, so every call is guarded and
+a failure is silent: a reader in a private window still gets the page the
+server rendered. Nothing stored is anything the page could not do without.
+
+**A URL beats it, always.** The sidebar restores only when there is no query
+string. A link that names players and a period says so in as many words - it is
+how the tabs carry the sidebar between each other and how a view is shared -
+and quietly overruling it with something out of one reader's browser would
+make a pasted link mean two different things to the two people reading it.
+
+The awkward half is what to do about the page *behind* a restored sidebar,
+which the server has already rendered from the bare URL. A page that refetches
+is told the usual way, through `Sidebar.onChange`. One that does not - Recaps
+is server-rendered text and says so on the form, and the Gallery's panels have
+no listener at all - has to be asked for again, or the ticks and the screen
+disagree. Which of the two a page is only becomes knowable once it has
+registered its listener, and a page does that inside its own
+`DOMContentLoaded` handler; `sidebar.js` runs first, so its handler runs first
+too. Hence `whenReady`: a timer set *from* that handler, which is the earliest
+moment all of them have run. Asked any sooner, every page looks like one that
+cannot refetch and every restored visit costs a second render.
+
+`Sidebar.restored` is the other half of that. The three pages that fetch their
+own opening copy - Overview, Maxing's trend, the Data table - skip it when the
+sidebar came back from the browser, because the round of requests it would
+make is the one already on its way.
+
+Two smaller decisions worth naming. The kind filters store the kinds turned
+*off*, not the ones left on, so a category added later starts visible rather
+than being hidden by a list written before it existed. And an Overview card's
+mode is restored by pressing the button, not by telling the chart: `Chart`
+reads its mode off `aria-pressed` when it is constructed, so moving the button
+first is the whole of it - and the card is then drawn once, on what was asked
+for, rather than drawn on the default and immediately fetched again.
+
 ### The charts
 
 **Experience gained by skill** — a stacked column per skill, one slice per
