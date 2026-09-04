@@ -58,6 +58,7 @@ def standings(database, players, palette, when=None, board=winners.MAXING):
                                 whole_group=whole_group, board=board)
     by_nine, by_xp = _month_wins(days, won)
 
+    start_of_day = winners.today_range(when)[0]
     scores = days.get(winners.today_key(when), {}).get("scores", {})
     nothing = {"nines": 0, "raw": 0.0, "capped": 0.0}
     rows = []
@@ -68,6 +69,11 @@ def standings(database, players, palette, when=None, board=winners.MAXING):
             "name": player["display_name"],
             "color": palette.get(player["username"], theme.MUTED),
             "nines": shown["nines"],
+            # Levels are read off the stored total rather than worked out
+            # from experience: the level a skill is at is a column we already
+            # keep, and deriving it again would be a second answer to a
+            # question the reading has already answered.
+            "levels": _levels_today(database, player, start_of_day),
             "capped": fmt_int(round(shown["capped"])),
             # What this board judges on, ready to print. Maxing counts
             # experience only up to ninety-nine; Grinding counts all of it.
@@ -84,6 +90,21 @@ def standings(database, players, palette, when=None, board=winners.MAXING):
     for place, row in enumerate(rows, start=1):
         row["place"] = place
     return {"rows": rows, "month": start.strftime("%B %Y")}
+
+
+def _levels_today(database, player, opens):
+    """Total levels gained since midnight, or 0 if we cannot say.
+
+    Read at the two edges the same way the Overview reads a window, and a
+    missing edge means no answer rather than a guess - treated as zero the
+    difference becomes the account's whole total level, which would report
+    "+2,100 levels" for a quiet morning.
+    """
+    was = database.overall_at(player["id"], _stamp(opens))
+    now = database.overall_at(player["id"])
+    if not (was and was["level"] and now and now["level"]):
+        return 0
+    return max(0, now["level"] - was["level"])
 
 
 def _month_wins(days, won):

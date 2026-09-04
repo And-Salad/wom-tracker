@@ -349,14 +349,44 @@ def test_a_gain_with_no_events_near_it_is_left_alone(db, player):
                         " WHERE origin='derived'")["n"] == 0
 
 
-def test_a_session_inside_one_day_is_not_split(db, player):
-    """Nothing crosses, so nothing is written - the gain already sits on the
-    right day."""
+def test_a_session_inside_one_day_is_not_divided_but_is_still_placed(db, player):
+    """Nothing crosses, so there is nothing to divide - but the gain is still
+    moved back to the moment the session closed rather than left at the
+    reading that found it."""
     from wom.sessions import attribute
     _played(db, player, "2026-09-04T20:10:00.000Z",
             [("login", "2026-09-04T17:00:00.000000Z"),
              ("logout", "2026-09-04T20:00:00.000000Z")])
-    assert attribute(db, zone(), player, "2026-09-01") == 0
+    assert attribute(db, zone(), player, "2026-09-01") > 0
+    at_close = {r["metric"]: r["value"] for r in
+                db.state_at(player["id"], "2026-09-04T20:00:00.000000Z", "skill")}
+    assert at_close["attack"] == 401000, "all of it, at the moment it ended"
+
+
+def test_a_session_that_ended_before_midnight_stays_on_that_day(db, player):
+    """The case this is really for.
+
+    Logged out at 23:55 and noticed at 00:10. No midnight falls inside that
+    session, so dividing it was never going to help - the whole evening was
+    being credited to the next day.
+    """
+    from wom.sessions import attribute
+    db.save_snapshot(player["id"], snapshot("2026-09-04T22:00:00.000Z",
+                                            skills={"attack": (1000, 40)}))
+    # 03:55 and 04:10 UTC are 23:55 and 00:10 in New York.
+    db.save_snapshot(player["id"], snapshot("2026-09-05T04:10:00.000Z",
+                                            skills={"attack": (401000, 60)}))
+    for kind, when in (("login", "2026-09-05T01:00:00.000000Z"),
+                       ("logout", "2026-09-05T03:55:00.000000Z")):
+        db.record_session_event(player["username"], kind, {"total_exp": None},
+                                {}, when=when)
+    assert attribute(db, zone(), player, "2026-09-01") > 0
+
+    midnight = "2026-09-05T04:00:00.000000Z"          # local midnight, in UTC
+    standing = {r["metric"]: r["value"] for r in
+                db.state_at(player["id"], midnight, "skill")}
+    assert standing["attack"] == 401000, (
+        "the whole evening had already been earned before the day turned")
 
 
 def test_a_crossing_session_that_gained_nothing_writes_nothing(db, player):

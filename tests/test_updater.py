@@ -188,8 +188,10 @@ def test_an_update_run_places_the_sessions_it_just_learned_about(db, monkeypatch
 
     monkeypatch.setattr(updater, "SESSION_LOOKBACK_DAYS", 3650)
     assert updater._place_sessions(db, ["zezima"]) > 0
+    # Two: what had been earned by midnight, and the whole of it at the
+    # moment the session closed.
     assert db.query_one("SELECT COUNT(*) AS n FROM snapshots"
-                        " WHERE origin='derived'")["n"] == 1
+                        " WHERE origin='derived'")["n"] == 2
 
 
 def test_a_failure_to_place_sessions_never_breaks_the_run(db, monkeypatch):

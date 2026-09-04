@@ -1891,6 +1891,31 @@ def test_the_grinding_table_says_what_it_counts(client, app):
     assert "XP Gained" in page and "XP Towards 99" not in page
     assert "99 Wins" not in page, (
         "a 99 never takes a grinding day, so that column could only read zero")
+    assert "Levels Today" in page and "99s Today" not in page, (
+        "a 99 is not what this board is about; levels are what moves")
+
+
+def test_levels_today_counts_from_midnight(db, player):
+    """Read at the two edges, and a missing edge is no answer rather than a
+    guess - treated as zero it would report the account's whole total level."""
+    from datetime import timedelta, timezone
+    from conftest import snapshot as snap
+    from wom.web import today
+
+    opens = today.winners.today_range()[0]
+    assert today._levels_today(db, player, opens) == 0, "nothing read yet"
+
+    def at(offset):
+        return (opens + offset).astimezone(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S.000Z")
+
+    # One reading before the day opened and one after it, or there is no
+    # midnight between them to count across.
+    db.save_snapshot(player["id"], snap(at(timedelta(hours=-2)),
+                                        skills={"overall": (1000, 100)}))
+    db.save_snapshot(player["id"], snap(at(timedelta(hours=2)),
+                                        skills={"overall": (9000, 104)}))
+    assert today._levels_today(db, player, opens) == 4
 
 
 def test_the_maxing_table_is_unchanged(client, app):

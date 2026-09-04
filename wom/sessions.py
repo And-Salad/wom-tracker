@@ -232,8 +232,24 @@ def attribute(database, zone, player, since, max_hours=MAX_SESSION_HOURS):
     return written
 
 
+# How much earlier than our reading a session has to have ended before it is
+# worth moving. Under this it is the same moment for every purpose.
+LATE_BY_SECONDS = 60
+
+
 def _split_one(database, zone, player, previous_at, reading_at, max_hours):
-    """Write the boundary reading for one gain, if there is one to write."""
+    """Put one gain where it was earned, if we know better than the reading.
+
+    Two corrections, and the second is the common one.
+
+    A session that crossed a local midnight is divided at it, so the evening
+    half counts for the evening.
+
+    A session that *ended* before our reading found it is moved back to when
+    it ended. Somebody who logged out at 23:55 and was noticed at 00:10 had
+    their whole evening credited to the next day - no midnight falls inside
+    that session, so dividing it was never going to help.
+    """
     before = parse_api_time(previous_at) - timedelta(hours=max_hours)
     span = resolve(parse_api_time(previous_at), parse_api_time(reading_at),
                    events_for(database, player["username"],
@@ -241,11 +257,24 @@ def _split_one(database, zone, player, previous_at, reading_at, max_hours):
                    max_hours=max_hours)
     if span.start_from == INFERRED and span.end_from == INFERRED:
         return 0            # nothing was measured; leave it exactly as it was
+
+    written = 0
+    ended = parse_api_time(reading_at) - span.end
+    if span.end_from == MEASURED and ended.total_seconds() > LATE_BY_SECONDS:
+        # The whole gain, at the moment the session actually closed.
+        written += _place(database, player, previous_at, reading_at, span.end,
+                          1.0, zone)
+
     crossing = boundary_in(span, zone)
     if crossing is None:
-        return 0            # the whole session sits inside one day
+        return written      # the whole session sits inside one day
 
-    fraction = share_before(span, crossing)
+    return written + _place(database, player, previous_at, reading_at, crossing,
+                            share_before(span, crossing), zone)
+
+
+def _place(database, player, previous_at, reading_at, when, fraction, _zone):
+    """Write what the account had reached at one moment inside the gain."""
     rows = []
     for kind in KINDS:
         opened = {r["metric"]: r["value"]
@@ -257,5 +286,5 @@ def _split_one(database, zone, player, previous_at, reading_at, max_hours):
             rows.append((kind, metric, value))
     if not rows:
         return 0
-    stamp = crossing.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    stamp = when.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     return database.record_derived_state(player["id"], stamp, rows)

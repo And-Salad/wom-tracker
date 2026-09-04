@@ -461,6 +461,13 @@ local midnight, `sessions.attribute` records what the account had earned by
 that midnight, and every total downstream becomes right without changing a
 line of it - they all read `state_at`, and `state_at` now has an answer there.
 
+There are two corrections, and the second is the common one. A session that
+crossed a local midnight is divided at it. A session that *ended* before our
+reading found it is moved back to when it ended - somebody who logged out at
+23:55 and was noticed at 00:10 had their whole evening credited to the next
+day, and no midnight falls inside that session, so dividing it was never going
+to help. Only the first case was handled at first, which is the smaller half.
+
 Three things make that fit:
 
 - A span crosses at most one boundary, because `MAX_SESSION_HOURS` is under a

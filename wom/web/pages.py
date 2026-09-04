@@ -44,6 +44,7 @@ BOARDS = {
         "measure_hint": "Experience toward a 99 since midnight, which is what"
                         " the day is judged on",
         "chart_title": "Experience toward 99 today",
+        "second": "99s Today", "second_hint": "Ninety-nines reached today",
         "split_wins": True,
     },
     winners.GRINDING: {
@@ -52,6 +53,10 @@ BOARDS = {
         "measure_hint": "All experience gained since midnight, which is what"
                         " the day is judged on",
         "chart_title": "Experience gained today",
+        # A ninety-nine is not what this board is about, and the column would
+        # read nothing on most days. Levels are what somebody grinding sees
+        # move.
+        "second": "Levels Today", "second_hint": "Levels gained since midnight",
         # A ninety-nine never takes a day here, so the split that Maxing's
         # table makes would be a column that can only ever read nothing.
         "split_wins": False,

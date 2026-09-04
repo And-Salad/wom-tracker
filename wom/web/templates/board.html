@@ -58,7 +58,7 @@
           <th></th>
           <th>Player</th>
           <th class="num" title="{{ board.measure_hint }}">{{ board.measure }}</th>
-          <th class="num" title="Ninety-nines reached today">99s Today</th>
+          <th class="num" title="{{ board.second_hint }}">{{ board.second }}</th>
           {# The month sits under the measure rather than beside it: on one
              line it is most of the column, and the figures below are four
              characters wide. #}
@@ -82,7 +82,11 @@
             <td class="rank"><span class="twist" aria-hidden="true"></span>{{ row.place }}</td>
             <td class="name"><span class="swatch" style="--dot: {{ row.color }}"></span>{{ row.name }}</td>
             <td class="num">{{ row.score if row.moved else '-' }}</td>
-            <td class="num {{ '' if row.nines else 'dim' }}">{{ row.nines or '-' }}</td>
+            {% if board.split_wins %}
+              <td class="num {{ '' if row.nines else 'dim' }}">{{ row.nines or '-' }}</td>
+            {% else %}
+              <td class="num {{ '' if row.levels else 'dim' }}">{{ row.levels or '-' }}</td>
+            {% endif %}
             {% if board.split_wins %}
               <td class="num {{ '' if row.nine_wins else 'dim' }}">{{ row.nine_wins or '-' }}</td>
               <td class="num {{ '' if row.xp_wins else 'dim' }}">{{ row.xp_wins or '-' }}</td>
