@@ -77,12 +77,12 @@ def fetch_boss_icons(metrics):
 
 def known_boss_metrics():
     """Every boss and activity metric, from the database if there is one."""
-    from wom.config import DB_PATH
-    if not os.path.exists(DB_PATH):
+    from wom.config import db_path
+    if not os.path.exists(db_path()):
         print("no database yet - run an update first so the metric list is known")
         return []
     from wom.db import Database
-    rows = Database(DB_PATH).query(
+    rows = Database(db_path()).query(
         "SELECT DISTINCT metric FROM metrics WHERE kind IN ('boss', 'activity')")
     return [row["metric"] for row in rows]
 

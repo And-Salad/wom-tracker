@@ -118,8 +118,8 @@ def prompt_path(config=None, period=None, kind="player"):
 
 
 def _prompt_file(name):
-    from .config import DATA_DIR
-    return os.path.join(DATA_DIR, name + ".txt")
+    from .config import data_dir
+    return os.path.join(data_dir(), name + ".txt")
 
 
 def load_prompt(config=None, period=None, kind="player"):

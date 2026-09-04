@@ -15,7 +15,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .. import theme
 from ..util import is_local_host
-from ..config import DB_PATH
+from ..config import db_path
 from ..db import Database
 from .admin import PASSWORD_ENV, admin as admin_blueprint, admin_enabled
 from .api import api as api_blueprint
@@ -46,7 +46,7 @@ def create_app(limits=None):
     app.config["ASSETS"] = _asset_version(app.static_folder)
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = timedelta(days=365)
 
-    app.config["DATABASE"] = Database(DB_PATH)
+    app.config["DATABASE"] = Database(db_path())
     app.config["JOBS"] = JobRunner()
     app.config["LIMITS"] = limits or Limits(latch=ConfigLatch())
     # Set by web_app.py when it starts the scheduler; None when the dashboard

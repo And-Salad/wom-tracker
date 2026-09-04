@@ -20,7 +20,7 @@ import hashlib
 import logging
 import os
 
-from .config import DATA_DIR
+from .config import data_dir
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ MIME = {fmt: mime for _prefix, fmt, mime in MAGIC}
 
 
 def folder():
-    return os.path.join(DATA_DIR, "gallery")
+    return os.path.join(data_dir(), "gallery")
 
 
 def sniff(data):

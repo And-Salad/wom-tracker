@@ -27,7 +27,7 @@ require_python()
 
 from wom.api import WomClient
 from wom.logs import setup_logging
-from wom.config import Config, DB_PATH
+from wom.config import Config, db_path
 from wom.db import Database
 from wom.scheduler import stamp_now
 from wom.updater import backfill_player, update_all
@@ -43,7 +43,7 @@ def run_headless_update():
     if not names:
         print("No usernames configured. Open the app and add some under Options.")
         return 1
-    database = Database(DB_PATH)
+    database = Database(db_path())
     client = WomClient(config.get("api_key", ""), config.get("user_agent_contact", ""))
     results = update_all(client, database, names, trigger="cli")
     for result in results:
@@ -71,7 +71,7 @@ def run_backfill(names=None):
     if not names:
         print("No usernames configured. Open the app and add some under Options.")
         return 1
-    database = Database(DB_PATH)
+    database = Database(db_path())
     client = WomClient(config.get("api_key", ""), config.get("user_agent_contact", ""))
     total = 0
     for name in names:
@@ -84,8 +84,8 @@ def run_backfill(names=None):
 
 def run_compact(keep_days, dry_run):
     """Thin stored history so long-term growth stays flat."""
-    database = Database(DB_PATH)
-    before = os.path.getsize(DB_PATH)
+    database = Database(db_path())
+    before = os.path.getsize(db_path())
     preview = database.compaction_preview(keep_days)
     print("{:,} snapshots stored; {:,} beyond the last {} days are more than"
           " one a day".format(preview["total"], preview["removable"], keep_days))
@@ -96,7 +96,7 @@ def run_compact(keep_days, dry_run):
         print("nothing to compact")
         return 0
     result = database.compact_snapshots(keep_days)
-    after = os.path.getsize(DB_PATH)
+    after = os.path.getsize(db_path())
     print("removed {:,} snapshots; database {:.1f} MB -> {:.1f} MB".format(
         result["removed"], before / 1e6, after / 1e6))
     return 0
@@ -127,7 +127,7 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
             print()
         return 0
 
-    database = Database(DB_PATH)
+    database = Database(db_path())
     players = database.players()
     if only_player:
         wanted = only_player.lower()
