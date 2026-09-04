@@ -49,15 +49,32 @@ cannot wake itself to run an update.
 
 ### Deploying a change
 
+Push, then press the button: **Actions -> deploy -> Run workflow**. It runs the
+full suite, the browser tests and the linter against that commit, deploys only
+if all of them pass, and then waits for the site to answer before it calls the
+run green.
+
+`fly deploy` builds from the working directory rather than from git, so run
+from a laptop it will happily ship code that was never committed and nothing
+afterwards can tell you it did. Deploying from Actions removes that rather than
+guarding against it: the runner checks out one commit into an empty machine, so
+what ships is what is pushed, by construction.
+
+It is a button rather than something that fires on every merge, because this is
+one always-on machine with the update schedule inside it - a deploy restarts the
+tracker and interrupts whatever pass was mid-flight. The schedule catches the
+slot up afterwards, but the moment is worth choosing.
+
+It needs one secret, set once:
+
 ```bash
-py deploy.py
+fly tokens create deploy -x 999999h        # prints a token
+gh secret set FLY_API_TOKEN                # paste it at the prompt
 ```
 
-`fly deploy` builds from the working directory rather than from git, so it will
-happily ship code that was never committed and nothing afterwards can tell you
-it did. `deploy.py` closes that: it refuses to deploy a dirty tree, runs the
-tests, deploys, then pushes - so what is running, what is committed and what is
-published stay the same thing. `--dry-run` checks without deploying.
+`deploy.py` still works and is still the way to deploy when GitHub is not
+answering. It refuses a dirty tree, runs the tests, deploys, then pushes;
+`--dry-run` checks without deploying.
 
 ### Maintenance jobs
 
@@ -443,7 +460,7 @@ Every test runs against a throwaway data directory of its own - its database,
 its settings and its prompts - so none of them touch a real installation or
 make a network call, and none of them can leave anything behind for the next
 one. They run in a different order every time, which is what keeps that true.
-`deploy.py` runs them before it deploys.
+The deploy workflow runs them before it deploys, and so does `deploy.py`.
 
 The browser half has its own, because it needs a different runtime:
 
@@ -454,14 +471,16 @@ npm test
 
 Both, on 3.10 and 3.12, run on every push and pull request - see
 `.github/workflows/tests.yml`. `ruff check .` is the linter, configured in
-`pyproject.toml`.
+`pyproject.toml`. The deploy workflow calls that same file rather than
+keeping a second copy of it, so the checks that guard a pull request are
+exactly the ones that gate a release.
 
 ## Layout
 
 ```
 web_app.py           the server, and with --with-scheduler the schedule too
 wom_tracker.py       the same jobs once, by hand
-deploy.py            commit-checked deploy, then push
+deploy.py            commit-checked deploy by hand, then push
 backup.py            pull a verified copy of the hosted database
 backup_schedule.ps1  registers backup.py as a daily Windows task
 fetch_icons.py       download the skill and boss sprites into assets/
@@ -515,7 +534,7 @@ wom/
     maintenance.py   thinning old history
 tests/               a file per concern, each against its own data directory
   js/                the browser half, run by node against jsdom
-.github/workflows/   the tests, on 3.10 and 3.12, and the linter
+.github/workflows/   the tests, on 3.10 and 3.12, the linter, and the deploy
 docs/notes.md        longer background on why parts are shaped as they are
 data/                settings, database, prompts and logs (created on first run)
 ```

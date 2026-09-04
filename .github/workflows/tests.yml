@@ -9,6 +9,10 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  # So the deploy workflow can run these as its gate rather than keeping a
+  # second copy of them. A copy is a thing that drifts, and the copy that
+  # drifts here is the one deciding whether a commit is fit to ship.
+  workflow_call:
 
 jobs:
   test:
