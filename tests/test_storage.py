@@ -10,6 +10,17 @@ DROP_UNGROUPED_RECAPS = 6
 LABEL_SNAPSHOT_ORIGINS = 8
 
 
+def test_a_database_can_be_opened_by_a_bare_file_name(tmp_path, monkeypatch):
+    """os.makedirs("") raises rather than doing nothing.
+
+    db_path() always names a directory, so this only ever met a caller that
+    passed a path of its own - a script run from beside the file, say.
+    """
+    from wom.db import Database
+    monkeypatch.chdir(tmp_path)
+    assert Database("bare.db").players() == []
+
+
 def test_compaction_keeps_each_days_last_reading(db, player):
     """Ids run backwards within a day because backfill inserts newest first.
 

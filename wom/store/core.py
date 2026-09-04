@@ -27,7 +27,12 @@ class Store:
 
     def __init__(self, path):
         self.path = path
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        # A bare file name has no directory to make, and asking for "" raises
+        # rather than doing nothing. db_path() always names one, so this only
+        # ever bit a caller passing a path of its own.
+        folder = os.path.dirname(path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
         self._local = threading.local()
         conn = self.connect()
         # Whether this file is new decides whether the migrations have to run

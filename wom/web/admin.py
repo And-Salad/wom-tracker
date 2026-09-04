@@ -99,6 +99,26 @@ def requires_login(view):
 
 # -- signing in -----------------------------------------------------------
 
+def safe_next(target):
+    """Where to go after signing in, when the URL names somewhere on this site.
+
+    `next` arrives in the query string. Handed to redirect() as it stands, it
+    will send a freshly signed-in admin anywhere at all - which makes this
+    login page the first step of a phishing hop that borrows the site's own
+    address to look legitimate. requires_login only ever sets it to a path
+    here, so nothing else has to be honoured.
+
+    A path, and only a path. "//evil.example" and "/\\evil.example" both begin
+    with a slash and are protocol-relative URLs rather than paths, which is
+    the shape this check exists to refuse.
+    """
+    if not target or not target.startswith("/"):
+        return None
+    if target[1:2] in ("/", "\\"):
+        return None
+    return target
+
+
 @admin.route("/admin/login", methods=["GET", "POST"])
 def login():
     error = None
@@ -116,7 +136,8 @@ def login():
             sign_in.refund(address)
             session["wom_admin"] = True
             session.permanent = True
-            return redirect(request.args.get("next") or url_for("admin.settings"))
+            return redirect(safe_next(request.args.get("next"))
+                            or url_for("admin.settings"))
         else:
             # A wrong guess should cost real time even before the lockout.
             time.sleep(WRONG_PASSWORD_DELAY)

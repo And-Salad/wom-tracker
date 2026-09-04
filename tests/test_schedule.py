@@ -80,7 +80,7 @@ def test_an_unknown_period_still_has_no_window():
         periods.latest_window("fortnight")
 
 
-def test_a_window_is_owed_from_the_moment_it_closes(db):
+def test_a_window_is_owed_from_the_moment_it_closes(db, player):
     """These used to wait for six in the morning, which was the first update
     slot after midnight when there were four a day. There are now one hundred
     and forty four, so the first one after the window closes is minutes old."""
@@ -90,10 +90,46 @@ def test_a_window_is_owed_from_the_moment_it_closes(db):
         "day", "week", "month", "quarter", "year"]
 
 
+def test_nothing_is_owed_about_nobody(db):
+    """An empty roster owes no notes, rather than owing five about no account.
+
+    Every caller already refuses to run on an empty roster, but the group
+    round-up does not go through them: asked to write what was owed, it would
+    have paid for a comparison of nought players.
+    """
+    assert summaries.due_periods(db, at(2026, 9, 8, 6)) == []
+
+
 def test_a_settled_morning_owes_nothing(db, player):
     now = at(2026, 9, 8, 6)
     written(db, player, now, periods.SUMMARY_PERIODS)
     assert summaries.due_periods(db, at(2026, 9, 8, 8)) == []
+
+
+def test_a_window_stays_owed_until_every_account_has_its_note(db, player):
+    """One player's note is not the window written.
+
+    `summarise_all` catches each account's failure on its own, so a rate limit
+    on the last of six used to leave that account noteless for good: the
+    window counted as done the moment anybody had one, and a window is only
+    ever offered while it is owed.
+    """
+    now = at(2026, 9, 8, 6)
+    db.save_player_details({"id": 2, "username": "other", "displayName": "Other"})
+    written(db, player, now, periods.SUMMARY_PERIODS)
+    assert summaries.due_periods(db, now) == list(periods.SUMMARY_PERIODS), (
+        "Other has nothing written, so every window is still owed")
+    for key in periods.SUMMARY_PERIODS:
+        db.save_summary(2, periods.latest_window(key, now), "text", "hash")
+    assert summaries.due_periods(db, now) == []
+
+
+def test_an_account_added_later_is_owed_the_windows_the_others_have(db, player):
+    now = at(2026, 9, 8, 6)
+    written(db, player, now, periods.SUMMARY_PERIODS)
+    assert summaries.due_periods(db, now) == []
+    db.save_player_details({"id": 2, "username": "late", "displayName": "Late"})
+    assert "day" in summaries.due_periods(db, now)
 
 
 def test_a_quarter_is_owed_once_and_not_again(db, player):

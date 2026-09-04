@@ -25,6 +25,26 @@ def test_a_wrong_password_grants_nothing(client):
     assert client.get("/admin").status_code == 302
 
 
+def test_signing_in_goes_where_the_guard_sent_you(client):
+    response = client.post("/admin/login?next=/admin/prompts",
+                           data={"password": "test-password"})
+    assert response.headers["Location"] == "/admin/prompts"
+
+
+def test_signing_in_will_not_be_redirected_off_the_site(client):
+    """`next` is somewhere on this site or it is nowhere.
+
+    Unchecked it makes the login page the first hop of a phishing chain: the
+    link wears this site's address, the password goes to this site, and the
+    admin lands on somebody else's page believing they arrived here.
+    """
+    for target in ("https://evil.example.com/x", "//evil.example.com/x",
+                   "/\\evil.example.com/x", "http://evil.example.com"):
+        response = client.post("/admin/login?next=" + target,
+                               data={"password": "test-password"})
+        assert response.headers["Location"] == "/admin", target
+
+
 def test_signing_in_and_out(signed_in, app):
     seed(app)
     assert signed_in.get("/admin").status_code == 200

@@ -44,11 +44,25 @@ class WomClient:
         self.contact = (contact or "").strip()
         self.timeout = timeout
         self.session = session or requests.Session()
-        per_min = KEYED_REQUESTS_PER_MIN if self.api_key else ANON_REQUESTS_PER_MIN
-        # Leave a little headroom so a burst never trips the limiter.
-        self._min_interval = 60.0 / per_min * 1.1
         self._next_allowed = 0.0
         self._throttle_lock = threading.Lock()
+        self._min_interval = 0.0
+        self._pace()
+
+    def _pace(self):
+        """Space requests to whatever the current credentials are allowed.
+
+        Called again whenever the key changes, which is the whole reason it is
+        a method. A rejected key is dropped mid-run (see _request), and the
+        spacing set once in __init__ stayed at the keyed rate afterwards - so
+        the run carried on at five times what an anonymous caller may have and
+        collected 429s, which is precisely the failure dropping the key was
+        meant to avoid.
+        """
+        per_min = KEYED_REQUESTS_PER_MIN if self.api_key else ANON_REQUESTS_PER_MIN
+        with self._throttle_lock:
+            # Leave a little headroom so a burst never trips the limiter.
+            self._min_interval = 60.0 / per_min * 1.1
 
     # -- plumbing ---------------------------------------------------------
 
@@ -108,6 +122,9 @@ class WomClient:
                             "/admin - anonymous is 20 requests a minute, and a "
                             "run of six players is twelve every ten.")
                 self.api_key = ""
+                # And slow down to what that allows, or the rest of the run
+                # asks at the keyed rate without the key that bought it.
+                self._pace()
                 continue
 
             if resp.status_code >= 400:

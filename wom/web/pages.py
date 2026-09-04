@@ -189,8 +189,15 @@ def recaps_page():
 
 @pages.route("/summaries")
 def summaries_redirect():
-    """The tab was called Round-ups and lived here. Links outlive renames."""
-    return redirect(url_for("pages.recaps_page", **request.args), code=301)
+    """The tab was called Round-ups and lived here. Links outlive renames.
+
+    The query is carried over whole. `**request.args` reads a MultiDict one
+    value per key, so a bookmark naming four ticked players arrived at the new
+    address naming the first of them - the sidebar quietly narrowed by the
+    redirect that was supposed to preserve it.
+    """
+    return redirect(url_for("pages.recaps_page",
+                            **request.args.to_dict(flat=False)), code=301)
 
 
 @pages.route("/players")
