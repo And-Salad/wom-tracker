@@ -148,6 +148,11 @@ def update_one(client, database, username, achievements=True):
         if backfill_note:
             message = "{}, {}".format(message, backfill_note)
 
+    recovered = collect_recent(client, database, username, player_id)
+    if recovered:
+        message = "{}, {} reading{} we had missed".format(
+            message, recovered, "" if recovered == 1 else "s")
+
     milestones = (sync_achievements(client, database, username, player_id)
                   if achievements else 0)
     if milestones:
@@ -155,6 +160,44 @@ def update_one(client, database, username, achievements=True):
             message, milestones, "" if milestones == 1 else "s")
 
     return PlayerResult(username, True, message, imported, milestones)
+
+
+# How far back each pass re-reads a player's history. Wise Old Man keeps a
+# snapshot whenever anybody asks it to look, so a reading made between two of
+# ours - a client pushing on logout - only exists there. Long enough to cover
+# an outage of an hour or two and still one small request per player.
+RECENT_MINUTES = 180
+
+
+def collect_recent(client, database, username, player_id):
+    """Fetch readings Wise Old Man took that our own polling never saw.
+
+    `update_player` hands back the latest snapshot and nothing else, so a
+    reading it made in between - most often a player's own client pushing at
+    logout - is invisible to us however often we ask. It sits in the history
+    endpoint, which is what this reads.
+
+    That matters at a day boundary. Somebody who logs out at 23:55 is noticed
+    by our next poll at 00:10 and their whole evening lands on the wrong day;
+    the push Wise Old Man recorded at 23:55 puts it back where it happened,
+    for every account, with nothing for anyone to install.
+
+    Never allowed to break a run: the update itself is the thing worth having.
+    """
+    since = datetime.now(timezone.utc) - timedelta(minutes=RECENT_MINUTES)
+    try:
+        found = client.get_snapshots(username, start_date=since)
+    except WomError as exc:
+        log.info("could not re-read %s's recent history: %s", username, exc)
+        return 0
+    except Exception:
+        log.exception("re-reading %s's recent history crashed", username)
+        return 0
+    kept = database.save_snapshots(player_id, found or [])
+    if kept:
+        log.info("recovered %d reading%s for %s that our polling never saw",
+                 kept, "" if kept == 1 else "s", username)
+    return kept
 
 
 def _spelled_as_asked(details, username):

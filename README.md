@@ -373,6 +373,19 @@ ended. Every total, chart and leaderboard picks that up without special-casing
 it. An account with no session events is untouched and reports exactly what it
 always did.
 
+## Readings we did not take
+
+`update_player` refreshes a player and hands back their latest snapshot and
+nothing else. Wise Old Man keeps one whenever *anybody* asks it to look - most
+often a player's own client pushing at logout - and one of those made between
+two of our polls is invisible to us however often we ask.
+
+That matters at a day boundary. Somebody who logs out at 23:55 is noticed by
+our poll at 00:10, and their whole evening lands on the wrong day. So each pass
+also re-reads the last three hours of history and keeps anything new, which
+puts that reading back where it happened - for every account, with nothing for
+anyone to install. One small request per player per pass.
+
 ## What gets stored
 
 SQLite, in `data/wom.db`. A reading repeats the one before it for most metrics -

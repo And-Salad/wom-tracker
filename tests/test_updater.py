@@ -10,7 +10,8 @@ class FakeClient:
     """Answers like the Wise Old Man client, and records what was asked."""
 
     def __init__(self, details=None, fail_update=False, fail_fetch=False,
-                 snapshots=None, achievements=None):
+                 snapshots=None, achievements=None, recent=None,
+                 fail_recent=False):
         self.details = details or {
             "id": 1, "username": "zezima", "displayName": "Zezima",
             "type": "regular", "exp": 500,
@@ -20,6 +21,8 @@ class FakeClient:
         self.fail_update = fail_update
         self.fail_fetch = fail_fetch
         self.snapshots = snapshots or []
+        self.recent = recent or []
+        self.fail_recent = fail_recent
         self._achievements = achievements or []
         self.calls = []
 
@@ -42,6 +45,12 @@ class FakeClient:
     def iter_snapshots(self, username, **kwargs):
         self.calls.append(("snapshots", username))
         return iter(self.snapshots)
+
+    def get_snapshots(self, username, **kwargs):
+        self.calls.append(("recent", username))
+        if self.fail_recent:
+            raise WomError("rate limited", 429)
+        return self.recent
 
 
 def test_a_successful_pass_stores_the_player_and_its_snapshot(db):
@@ -209,3 +218,60 @@ def test_a_failure_to_place_sessions_never_breaks_the_run(db, monkeypatch):
 def test_placing_sessions_skips_a_name_we_have_never_stored(db):
     from wom import updater
     assert updater._place_sessions(db, ["nobody-here"]) == 0
+
+
+# -- readings our own polling never sees ----------------------------------
+
+def test_a_reading_wise_old_man_took_between_ours_is_recovered(db):
+    """update_player hands back the latest snapshot and nothing else, so a
+    push it recorded in between is invisible however often we ask."""
+    push = snapshot("2026-08-30T23:55:00.000Z", skills={"attack": (900, 42)})
+    client = FakeClient(recent=[push])
+    result = update_one(client, db, "zezima")
+    assert result.ok
+    assert ("recent", "zezima") in client.calls
+    held = [r["captured_at"] for r in db.query(
+        "SELECT captured_at FROM snapshots ORDER BY captured_at")]
+    assert "2026-08-30T23:55:00.000Z" in held
+    assert "reading we had missed" in result.message
+
+
+def test_a_recovered_reading_is_marked_as_one_we_did_not_cause(db):
+    """It is stamped when Wise Old Man took it, not when we collected it, so
+    it must not look like a poll - compaction keeps one and thins the other."""
+    push = snapshot("2026-08-30T23:55:00.000Z", skills={"attack": (900, 42)})
+    update_one(FakeClient(recent=[push]), db, "zezima")
+    row = db.query_one("SELECT origin FROM snapshots WHERE captured_at=?",
+                       ("2026-08-30T23:55:00.000Z",))
+    assert row["origin"] == "archive"
+
+
+def test_readings_we_already_hold_are_not_stored_twice(db):
+    push = snapshot("2026-08-30T23:55:00.000Z", skills={"attack": (900, 42)})
+    client = FakeClient(recent=[push])
+    update_one(client, db, "zezima")
+    before = db.snapshot_count(1)
+    update_one(client, db, "zezima")
+    assert db.snapshot_count(1) == before
+
+
+def test_a_refused_history_call_does_not_fail_the_update(db):
+    """The update itself is the thing worth having."""
+    result = update_one(FakeClient(fail_recent=True), db, "zezima")
+    assert result.ok
+    assert "we had missed" not in result.message
+    assert db.player_by_username("zezima") is not None
+
+
+def test_a_client_too_old_to_answer_that_call_is_survivable(db):
+    """Guards the shape of the failure, not the failure itself: a bare
+    AttributeError here used to be swallowed silently and the whole feature
+    did nothing while every test passed."""
+    class Older(FakeClient):
+        get_snapshots = None
+
+        def __getattr__(self, name):
+            raise AttributeError(name)
+
+    result = update_one(Older(), db, "zezima")
+    assert result.ok
