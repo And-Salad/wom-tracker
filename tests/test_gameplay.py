@@ -9,7 +9,7 @@ happened so the charts stop rounding it to the next poll.
 import json
 
 import pytest
-from conftest import snapshot
+from conftest import as_polled, snapshot
 
 from wom import gameplay
 
@@ -159,7 +159,6 @@ def test_a_reported_reading_is_not_cleared_by_recomputing_attribution(db, player
 
 
 def test_compaction_keeps_a_reported_reading(db, player):
-    from conftest import as_polled
     gameplay.store(db, player["username"], "collection", "2026-01-05T05:00:00.000Z",
                    collection(completed=100))
     db.save_snapshot(player["id"], snapshot("2026-01-05T23:00:00.000Z",

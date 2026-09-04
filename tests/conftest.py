@@ -164,3 +164,71 @@ def _no_wrong_password_delay(monkeypatch):
     """
     from wom.web import admin
     monkeypatch.setattr(admin, "WRONG_PASSWORD_DELAY", 0)
+
+
+# -- seeding the web tests ------------------------------------------------
+#
+# These built the fixtures for one 2174-line test file, defined at the point
+# in it where they were first wanted - one at line 830, another at 1779 - so
+# the file's shape was whatever you could hold in your head while scrolling
+# it. They are shared by several files now, which is what they always were.
+
+def calendar_seed(app, polled=True):
+    """Two accounts, one of which is only ever seen mid-afternoon.
+
+    `polled` records an update run for each day, which is the evidence that
+    an account with no reading that day played nothing rather than going
+    unwatched. Tests about that rule itself pass False.
+    """
+    database = app.config["DATABASE"]
+    for pid, name in ((1, "Zezima"), (2, "Other")):
+        database.save_player_details({"id": pid, "username": name.lower(),
+                                      "displayName": name, "type": "regular"})
+    # Zezima is read four times a day, every day.
+    for day, xp in (("2026-08-28", 1000), ("2026-08-29", 2000),
+                    ("2026-08-30", 3000), ("2026-08-31", 3100)):
+        for hour in ("02", "23"):
+            database.save_snapshot(1, snapshot(
+                day + "T" + hour + ":00:00.000Z",
+                skills={"attack": (xp + (50 if hour == "23" else 0), 50)}))
+    # Other is seen once in July and then not again until the 30th.
+    database.save_snapshot(2, snapshot("2026-07-02T12:00:00.000Z",
+                                       skills={"attack": (500, 40)}))
+    for hour, xp in (("21", 9000), ("23", 9500)):
+        database.save_snapshot(2, snapshot("2026-08-30T" + hour + ":00:00.000Z",
+                                           skills={"attack": (xp, 60)}))
+    if polled:
+        record_runs(database, 2, ["2026-08-{:02d}".format(day) for day in range(1, 32)])
+    return database
+
+
+def round_ups(db, boards=("maxing", "grinding"), keys=("day", "week", "month")):
+    from wom import periods
+    for key in keys:
+        window = periods.latest_window(key)
+        for board in boards:
+            db.save_group_summary(window, "{} {}.".format(board, key),
+                                  "h-" + board + key, board=board)
+    return db
+
+
+def seed(app):
+    database = app.config["DATABASE"]
+    database.save_player_details({"id": 1, "username": "zezima",
+                                  "displayName": "Zezima", "type": "regular"})
+    for day, xp in (("2026-08-25", 1000), ("2026-08-31", 5000)):
+        database.save_snapshot(1, snapshot(day + "T12:00:00.000Z",
+                                           skills={"attack": (xp, 40)},
+                                           bosses={"zulrah": xp // 100}))
+    return database
+
+
+def record_runs(database, players, days):
+    """Say the tracker looked at everyone on each of these days."""
+    for day in days:
+        run = database.start_run("test", roster=players)
+        database.finish_run(run, ok_count=players, fail_count=0)
+        database.connect().execute(
+            "UPDATE runs SET started_at=? WHERE id=?",
+            (day + "T12:00:00.000Z", run))
+    database.connect().commit()

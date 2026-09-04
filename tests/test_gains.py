@@ -5,6 +5,7 @@ from nothing to 286 kills as no kills at all; the baseline case measured "this
 month" from a snapshot four years earlier.
 """
 
+
 from conftest import snapshot
 
 from wom import periods

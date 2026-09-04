@@ -1,5 +1,6 @@
 """One update pass, against a stand-in for the API."""
 
+
 from conftest import snapshot
 
 from wom.api import WomError
