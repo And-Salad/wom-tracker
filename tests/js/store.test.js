@@ -25,7 +25,10 @@ test("anything JSON can carry survives the round trip", () => {
   const dom = page(null, ["store.js"]);
   const chose = { players: ["zezima", "other"], kinds: { pet: true }, n: 3 };
   remember(dom).write("choice", chose);
-  assert.deepStrictEqual(remember(dom).read("choice", null), chose);
+  /* deepEqual, not deepStrictEqual: what comes back was built by the page's
+     own JSON.parse, so it carries jsdom's Object.prototype rather than this
+     realm's, and a strict comparison fails on that alone. */
+  assert.deepEqual(remember(dom).read("choice", null), chose);
 });
 
 test("a value nobody has written is the default", () => {
@@ -71,8 +74,19 @@ test("a browser that throws on the property itself is survived", () => {
 });
 
 test("a full or refused write is silent rather than fatal", () => {
-  const dom = page(null, ["store.js"]);
-  dom.window.localStorage.setItem = () => { throw new Error("quota"); };
+  /* A whole stand-in rather than a patched method: jsdom's Storage is a
+     proxy, and assigning over setItem on it does not take - the real one
+     still runs, and the test passes for the wrong reason. */
+  const dom = page(null, []);
+  Object.defineProperty(dom.window, "localStorage", {
+    configurable: true,
+    value: {
+      getItem() { return null; },
+      setItem() { throw new Error("quota exceeded"); },
+    },
+  });
+  dom.window.eval(require("./page").source("store.js"));
+
   assert.doesNotThrow(() => remember(dom).write("period", "Week"));
   assert.strictEqual(remember(dom).read("period", "Day"), "Day");
 });

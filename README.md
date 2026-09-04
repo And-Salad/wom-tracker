@@ -488,12 +488,12 @@ what the tables and the column names still call it.
 
 ## Requirements
 
-**Python 3.9 or newer**, with `requests`, `flask` and `waitress`, plus `tzdata`
-(Windows has no IANA time zone database of its own) and `anthropic` for the
-recaps.
+**Python 3.10 or newer**, with `requests`, `flask` and `waitress`, plus
+`tzdata` (Windows has no IANA time zone database of its own) and `anthropic`
+for the recaps.
 
-The floor is 3.9 because of `zoneinfo`; nothing here needs anything newer, and
-every file parses under 3.7. It cannot live in `requirements.txt` - pip is a
+Two things set the floor. `zoneinfo` needs 3.9, and the `anthropic` SDK needs
+3.10 - so 3.10 it is. It cannot live in `requirements.txt` - pip is a
 Python program, so the interpreter is already chosen by the time that file is
 read - so the entry points check it themselves and say so, in `wom/runtime.py`.
 Without that check the failure is quiet: `zoneinfo` is imported inside a

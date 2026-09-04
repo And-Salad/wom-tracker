@@ -340,14 +340,20 @@ def test_an_interpreter_without_zoneinfo_is_refused_loudly():
     said = _io.StringIO()
     assert runtime.check((3, 8), said) is False
     message = said.getvalue()
-    assert "3.9 or newer" in message and "3.8" in message
+    assert "3.10 or newer" in message and "3.8" in message
     assert "zoneinfo" in message, "and says which missing piece is the reason"
 
 
-def test_the_floor_is_the_one_zoneinfo_needs():
+def test_the_floor_is_the_highest_of_the_reasons_for_one():
+    """zoneinfo wants 3.9 and the anthropic SDK wants 3.10, so it is 3.10.
+
+    It said 3.9 until CI tried to install requirements.txt on 3.9 and pip
+    refused - which is the sort of thing a check nobody runs cannot tell you.
+    """
     from wom import runtime
-    assert runtime.MINIMUM == (3, 9)
-    assert runtime.check((3, 9)) is True
+    assert runtime.MINIMUM == (3, 10)
+    assert runtime.check((3, 9)) is False, "anthropic will not install there"
+    assert runtime.check((3, 10)) is True
     assert runtime.check((3, 12)) is True
 
 

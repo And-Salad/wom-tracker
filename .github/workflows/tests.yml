@@ -1,6 +1,6 @@
 # The suite, on the interpreters this actually runs on.
 #
-# 3.9 is the floor wom/runtime.py enforces, and 3.12 is what the Dockerfile
+# 3.10 is the floor wom/runtime.py enforces, and 3.12 is what the Dockerfile
 # ships - so those are the two that have to stay green. Between them the
 # repository had four hundred tests and nothing that ever ran them.
 name: tests
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.12"]
+        python-version: ["3.10", "3.12"]
 
     steps:
       - uses: actions/checkout@v4

@@ -82,7 +82,7 @@ def test_windows_are_monotonic(db, player):
     totals = [sum(db.metric_gains(player["id"], p.start_iso(), "boss").values())
               for p in periods.PERIODS]
     assert totals == sorted(totals), "gains shrank as the window grew: {}".format(
-        dict(zip([p.label for p in periods.PERIODS], totals)))
+        dict(zip([p.label for p in periods.PERIODS], totals, strict=True)))
 
 
 def test_one_snapshot_measures_nothing(db, player):
