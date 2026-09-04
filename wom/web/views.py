@@ -30,7 +30,7 @@ def paragraphs(text):
     return [block.strip() for block in (text or "").split("\n\n") if block.strip()]
 
 
-def group_verdicts(database, rows):
+def group_verdicts(database, rows, board="maxing"):
     """{(period, window_key): what the Maxing Leaderboard said}, for every row.
 
     The group recap is the leaderboard's feed, so every entry carries what the
@@ -61,19 +61,25 @@ def group_verdicts(database, rows):
         closes = (datetime.strptime(max(days), "%Y-%m-%d").replace(tzinfo=local)
                   + timedelta(days=1))
         for key, won in winners.daily_winners(database, players, opens, closes,
-                                              whole_group=True).items():
+                                              whole_group=True,
+                                              board=board).items():
             found[("day", key)] = won["winner"]
     for key in months:
         start = datetime.strptime(key, "%Y-%m-%d").replace(tzinfo=local)
         end = (start + timedelta(days=32)).replace(day=1)
         found[("month", key)] = winners.month_winner(database, players, start,
-                                                     end, whole_group=True)
+                                                     end, whole_group=True,
+                                                     board=board)
 
     out = {}
     for row in rows:
         at = (row["period"], row["window_key"])
         out[at] = {
             "username": found.get(at),
+            # A week is not awarded on either leaderboard - the day and the
+            # month are - so its round-up is a review rather than a verdict
+            # and carries no winner beside it.
+            "judged": row["period"] != "week",
             # A month with less than a fortnight of counted days is not
             # awarded at all, and says so rather than leaving a blank where a
             # name goes.
@@ -92,28 +98,28 @@ def _recap(row, verdict, palette, by_name):
         "winner": by_name.get(username, username) if username else None,
         "color": palette.get(username, theme.MUTED) if username else None,
         "unawarded": verdict["unawarded"],
-        # Only the group's entries are the leaderboard's feed. A player's own
-        # note is not a verdict about anything, and labelling it "no verdict"
-        # would invent a question it was never answering.
-        "judged": True,
+        # Only the group's entries are the leaderboard's feed, and only for
+        # the windows it awards. A player's own note is not a verdict about
+        # anything, and neither is a week.
+        "judged": verdict.get("judged", True),
     }
 
 
-def recap_feed(database, players, palette):
-    """The newest day and the newest month, for the top of the page.
+def recap_feed(database, players, palette, board="maxing"):
+    """One board's newest day, week and month, for the top of the page.
 
-    Two, not five. The recap is the Maxing Leaderboard's feed, and the
-    leaderboard colours days and awards months; a weekly or yearly one was
-    describing a window with no result to put beside it.
+    Three, not five. A quarter or a year has no result on either leaderboard,
+    so a round-up for one would be describing a window with nothing to put
+    beside it.
     """
     pairs = []
     for period, title in GROUP_FOLDERS:
-        found = database.group_summaries(period=period, limit=1)
+        found = database.group_summaries(period=period, limit=1, board=board)
         if found:
             pairs.append((title, found[0]))
     if not pairs:
         return []
-    verdicts = group_verdicts(database, [row for _title, row in pairs])
+    verdicts = group_verdicts(database, [row for _title, row in pairs], board)
     # Named from the roster, not the ticks: the account a chip names is
     # whoever the calendar says won, and they need not be one of the ticked
     # ones - looked up in `players` an unticked winner had no name to show.
@@ -123,6 +129,14 @@ def recap_feed(database, players, palette):
             for title, row in pairs]
 
 
+def recap_feeds(database, players, palette):
+    """Both boards' feeds, so the page can offer one at a time."""
+    from .. import winners
+    return [{"key": board, "label": winners.BOARD_LABELS[board],
+             "entries": recap_feed(database, players, palette, board)}
+            for board in winners.BOARDS]
+
+
 def _branch(name, username, color, folders):
     return {"player": name, "username": username, "color": color,
             "total": sum(folder["count"] for folder in folders),
@@ -130,33 +144,37 @@ def _branch(name, username, color, folders):
 
 
 def recap_tree(database, players, palette):
-    """Everything written so far: the group first, then each account.
+    """Everything written so far: each board first, then each account.
 
     Two shapes under one tree, because they answer different questions about
-    the same days. The group's branch holds the two windows the leaderboard
-    judges, each entry carrying its verdict. Each account's branch holds all
+    the same days. A board's branch holds the windows it has something to say
+    about, each entry carrying its verdict. Each account's branch holds all
     five, with no verdict, because a quarter of one account's progress is not
-    something the calendar has an opinion about.
+    something either leaderboard has an opinion about.
     """
-    tree = []
+    from .. import winners
 
-    group_folders = []
-    everything = []
-    for period, title in GROUP_FOLDERS:
-        rows = database.group_summaries(period=period)
-        if rows:
-            group_folders.append((period, title, rows))
-            everything.extend(rows)
-    if group_folders:
-        verdicts = group_verdicts(database, everything)
+    tree = []
+    for board in winners.BOARDS:
+        folders = []
+        everything = []
+        for period, title in GROUP_FOLDERS:
+            rows = database.group_summaries(period=period, board=board)
+            if rows:
+                folders.append((period, title, rows))
+                everything.extend(rows)
+        if not folders:
+            continue
+        verdicts = group_verdicts(database, everything, board)
         by_name = {p["username"]: p["display_name"] for p in database.players()}
-        tree.append(_branch("Group", "__group__", theme.ACCENT, [
+        tree.append(_branch(winners.BOARD_LABELS[board], "__" + board + "__",
+                            theme.ACCENT, [
             {"period": period, "title": title, "count": len(rows),
              "entries": [_recap(row,
                                 verdicts[(row["period"], row["window_key"])],
                                 palette, by_name)
                          for row in rows]}
-            for period, title, rows in group_folders]))
+            for period, title, rows in folders]))
 
     for player in players:
         folders = player_recaps(database, player)

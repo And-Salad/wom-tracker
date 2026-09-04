@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import pytest
 from conftest import as_polled, snapshot
 
-from wom import periods, summaries
+from wom import periods, summaries, winners
 from wom.scheduler import zone
 
 
@@ -28,7 +28,11 @@ def written(db, player, now, keys):
         window = periods.latest_window(key, now)
         db.save_summary(player["id"], window, "text", "hash")
         if key in periods.GROUP_PERIODS:
-            db.save_group_summary(window, "text", "hash")
+            # One per board, which is what a run writes: a window with only
+            # one of them written is still owed, and a fixture that wrote one
+            # would be testing a database shape that cannot occur.
+            for board in winners.BOARDS:
+                db.save_group_summary(window, "text", "hash", board=board)
 
 
 def test_windows_are_the_last_complete_one(db):
@@ -129,11 +133,17 @@ def test_a_missed_monday_is_caught_up_on_tuesday(db, player):
 
 
 def test_a_missing_group_round_up_reopens_the_window(db, player):
+    """And every board owes one. A window with one written and the other not
+    is still owed, or the second board would never get a round-up at all."""
     now = at(2026, 9, 8, 6)
     window = periods.latest_window("day", now)
     db.save_summary(player["id"], window, "text", "hash")
     assert "day" in summaries.due_periods(db, now)
-    db.save_group_summary(window, "text", "hash")
+
+    db.save_group_summary(window, "text", "hash", board=winners.MAXING)
+    assert "day" in summaries.due_periods(db, now), "grinding still owes one"
+
+    db.save_group_summary(window, "text", "hash", board=winners.GRINDING)
     assert "day" not in summaries.due_periods(db, now)
 
 

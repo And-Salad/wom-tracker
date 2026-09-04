@@ -158,9 +158,11 @@ def gallery_image(digest, fmt):
 @pages.route("/recaps")
 def recaps_page():
     scope = page_context()
+    feeds = views.recap_feeds(database(), scope["selected"], scope["palette"])
     return render_template(
         "recaps.html",
-        latest=views.recap_feed(database(), scope["selected"], scope["palette"]),
+        feeds=feeds,
+        any_latest=any(feed["entries"] for feed in feeds),
         tree=views.recap_tree(database(), scope["selected"], scope["palette"]),
         **_shell(scope))
 

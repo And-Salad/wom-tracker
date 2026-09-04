@@ -187,13 +187,14 @@ def _quarter_before(start_of_quarter):
 # nothing - see the per-period prompts in data/.
 SUMMARY_PERIODS = ("day", "week", "month", "quarter", "year")
 
-# The group recap is written for these only. It is the Maxing Leaderboard's
-# feed - the calendar colours days and awards months, and nothing else - so a
-# weekly, quarterly or yearly group recap was describing a window the
-# leaderboard has no verdict for. A player's own notes still cover all five:
-# those are about one account's progress, which does not stop being
-# interesting because the calendar has nothing to say about it.
-GROUP_PERIODS = ("day", "month")
+# The windows a group round-up is written for, per board. The day and the
+# month are what the leaderboards judge outright; the week sits between them
+# as a review - who took each of its days, and where the month stands so far.
+# Quarters and years are still left alone: nothing on either leaderboard has a
+# verdict for them, so a round-up would be describing a window with no result
+# to put beside it. A player's own notes still cover all five, because those
+# are about one account's progress and do not need a competition.
+GROUP_PERIODS = ("day", "week", "month")
 
 
 

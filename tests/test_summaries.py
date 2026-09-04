@@ -133,3 +133,48 @@ def test_an_override_is_stored_lowercased_and_can_be_cleared(config):
     set_player_color(config, "Zezima", None)
     assert config.get("player_colors") == {}
     assert player_color(config, "zezima", 0), "back to the palette, not blank"
+
+
+# -- a round-up per board, per window --------------------------------------
+
+def test_a_run_writes_a_round_up_for_every_board(db, player, monkeypatch):
+    """Both leaderboards owe one for the same window. Writing only the first
+    would leave the second with nothing, for ever - the window is settled by
+    then and never comes due again.
+    """
+    from wom import summaries, winners
+
+    monkeypatch.setattr(summaries, "generate",
+                        lambda config, system, digest: ("WINNER: none\n\nWords.",
+                                                        {"input_tokens": 1,
+                                                         "output_tokens": 1,
+                                                         "model": "test"}))
+    results = summaries.summarise_all(db, {"summary_model": "m"},
+                                      [player], ["day"])
+    wrote = {entry["player"] for entry in results}
+    assert "Maxing" in wrote and "Grinding" in wrote
+
+    from wom import periods
+    window = periods.latest_window("day")
+    for board in winners.BOARDS:
+        assert db.group_summary(window.period, window.key, board) is not None, board
+
+
+def test_the_two_round_ups_are_written_from_different_digests(db, player,
+                                                              monkeypatch):
+    """Same window, same readings, different rule - so if both boards were
+    handed the same digest the second would be the first one's answer."""
+    from wom import periods, summaries, winners
+
+    seen = []
+    monkeypatch.setattr(summaries, "generate",
+                        lambda config, system, digest: (seen.append(digest),
+                                                        ("Words.", {"input_tokens": 1,
+                                                                    "output_tokens": 1,
+                                                                    "model": "t"}))[1])
+    window = periods.latest_window("day")
+    for board in winners.BOARDS:
+        summaries.summarise_group(db, {"summary_model": "m"}, [player], window,
+                                  board=board)
+    assert len(seen) == 2
+    assert seen[0] != seen[1], "each board has to be told which one it is"

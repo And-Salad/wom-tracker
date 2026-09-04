@@ -201,6 +201,53 @@ def build_digest(database, config, player, window):
     return "\n".join(lines)
 
 
+def _week_context(database, players, window, board):
+    """What a weekly round-up needs beyond the week's own totals.
+
+    A week is not judged in its own right on either leaderboard - the day and
+    the month are - so on the figures alone it would read as a third
+    competition nobody is playing. What it is for is review: who took each of
+    its days, and where that leaves the month it sits in.
+    """
+    from . import winners
+
+    lines = ["", "Days of this week, and who took each:"]
+    won = winners.daily_winners(database, players, window.start, window.end,
+                                whole_group=True, board=board)
+    names = {p["username"]: p["display_name"] for p in players}
+    tally = {}
+    for day in sorted(won):
+        found = won[day]
+        if found["live"]:
+            continue
+        if found["winner"]:
+            tally[found["winner"]] = tally.get(found["winner"], 0) + 1
+            lines.append("  {}: {}".format(day, names.get(found["winner"],
+                                                          found["winner"])))
+        else:
+            lines.append("  {}: nobody ({})".format(
+                day, found["reason"] or "no result"))
+    if tally:
+        lines.append("  Days taken this week: {}".format(", ".join(
+            "{} {}".format(names.get(u, u), n)
+            for u, n in sorted(tally.items(), key=lambda kv: -kv[1]))))
+
+    start, end = winners.month_range(window.end)
+    points = winners.month_points(database, players, start, end, board=board)
+    counted = winners.counted_days(database, players, start, end, board)
+    lines.append("")
+    lines.append("The month so far ({} - {} days counted), running average"
+                 " points per day, which is what the month is awarded on:"
+                 .format(start.strftime("%B %Y"), counted))
+    if points:
+        for username, score in sorted(points.items(), key=lambda kv: -kv[1]):
+            lines.append("  {}: {:.2f}".format(names.get(username, username),
+                                               score))
+    else:
+        lines.append("  Not enough days counted yet to stand anybody up.")
+    return lines
+
+
 def _ranking_lines(ranked):
     """The order the group's own rule puts them in, for the digest.
 
@@ -248,19 +295,38 @@ def _ranking_lines(ranked):
     return lines
 
 
-def build_group_digest(database, config, players, window):
+# How each competition is judged, said plainly enough for the round-up to
+# judge the same way rather than reaching for the most obvious number.
+BOARD_RULES = {
+    "maxing": "Maxing - judged on experience gained up to level 99 in each"
+              " skill. Reaching a 99 takes the period outright, and experience"
+              " past 99 does not count.",
+    "grinding": "Grinding - judged on total experience gained, all of it, with"
+                " no cap and no special credit for reaching a 99.",
+}
+
+
+def build_group_digest(database, config, players, window, board="maxing"):
     """Every tracked player's figures for one window, side by side.
 
     Built from the same numbers the individual summaries use rather than from
     their prose: comparisons need the figures, and this way the round-up does
     not depend on the individual write-ups having been generated first.
+
+    The competition's own rule goes at the top, because the two boards are the
+    same figures judged differently and a round-up handed only the numbers
+    would pick the winner the numbers suggest rather than the one who won.
     """
     from . import winners
 
     since, until = window.start_iso(), window.end_iso()
-    lines = ["Period: {} ({})".format(window.label, _period_noun(window.period)),
+    lines = ["Competition: {}".format(BOARD_RULES.get(board, board)),
+             "Period: {} ({})".format(window.label, _period_noun(window.period)),
              "Players compared: {}".format(len(players)), ""]
-    lines.extend(_ranking_lines(winners.ranking(database, players, window)))
+    lines.extend(_ranking_lines(winners.ranking(database, players, window,
+                                                board=board)))
+    if window.period == "week":
+        lines.extend(_week_context(database, players, window, board))
 
     for player in players:
         skills = database.metric_gains(player["id"], since, "skill", until=until)
@@ -555,7 +621,11 @@ def _missing(database, period, window_key):
     # recap to find - so every run re-wrote every player's weekly note.
     if period not in periods.GROUP_PERIODS:
         return False
-    return database.group_summary(period, window_key) is None
+    # Every board owes its own round-up for the window. Asking about one of
+    # them would call the window done while the other had nothing written.
+    from . import winners
+    return any(database.group_summary(period, window_key, board) is None
+               for board in winners.BOARDS)
 
 
 def maybe_write_summaries(database, config, now=None):
@@ -582,18 +652,20 @@ def maybe_write_summaries(database, config, now=None):
     return written
 
 
-def summarise_group(database, config, players, window, force=False):
-    """Generate and store the group round-up for one window."""
-    digest = build_group_digest(database, config, players, window)
+def summarise_group(database, config, players, window, force=False,
+                    board="maxing"):
+    """Generate and store one board's group round-up for one window."""
+    digest = build_group_digest(database, config, players, window, board)
     fingerprint = digest_hash(digest)
-    existing = database.group_summary(window.period, window.key)
+    existing = database.group_summary(window.period, window.key, board)
     if existing and existing["digest_hash"] == fingerprint and not force:
         return existing["text"], "unchanged"
 
     system = load_prompt(config, window.period, kind="group")
     text, usage = generate(config, system, digest)
     winner, text = split_winner(text, players)
-    database.save_group_summary(window, text, fingerprint, usage, winner=winner)
+    database.save_group_summary(window, text, fingerprint, usage, winner=winner,
+                                board=board)
     return text, "generated ({} in, {} out)".format(
         usage["input_tokens"], usage["output_tokens"])
 
@@ -656,29 +728,34 @@ def summarise_all(database, config, players, period_keys=None, force=False,
             if progress:
                 progress(entry)
 
-    # One recap per window, after the individual notes, and only for the
-    # windows the Maxing Leaderboard actually judges - it is the calendar's
-    # feed, and the calendar has no verdict for a week or a quarter.
+    # One recap per window per board, after the individual notes, and only
+    # for the windows a leaderboard has something to say about - a quarter or
+    # a year has no result to put beside it on either.
     #
     # It always compares the whole roster, never the caller's subset: there is
     # a single stored recap per window, so writing one from a partial
     # selection would file a two-player comparison as the verdict for everyone.
+    from . import winners
+
     roster = database.players()
     for key in [k for k in keys if k in periods.GROUP_PERIODS]:
         window = periods.latest_window(key, now)
-        entry = {"player": "Group", "period": window.label}
-        try:
-            _text, note = summarise_group(database, config, roster, window, force)
-            entry["note"] = note
-        except SummaryError as exc:
-            entry["note"] = "failed: {}".format(exc)
-            entry["failed"] = True
-            log.warning("group summary failed for %s: %s", key, exc)
-        except Exception as exc:
-            entry["note"] = "failed: {}".format(exc)
-            entry["failed"] = True
-            log.exception("group summary crashed for %s", key)
-        results.append(entry)
-        if progress:
-            progress(entry)
+        for board in winners.BOARDS:
+            label = winners.BOARD_LABELS[board]
+            entry = {"player": label, "period": window.label}
+            try:
+                _text, note = summarise_group(database, config, roster, window,
+                                              force, board=board)
+                entry["note"] = note
+            except SummaryError as exc:
+                entry["note"] = "failed: {}".format(exc)
+                entry["failed"] = True
+                log.warning("%s round-up failed for %s: %s", label, key, exc)
+            except Exception as exc:
+                entry["note"] = "failed: {}".format(exc)
+                entry["failed"] = True
+                log.exception("%s round-up crashed for %s", label, key)
+            results.append(entry)
+            if progress:
+                progress(entry)
     return results

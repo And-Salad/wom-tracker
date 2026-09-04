@@ -157,6 +157,20 @@ change; the chart simply redraws.
 
 ## Recaps
 
+Round-ups are written per calendar window and now per leaderboard: the day, the
+week and the month, for Maxing and for Grinding, which is six a cycle. A window
+is owed until *both* boards have one - settling it on the first would leave the
+second with nothing for ever, because the window never comes due again.
+
+The week is the new one and it is not a verdict. Neither leaderboard awards a
+week, so its round-up reviews instead: who took each of its days, and where
+that leaves the month's running average. It carries no winner chip, because
+there is no award to name.
+
+Each board's digest opens with its own rule. The two are the same figures
+judged differently, and a round-up handed only the numbers would pick the
+winner the numbers suggest rather than the one who won.
+
 Written per **calendar window** rather than over a rolling period: "Saturday 29
 August", "August 2026" - a closed span with a name, so a recap can be filed,
 kept, and compared with the one before it. The first update of each local day
