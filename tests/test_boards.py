@@ -28,21 +28,53 @@ def test_an_account_past_99_everywhere_can_win_grinding_but_not_maxing():
 
 
 def test_both_leaderboard_pages_render(client, app):
+    from wom.web.pages import BOARDS
+
     seed(app)
-    for path, heading in (("/maxing", "Maxing Leaderboard"),
-                          ("/grinding", "Grinding Leaderboard")):
-        page = client.get(path).get_data(as_text=True)
-        assert heading in page, path
+    for key, board in BOARDS.items():
+        page = client.get("/" + key).get_data(as_text=True)
+        assert "{} Leaderboard".format(board["label"]) in page, key
 
 
-def test_the_grinding_table_says_what_it_counts(client, app):
+def test_a_ninety_nine_never_wins_a_grinding_day_so_it_has_no_column_for_it():
+    """What each board counts is BOARDS, not wording in a template.
+
+    This used to be checked by looking for the strings "99 Wins" and "XP
+    Towards 99" in the rendered HTML, which made it a test about the headings
+    rather than about the rule - it would have gone green on a board that
+    counted the wrong thing under a renamed column, and red on one that
+    counted the right thing under a better name.
+    """
+    from wom import winners
+    from wom.web.pages import BOARDS
+
+    grinding = BOARDS[winners.GRINDING]
+    maxing = BOARDS[winners.MAXING]
+
+    assert grinding["split_wins"] is False, (
+        "a 99 never takes a grinding day, so the split would be a column that"
+        " could only ever read nothing")
+    assert maxing["split_wins"] is True
+
+    # And the two boards measure different things, which is the only
+    # difference between them.
+    assert grinding["measure"] != maxing["measure"]
+    assert grinding["second"] != maxing["second"]
+
+
+def test_each_board_renders_the_columns_its_own_entry_names(client, app):
+    """The template reads BOARDS rather than spelling the headings out, so a
+    board that gains a column gains it on the page."""
+    from wom.web.pages import BOARDS
+
     seed(app)
-    page = client.get("/grinding").get_data(as_text=True)
-    assert "XP Gained" in page and "XP Towards 99" not in page
-    assert "99 Wins" not in page, (
-        "a 99 never takes a grinding day, so that column could only read zero")
-    assert "Levels Today" in page and "99s Today" not in page, (
-        "a 99 is not what this board is about; levels are what moves")
+    for key, board in BOARDS.items():
+        page = client.get("/" + key).get_data(as_text=True)
+        assert board["measure"] in page, key
+        assert board["second"] in page, key
+        other = next(b for k, b in BOARDS.items() if k != key)
+        assert other["measure"] not in page, (
+            "{} shows what {} counts".format(key, other["key"]))
 
 
 def test_levels_today_counts_from_midnight(db, player):
@@ -70,10 +102,16 @@ def test_levels_today_counts_from_midnight(db, player):
     assert today._levels_today(db, player, opens) == 4
 
 
-def test_the_maxing_table_is_unchanged(client, app):
+def test_the_maxing_table_still_splits_its_wins(client, app):
+    """Adding the second board must not have quietly changed the first."""
+    from wom import winners
+    from wom.web.pages import BOARDS
+
     seed(app)
     page = client.get("/maxing").get_data(as_text=True)
-    assert "XP Towards 99" in page and "99 Wins" in page and "XP Wins" in page
+    assert BOARDS[winners.MAXING]["measure"] in page
+    assert "99 Wins" in page and "XP Wins" in page, (
+        "the split is Maxing's, and split_wins is what asks for it")
 
 
 def test_each_board_has_its_own_endpoints(client, app):

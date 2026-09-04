@@ -61,7 +61,7 @@ def test_the_round_up_overrules_the_figures_only_for_the_whole_group(app):
 def test_the_calendar_names_a_winner_for_the_month_too(app, client):
     calendar_seed(app)
     body = client.get("/maxing").get_data(as_text=True)
-    assert "Maxing Leaderboard" in body
+    # The heading is test_boards' business; this test is about the grid.
     assert body.count('class="month"') == 2, "last month and this one"
 
 
