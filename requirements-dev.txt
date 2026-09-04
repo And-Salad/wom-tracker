@@ -1,0 +1,13 @@
+# What the tests and the checks need, on top of requirements.txt.
+#
+# pytest was never written down anywhere, so "how do I run the suite" had no
+# answer in the repository at all - which for four hundred tests that nothing
+# ran automatically was the larger half of the problem.
+-r requirements.txt
+
+pytest>=8.0
+# Runs the suite in a different order every time. The suite used to share one
+# settings file across every test, and passed only because of the order it
+# happened to run in; this is what stops that coming back quietly.
+pytest-randomly>=3.15
+ruff>=0.6

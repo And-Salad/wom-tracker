@@ -1,0 +1,38 @@
+# Tool configuration only.
+#
+# There is deliberately no [project] table here. This is an application you
+# clone and run, not a package you install - wom/runtime.py explains why the
+# interpreter floor is checked on the way in rather than declared as
+# metadata - and the Dockerfile already learned that writing the same
+# dependency list in two places only means the copies can disagree. The
+# runtime list lives in requirements.txt and the test tooling in
+# requirements-dev.txt; both are what CI installs.
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+extend-exclude = ["wom/web/static/d3.v7.min.js"]
+
+[tool.ruff.lint]
+# Errors, unused names, import order, likely bugs, and the two comprehension
+# and simplification sets. Deliberately not pyupgrade's UP032: this codebase
+# formats with str.format() throughout, and rewriting a hundred and seventy
+# call sites as f-strings would be a style opinion imposed by a tool rather
+# than a defect anyone found.
+select = ["E", "F", "W", "I", "B", "C4", "SIM", "UP015", "UP025", "UP028"]
+
+[tool.ruff.lint.per-file-ignores]
+# Both entry points check the interpreter before importing anything that
+# might not parse on it, which is the whole point of the check.
+"web_app.py" = ["E402"]
+"wom_tracker.py" = ["E402"]
+# WOM_DATA_DIR has to be set before wom.config is first imported.
+"tests/conftest.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["wom"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["error::DeprecationWarning"]
