@@ -613,11 +613,28 @@ def due_periods(database, now=None):
 
 
 def _missing(database, period, window_key):
-    """True when this window still needs writing - player notes or the group one."""
-    players = database.query_one(
-        "SELECT COUNT(*) AS n FROM summaries WHERE period=? AND window_key=?",
-        (period, window_key))
-    if not (players and players["n"]):
+    """True when this window still needs writing - player notes or the group one.
+
+    Every tracked account has to have one, not merely somebody. Asked whether
+    any note existed for the window, one player's failed call - a rate limit,
+    a dropped connection - called the window done for all of them and nothing
+    ever went back for it, because a window is only ever offered while it is
+    owed. The same answer meant an account added on Tuesday never got the
+    windows the others already had.
+
+    Costing nothing to be wrong about: the notes that do exist are skipped on
+    their unchanged digest without reaching the API, so a window reopened for
+    one player is one call, not a roster's worth.
+    """
+    roster = [p["id"] for p in database.players()]
+    if not roster:
+        return False            # nobody to write about; nothing is owed
+    written = database.query_one(
+        "SELECT COUNT(DISTINCT player_id) AS n FROM summaries"
+        " WHERE period=? AND window_key=? AND player_id IN ({})".format(
+            ",".join("?" * len(roster))),
+        [period, window_key] + roster)
+    if not written or written["n"] < len(roster):
         return True
     # Only the periods the group recap covers can be owed one. Asked about a
     # week, this used to answer "missing" forever - there is no weekly group
