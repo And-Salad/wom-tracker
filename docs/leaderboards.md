@@ -72,9 +72,24 @@ week, so its round-up reviews instead: who took each of its days, and where
 that leaves the month's running average. It carries no winner chip, because
 there is no award to name.
 
-Each board's digest opens with its own rule. The two are the same figures
-judged differently, and a round-up handed only the numbers would pick the
-winner the numbers suggest rather than the one who won.
+Each board's digest opens with its own rule, and says its standings by that
+rule too. The two are the same figures judged differently, and a round-up
+handed only the numbers would pick the winner the numbers suggest rather than
+the one who won.
+
+A digest also carries what the players' own clients reported during the window
+- a quest finished, a diary done, a combat task, a pet, which drop filled a
+collection log slot. Wise Old Man gives us 99s and thresholds, which is a thin
+slice of an evening; these are the things somebody would actually mention, and
+for a long time the round-up was the one thing writing about the period that
+could not see any of them. They are opt-in per player, so both prompts are told
+that an account with none was not silent, it was not reporting - the same rule
+the coverage lines follow.
+
+Deaths are not among them, though they arrive on the same webhook and have
+their own shelf in the Gallery. A round-up is about what somebody did, and one
+that reached for the deaths would be writing about the thing they would least
+like read back to them.
 
 Written per **calendar window** rather than over a rolling period: "Saturday 29
 August", "August 2026" - a closed span with a name, so a recap can be filed,
@@ -85,9 +100,10 @@ the 1st still writes that month when it wakes.
 There are two kinds, and they cover different windows.
 
 The **group recap** on the Recaps tab is the leaderboard's feed, so it covers
-what the leaderboard judges: the **day** and the **month**, and nothing else.
-Each one carries the leaderboard's own verdict beside it - who took that day,
-who took that month, or that the month went unawarded. The recap names a
+the windows a leaderboard has something to say about: the **day**, the **week**
+and the **month**. The day and the month carry the leaderboard's own verdict
+beside them - who took that day, who took that month, or that the month went
+unawarded. The week carries none, because neither board awards one. The recap names a
 winner of its own in its prose and the calendar does not read it: the squares
 are arithmetic and the round-up is comment. Where the two differ, the chip
 quotes the calendar, and the difference is the interesting part.
@@ -102,14 +118,24 @@ about.
 Each stores a hash of its digest, so a player whose numbers have not moved is
 skipped rather than re-billed. A day costs well under a cent; a full set of
 windows across six players is a few cents. The model and how hard it thinks
-are both set under Admin, and both move that figure.
+are both set under Admin, and both move that figure - and the round-up may
+have its own of each. They are not the same job: a note is a paragraph of
+colour, where a round-up follows a stated rule and respects a winner the site
+has already decided. Left unset it uses whatever the notes use.
+
+Each also stores the digest it was written from, and a hash of the prompt that
+was in force. The hash answers "has this changed"; only the digest itself
+answers "why did it say that", and by the time anybody asks, the readings
+behind it are gone - compaction thins past thirty days and attribution
+recomputes its own rows. Anything written before that was kept has both
+columns empty, which is the honest answer rather than a reconstruction.
 
 What each one is told is a prompt you can edit, under **Admin → Prompts**. Two
 base prompts cover every window - one for a player's own note, one for the group
 recap - and any window may override its own, which is how a yearly retrospective
 can be asked for something a daily note should not say. The page offers a group
-override only for the day and the month, since a group prompt for a quarter
-would be a file nothing ever loads. It lists every prompt there is, creates an
+override only for the windows a round-up is written for, since a group prompt
+for a quarter would be a file nothing ever loads. It lists every prompt there is, creates an
 override seeded from the base, and removes one to fall back again. They live in
 `data/`, so they are yours and survive a redeploy; `backup.py` brings them down
 with the database.

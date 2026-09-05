@@ -87,6 +87,14 @@ CREATE TABLE IF NOT EXISTS summaries (
     label         TEXT NOT NULL,                  -- "Sunday 30 August 2026"
     text          TEXT NOT NULL,
     digest_hash   TEXT NOT NULL,                  -- skip regenerating unchanged data
+    -- What the model was actually given. The hash above answers "has this
+    -- changed"; only the digest itself answers "why did it say that", and by
+    -- the time anybody asks, the readings behind it are gone: compaction
+    -- thins past 30 days and attribution recomputes its own rows.
+    digest        TEXT,
+    -- Which prompt produced it, so a note written under an older set of
+    -- instructions can be told apart from one written under today's.
+    prompt_hash   TEXT,
     model         TEXT,
     input_tokens  INTEGER,
     output_tokens INTEGER,
@@ -106,6 +114,8 @@ CREATE TABLE IF NOT EXISTS group_summaries (
     label         TEXT NOT NULL,
     text          TEXT NOT NULL,
     digest_hash   TEXT NOT NULL,
+    digest        TEXT,                           -- as above, in summaries
+    prompt_hash   TEXT,
     model         TEXT,
     input_tokens  INTEGER,
     output_tokens INTEGER,

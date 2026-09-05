@@ -100,6 +100,7 @@ have.
 ```bash
 py wom_tracker.py --update      # one update pass now
 py wom_tracker.py --summarize   # write whatever recaps are owed
+py wom_tracker.py --summarize --dry-run   # price them and print every digest
 py wom_tracker.py --compact     # thin old history to one reading a day
 py wom_tracker.py --list        # print the tracked usernames
 py backup.py                    # pull a verified copy of the hosted database

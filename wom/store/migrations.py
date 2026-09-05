@@ -291,6 +291,24 @@ def _label_metric_origins(conn):
     log.info("metric rows can now say where they came from")
 
 
+def _keep_the_digest(conn):
+    """Store what the model was given, and which prompt was giving it.
+
+    Both are nullable and everything already written keeps NULL, which is the
+    honest answer: those digests were not kept and cannot be reconstructed -
+    compaction has since thinned the readings behind them.
+    """
+    for table in ("summaries", "group_summaries"):
+        columns = {row["name"] for row in conn.execute(
+            "PRAGMA table_info({})".format(table))}
+        if not columns:
+            continue
+        for column in ("digest", "prompt_hash"):
+            if column not in columns:
+                conn.execute("ALTER TABLE {} ADD COLUMN {} TEXT".format(
+                    table, column))
+
+
 # In the order they have to run, and numbered for ever. Append; never
 # renumber, and never remove one - a database that has not seen a step still
 # needs it, however old it is.
@@ -306,6 +324,7 @@ STEPS = (
     (9, _add_event_happened_at),
     (10, _add_group_summary_board),
     (11, _label_metric_origins),
+    (12, _keep_the_digest),
 )
 
 LATEST = max(number for number, _step in STEPS)

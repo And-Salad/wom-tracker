@@ -68,6 +68,13 @@ DEFAULTS = {
     "summaries_enabled": False,
     "summary_model": "claude-sonnet-5",
     "summary_effort": "low",
+    # The round-up's own model and effort, where it should differ from the
+    # notes'. Empty means "whatever the notes use", which is what every
+    # config written before these existed means. They are a harder job than a
+    # player note: a rule to follow, a computed winner to respect, and a month
+    # that must not be awarded - and the round-up is the half anybody reads.
+    "group_model": "",
+    "group_effort": "",
     # Chart colour overrides, {lowercase username: "#rrggbb"}. Anything not
     # listed falls back to the default palette by list position.
     "player_colors": {},
