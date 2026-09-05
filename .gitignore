@@ -19,7 +19,10 @@ data/
 __pycache__/
 *.py[cod]
 *.egg-info/
-.venv/
+# .venv* rather than .venv, because there is often more than one: the tests
+# run on the floor and on the shipped runtime, and checking the floor before
+# pushing means a second environment on the older interpreter.
+.venv*/
 venv/
 env/
 
