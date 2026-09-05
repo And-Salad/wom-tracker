@@ -1,0 +1,34 @@
+# What this is for is the actions, mostly.
+#
+# The Python and npm dependencies here are floors rather than pins, so they
+# move on their own every time CI installs them - the risk there is not going
+# stale, it is moving without anybody looking. The action versions are the
+# opposite: actions/checkout@v4 and the flyctl commit below it do not move at
+# all, so left alone they age quietly until something is deprecated mid-run.
+# That is the gap worth a robot.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    # Both workflows in one pull request. There are four actions across two
+    # files; separate PRs for each would be more review than the change.
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+
+  # jsdom, and whatever it brings with it. Now that the lockfile is committed
+  # a transitive change is a diff somebody can read, which is the whole point
+  # of having committed it - this is what surfaces one.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      js:
+        patterns: ["*"]
+    commit-message:
+      prefix: "test"

@@ -1,0 +1,5 @@
+# One maintainer, written down. This does not gate anything by itself - it
+# asks for a review on every pull request, which on a repository with one
+# person is a notification rather than a barrier. It matters the first time
+# somebody else opens one.
+* @And-Salad

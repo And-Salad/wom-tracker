@@ -23,6 +23,11 @@ on:
         required: false
         default: ""
 
+# Nothing here needs to write to the repository. The Fly token arrives as a
+# secret on the one step that uses it, and is not the token this governs.
+permissions:
+  contents: read
+
 # One deploy at a time, and never cancel one half way: there is a single
 # machine behind this, and two runs racing it would leave which image is live
 # down to whichever build finished last.
@@ -40,6 +45,10 @@ jobs:
   deploy:
     needs: checks
     runs-on: ubuntu-latest
+    # Generous, because it covers a remote image build as well as the waits
+    # below - but not the six hour default, which would hold the concurrency
+    # group above against every later deploy.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -55,11 +64,14 @@ jobs:
         env:
           DEPLOY_REASON: ${{ inputs.reason }}
 
-      # Pinned, not @master as Fly's own docs suggest: this repository pins
-      # its base image for the same reason, and an action that installs the
-      # tool doing the deploying is not the place to accept whatever landed
-      # on somebody else's default branch this morning.
-      - uses: superfly/flyctl-actions/setup-flyctl@1.6
+      # Pinned to a commit, not @master as Fly's own docs suggest and not to
+      # the 1.6 tag this used to name: a tag is a label the publisher can move
+      # later, so pinning to one pins nothing. This repository pins its base
+      # image for the same reason, and an action that installs the tool doing
+      # the deploying is not the place to accept whatever landed on somebody
+      # else's default branch this morning. The trailing comment says which
+      # tag the commit was, so the next person can see what moving it means.
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
       # --remote-only builds on Fly's own builder, so this runner needs no
       # Docker of its own and the image is built where it is deployed.
@@ -87,12 +99,24 @@ jobs:
       #
       # Every machine, not the first: there is one today, and a fleet where
       # only some had moved is exactly the state worth failing on.
+      #
+      # This does depend on flyctl's JSON shape, which the next step goes out
+      # of its way to avoid for the app name. There it had a choice - the name
+      # is committed in fly.toml - and here there is none: what a machine is
+      # actually running can only be had by asking. So the failure is made
+      # survivable instead of avoided, below.
       - name: Confirm the machines are running this commit
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           for attempt in $(seq 1 3); do
-            images=$(flyctl status --json | jq -r '.Machines[].config.image')
+            # Steps run under `bash -e`, and an assignment from a command
+            # substitution carries that command's exit status - so without the
+            # `|| true` a flyctl hiccup, or a jq that no longer finds that
+            # path, killed the step outright and the retries here never got
+            # their turn. With it, either one reads as "no machines reported",
+            # spends the attempts, and fails on a commit it could not confirm.
+            images=$(flyctl status --json | jq -r '.Machines[].config.image' || true)
             if [ -z "$images" ]; then
               echo "  attempt ${attempt}: no machines reported"
               sleep 5

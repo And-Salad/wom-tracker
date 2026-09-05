@@ -4,7 +4,15 @@
 requests>=2.31
 flask>=3.0
 waitress>=3.0
-tzdata>=2024.1 ; platform_system == "Windows"
+# Every platform, not just Windows. This used to carry a
+# `platform_system == "Windows"` marker, on the reasoning that Linux has a
+# system zone database - which is true of a desktop Linux and false of the
+# slim Debian this ships on. The marker did not remove the dependency, it
+# just moved it: the Dockerfile and the test workflow each installed tzdata
+# again by hand, so the same requirement was written in three places and
+# only one of them was this file. Without it every day boundary silently
+# falls back to UTC.
+tzdata>=2024.1
 
 # written summaries only (--summarize and the Summaries page)
 anthropic>=1.0
