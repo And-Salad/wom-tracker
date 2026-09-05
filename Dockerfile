@@ -4,7 +4,7 @@
 #
 # Pinned rather than floating: an unpinned tag means the runtime can change
 # under a test suite that never ran on it.
-FROM python:3.12.14-slim
+FROM python:3.14.7-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
