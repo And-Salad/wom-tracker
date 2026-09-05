@@ -1,0 +1,52 @@
+#!/bin/sh
+# Ruff, on what is about to be committed.
+#
+# CI is what enforces this - see .github/workflows/tests.yml, and main is
+# protected, so a lint failure genuinely blocks a merge now. That is the
+# reason for a hook rather than an argument against one: the loop it saves is
+# push, wait thirty seconds, read red, fix, push again, for something that is
+# answerable here in under a second.
+#
+# Not the test suite. That is forty seconds, which is more than a commit
+# should ever cost - a commit is meant to be cheap enough to make often. The
+# tests belong on push, or to CI.
+#
+# Install it with:
+#
+#     git config core.hooksPath .githooks
+#
+# Once per clone, because git will not enable a hook a repository ships - a
+# clone that ran committed code before you looked at it would be a way to
+# hand somebody a shell. Skip it for one commit with `git commit --no-verify`.
+
+# Only the Python that is staged, and only files that will still exist:
+# ACMR leaves out deletions, which have nothing left to lint.
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- '*.py')
+[ -z "$staged" ] && exit 0
+
+# The virtualenv first, because that is where this project's pinned ruff is
+# and it is not on PATH unless the environment was activated - which on
+# Windows PowerShell needs an execution policy most machines do not have.
+# Then PATH, then a module, for a clone that installed things differently.
+if   [ -x .venv/Scripts/ruff.exe ]; then ruff=".venv/Scripts/ruff.exe"
+elif [ -x .venv/bin/ruff ];        then ruff=".venv/bin/ruff"
+elif command -v ruff >/dev/null 2>&1; then ruff="ruff"
+elif command -v python >/dev/null 2>&1 && python -m ruff --version >/dev/null 2>&1; then
+  ruff="python -m ruff"
+else
+  # A warning rather than a refusal. The hook is a convenience and CI is the
+  # check; blocking a commit because a tool is missing would make a clone
+  # without ruff harder to work in than one with no hook at all.
+  echo "pre-commit: no ruff found, skipping the lint. CI will still run it."
+  echo "            pip install -r requirements-dev.txt"
+  exit 0
+fi
+
+# shellcheck disable=SC2086
+echo "$staged" | xargs $ruff check --force-exclude || {
+  echo
+  echo "pre-commit: ruff is unhappy. Fix it, or:"
+  echo "  $ruff check --fix <file>     let it fix what it can"
+  echo "  git commit --no-verify       commit anyway (CI will still fail)"
+  exit 1
+}

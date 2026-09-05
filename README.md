@@ -505,6 +505,37 @@ deploy workflow calls that same file rather than keeping a second copy of it -
 so the checks that guard a pull request are exactly the ones that gate a
 release.
 
+### Working on it
+
+A virtualenv, so this project's packages are not shared with every other one
+on the machine:
+
+```bash
+py -m venv .venv
+.venv/Scripts/pip install -r requirements-dev.txt    # Scripts/ on Windows, bin/ elsewhere
+```
+
+There is no need to activate it. `.venv/Scripts/pytest` and
+`.venv/Scripts/ruff` run the versions inside it whether or not the shell has
+been told about them - which is worth knowing on Windows, where activating
+means `Activate.ps1`, and running it means a PowerShell execution policy that
+a default install does not have.
+
+Ruff can also run on the way into a commit, on the files being committed:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Once per clone. Git will not enable a hook a repository ships until it is
+asked to - a clone that ran committed code before anybody read it would be a
+way to hand somebody a shell - so this is opt-in by design rather than an
+oversight. What it buys is the second it takes to find a lint error here
+instead of the thirty it takes to find it in CI, and `main` is protected, so
+that error does block a merge. It lints only staged Python, never the test
+suite - a commit should stay cheap enough to make often - and
+`git commit --no-verify` skips it.
+
 ## Layout
 
 ```
@@ -565,6 +596,7 @@ wom/
     maintenance.py   thinning old history
 tests/               a file per concern, each against its own data directory
   js/                the browser half, run by node against jsdom
+.githooks/           ruff before a commit, opt-in per clone (see Tests)
 .github/workflows/   the tests, on 3.10 and 3.12, the linter, and the deploy
 .github/             CODEOWNERS, dependabot and how to report a security bug
 docs/notes.md        longer background on why parts are shaped as they are
