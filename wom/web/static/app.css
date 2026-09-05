@@ -600,10 +600,22 @@
   .grid-days .day {
     height: 30px; border-radius: var(--radius-sm);
     background: var(--day, var(--raised));
+    /* The date sits in the middle and the winner's mark in the corner, so
+       the two are read as a square with a note on it rather than as two
+       characters competing for the middle. */
+    position: relative;
     display: flex; align-items: center; justify-content: center;
     font-size: 11px; color: var(--ink); cursor: default;
     /* The number has to stay readable on six different player colours. */
     text-shadow: 0 1px 2px rgba(0, 0, 0, .65);
+  }
+  /* Who took the day, said in something other than the colour. A reader who
+     cannot separate two players' colours - and every reader on a phone, where
+     there is no hover - has nothing else to go on otherwise. */
+  .grid-days .day .mark {
+    position: absolute; top: 1px; right: 2px;
+    font-size: 8px; line-height: 1; font-weight: 700; letter-spacing: .02em;
+    opacity: .9;
   }
   /* A hairline on the days that were won, so a player whose colour is dark -
      black is a colour someone picked - still reads as a filled square rather
@@ -629,6 +641,10 @@
     .months { gap: 18px; }
     .grid-days { grid-template-columns: repeat(7, 1fr); }
     .grid-days .day, .grid-days .pad { height: 34px; }
+    /* The squares are larger here, so the mark can be too - and this
+       is the width where it is doing the most work, there being no
+       hover on a phone to ask the square who won. */
+    .grid-days .day .mark { font-size: 9px; }
   }
 
   /* -- forms ---------------------------------------------------------- */

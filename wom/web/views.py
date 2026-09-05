@@ -18,7 +18,6 @@ from ..util import (
     parse_api_time,
     pretty_metric,
 )
-from .today import is_whole_group
 
 # A player's own notes cover every window, named the same way everywhere.
 SUMMARY_FOLDERS = (("day", "Daily"), ("week", "Weekly"), ("month", "Monthly"),
@@ -68,15 +67,13 @@ def group_verdicts(database, rows, board="maxing"):
         closes = (datetime.strptime(max(days), "%Y-%m-%d").replace(tzinfo=local)
                   + timedelta(days=1))
         for key, won in winners.daily_winners(database, players, opens, closes,
-                                              whole_group=True,
                                               board=board).items():
             found[("day", key)] = won["winner"]
     for key in months:
         start = datetime.strptime(key, "%Y-%m-%d").replace(tzinfo=local)
         end = (start + timedelta(days=32)).replace(day=1)
         found[("month", key)] = winners.month_winner(database, players, start,
-                                                     end, whole_group=True,
-                                                     board=board)
+                                                     end, board=board)
 
     out = {}
     for row in rows:
@@ -444,53 +441,110 @@ def metric_table(database, players, since, until, palette):
     return rows
 
 
+def player_marks(players):
+    """{username: a short letter for that account}, unique across the group.
+
+    The calendar says who took a day in one thing only - the colour of the
+    square - which leaves it unreadable to anyone who cannot separate two
+    players' colours, and unreadable to everybody on a phone, where there is
+    no hover to ask. So each square carries a letter as well.
+
+    The shortest prefix that is nobody else's, so it is one character in a
+    group whose names start differently and two where they do not, rather
+    than a first initial that quietly means two people.
+    """
+    names = sorted((p["display_name"] or p["username"]) for p in players)
+    marks = {}
+    for player in players:
+        name = player["display_name"] or player["username"]
+        others = [other for other in names if other != name]
+        size = 1
+        while size < len(name) and any(
+                other[:size].casefold() == name[:size].casefold()
+                for other in others):
+            size += 1
+        marks[player["username"]] = name[:size].upper()
+    return marks
+
+
 def winner_calendar(database, players, palette, when=None,
-                    board="maxing"):
+                    board="maxing", readings=None):
     """Two months of squares, each one the colour of who won that day.
 
     Last month beside this one, which is as much as fits side by side and as
     far back as anyone asks. Each month is headed in the colour of whoever
     took it, so the two answers - the day and the month - read together.
 
-    The round-up's own pick is honoured only when every tracked player is
-    included: it judged the whole group, and against three of six it is
-    answering a different question from the one on screen.
+    Nothing but the rule decides a square. A round-up names a winner of its
+    own and the calendar does not read it - see the note at the top of
+    wom/winners.py for why.
     """
 
-    # The same test the standings beside this make, from the same helper: two
-    # copies of it is two chances for the squares and the tally to answer
-    # different questions on one card.
-    whole_group = is_whole_group(database, players)
+    # Both boards and both months are the same walk over the same
+    # readings; only the scoring differs. One cache, passed in by the
+    # page so the second board costs nothing to render.
+    walk = readings if readings is not None else winners.Readings(
+        database, players)
     by_name = {p["username"]: p["display_name"] for p in players}
+    marks = player_marks(players)
 
     months = []
     for back in (1, 0):
         start, end = winners.month_range(when, back=back)
         won = winners.daily_winners(database, players, start, end, board=board,
-                                    whole_group=whole_group)
+                                    readings=walk)
         took = winners.month_winner(database, players, start, end, board=board,
-                                    whole_group=whole_group)
+                                    readings=walk)
         months.append({
             "label": start.strftime("%B %Y"),
             "color": palette.get(took, theme.MUTED),
             "winner": by_name.get(took),
             # Monday-first, so the columns line up with the weekly round-ups.
             "lead": start.weekday(),
-            "days": [_day_cell(day, won, by_name, palette, len(players))
+            "days": [_day_cell(day, won, by_name, palette, marks)
                      for day, _ in winners.days_in(start, end)],
         })
     # No legend: the sidebar beside this lists every player against the same
     # swatch, and each square names its winner on hover.
-    return {"months": months, "whole_group": whole_group, "rule": WINNER_RULE}
+    return {"months": months, "rule": winner_rule(board)}
 
 
-WINNER_RULE = (
-    "A day goes to whoever reached a 99 in it; two 99s beat one. Where nobody "
-    "reached one, it goes on experience counted only up to level 99 in each "
-    "skill - past that a skill stops levelling, so an account with everything "
-    "maxed does not take a day off people still climbing. Where somebody did "
-    "reach a 99, accounts level on 99s are separated by their raw experience "
-    "instead.\n\n"
+# How a day is decided, which is the only part the two boards disagree on.
+# Written per board because the calendar served Maxing's wording under both,
+# so the Grinding squares explained themselves by a rule Grinding does not
+# use - a 99 takes nothing there.
+_DAY_RULES = {
+    winners.MAXING: (
+        "A day goes to whoever reached a 99 in it; two 99s beat one. Where "
+        "nobody reached one, it goes on experience counted only up to level "
+        "99 in each skill - past that a skill stops levelling, so an account "
+        "with everything maxed does not take a day off people still climbing. "
+        "Where somebody did reach a 99, accounts level on 99s are separated "
+        "by their raw experience instead."
+    ),
+    winners.GRINDING: (
+        "A day goes to whoever gained the most experience in it. All of it, "
+        "with no cap at level 99 and no extra credit for reaching one - the "
+        "question here is only how much was done, which is why an account "
+        "with everything maxed can take a day on this board and can take "
+        "none on the other."
+    ),
+}
+
+# True of both, and worth saying on both. Everything else the tracker collects
+# - kills, log slots, clues, quests, diaries - is charted and fed and counts
+# for nothing here, so an evening at a boss an account is already maxed for
+# scores on neither board.
+_COUNTS = (
+    "Both boards are scored on experience and nothing else. Boss kills, "
+    "collection log slots, clues, quests and diaries are on the charts and "
+    "the Milestones feed; none of them takes a day."
+)
+
+# The rest is the same question on both: which days may be answered at all,
+# how a month is built out of them, and which readings a day is measured
+# between.
+_REST = (
     "A day is left blank unless the tracker actually looked at everyone that "
     "day, and every included account was on file through it. Wise Old Man "
     "records a reading when the hiscores move, so silence means \"played "
@@ -518,25 +572,39 @@ WINNER_RULE = (
 )
 
 
+def winner_rule(board=winners.MAXING):
+    """The whole rule for one board, as the paragraphs the tooltip shows."""
+    return "\n\n".join((_DAY_RULES.get(board, _DAY_RULES[winners.MAXING]),
+                            _COUNTS, _REST))
 
-def _day_cell(day, won, by_name, palette, included):
-    """One square: who took the day, or why it is blank."""
+
+
+def _day_cell(day, won, by_name, palette, marks):
+    """One square: who took the day, or why it is blank.
+
+    `label` is what the square is called - it is the only way the answer
+    reaches a reader who is not looking at the colour, so it names the date
+    and the winner in full rather than leaving both to the tooltip.
+    """
+    date = day.strftime("%d %b %Y")
     found = won.get(day.strftime("%Y-%m-%d"))
     ahead = day > datetime.now(day.tzinfo)
     if ahead:
-        return {"day": day.day, "date": day.strftime("%d %b %Y"), "winner": None,
-                "color": None, "ahead": True, "live": False, "note": "not yet"}
+        return {"day": day.day, "date": date, "winner": None, "mark": None,
+                "color": None, "ahead": True, "live": False, "note": "not yet",
+                "label": date + " - not yet"}
     if found is None or found["winner"] is None:
-        return {"day": day.day, "date": day.strftime("%d %b %Y"), "winner": None,
-                "color": None, "ahead": False, "live": False,
-                "note": (found or {}).get("reason") or "nothing recorded"}
+        note = (found or {}).get("reason") or "nothing recorded"
+        return {"day": day.day, "date": date, "winner": None, "mark": None,
+                "color": None, "ahead": False, "live": False, "note": note,
+                "label": date + " - " + note}
     name = by_name.get(found["winner"], found["winner"])
     if found["live"]:
         note = name + " - leading so far, the day is not over"
-    elif found["written"]:
-        note = name + " - named by the round-up"
     else:
-        note = name
-    return {"day": day.day, "date": day.strftime("%d %b %Y"), "winner": name,
+        note = name + " - took the day"
+    return {"day": day.day, "date": date, "winner": name,
+            "mark": marks.get(found["winner"]),
             "color": palette.get(found["winner"]), "ahead": False,
-            "live": found["live"], "note": note}
+            "live": found["live"], "note": note,
+            "label": date + " - " + note}

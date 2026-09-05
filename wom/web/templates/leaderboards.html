@@ -47,10 +47,17 @@
               <span class="dow">{{ name }}</span>
             {% endfor %}
             {% for _ in range(month.lead) %}<span class="pad"></span>{% endfor %}
+            {# role="img" with the whole answer as its name: the square is not
+               something to activate, and its colour is not something every
+               reader can use. The mark beside the date is the same answer
+               again for a reader who has no hover to ask with - a phone. #}
             {% for day in month.days %}
               <span class="day{{ ' won' if day.color }}{{ ' live' if day.live }}{{ ' ahead' if day.ahead }}"
                     {% if day.color %}style="--day: {{ day.color }}"{% endif %}
-                    title="{{ day.date }} - {{ day.note }}">{{ day.day }}</span>
+                    role="img" aria-label="{{ day.label }}"
+                    title="{{ day.date }} - {{ day.note }}"
+                    ><span class="num" aria-hidden="true">{{ day.day }}</span
+                    >{% if day.mark %}<span class="mark" aria-hidden="true">{{ day.mark }}</span>{% endif %}</span>
             {% endfor %}
           </div>
         </div>

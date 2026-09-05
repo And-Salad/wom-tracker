@@ -289,11 +289,6 @@ icons share a baseline inside their square. The square itself is
 `Math.min(ICON_PX, x.bandwidth())` - a continuous shrink as the columns
 narrow, not a step down through fixed sizes.
 
-(This paragraph used to describe a server-side pipeline: padding onto an
-`ICON_CANVAS_PX` canvas and resampling before saving. That was true when the
-charts were drawn with matplotlib. There is no image library on the server any
-more, and there was no constant by that name to point at.)
-
 If the icons are missing the charts fall back to text labels.
 
 ## Historic data
