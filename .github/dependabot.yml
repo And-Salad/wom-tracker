@@ -32,3 +32,20 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: "test"
+
+  # The base image in the Dockerfile, which is pinned to a patch release and
+  # so is the third thing here that cannot move on its own.
+  #
+  # Added after the Node pin taught the lesson the cheap way. `node-version`
+  # sat at 20 for four months past its end of life, because nothing was
+  # watching a number that never changed, and it surfaced as an unrelated
+  # dependency bump failing with an error naming neither Node nor a version.
+  # python:3.12.14-slim is the same shape of number and would age the same
+  # way. 3.12 itself is supported until October 2028; this is about the patch
+  # release, and about being told rather than remembering to look.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "build"
