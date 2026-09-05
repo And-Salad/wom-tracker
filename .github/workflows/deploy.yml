@@ -63,10 +63,57 @@ jobs:
 
       # --remote-only builds on Fly's own builder, so this runner needs no
       # Docker of its own and the image is built where it is deployed.
+      #
+      # Two different things carry the commit, for two different readers.
+      #
+      # --build-arg bakes it into the image so the running app can say what it
+      # is, which is what the admin page prints. --image-label puts it in the
+      # image's own tag, where Fly will report it back - so the next step can
+      # confirm the deploy landed without the commit having to be readable
+      # from outside. Fly's default label is deployment-<ULID>, which says
+      # when something was deployed and nothing about what.
       - name: Deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl deploy --remote-only
+        run: |
+          flyctl deploy --remote-only \
+            --image-label "${GITHUB_SHA}" \
+            --build-arg "GIT_SHA=${GITHUB_SHA}"
+
+      # "Deployed" is Fly's word for the machines having been told. This asks
+      # them what they are actually running, and fails if any of them is on
+      # anything but this commit - which is what catches a deploy that half
+      # landed, or one where the image never changed at all.
+      #
+      # Every machine, not the first: there is one today, and a fleet where
+      # only some had moved is exactly the state worth failing on.
+      - name: Confirm the machines are running this commit
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          for attempt in $(seq 1 3); do
+            images=$(flyctl status --json | jq -r '.Machines[].config.image')
+            if [ -z "$images" ]; then
+              echo "  attempt ${attempt}: no machines reported"
+              sleep 5
+              continue
+            fi
+            wrong=0
+            while read -r image; do
+              [ -z "$image" ] && continue
+              case "$image" in
+                *":${GITHUB_SHA}") echo "  running ${image}" ;;
+                *) echo "  NOT this commit: ${image}"; wrong=1 ;;
+              esac
+            done <<< "$images"
+            if [ "$wrong" = "0" ]; then
+              echo "every machine is on ${GITHUB_SHA}"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::the machines are not all running ${GITHUB_SHA}"
+          exit 1
 
       # flyctl calls a deploy done when the machine starts, which is not the
       # same as the app answering. A container that boots and then throws on

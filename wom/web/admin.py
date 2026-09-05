@@ -27,7 +27,7 @@ from flask import (
     url_for,
 )
 
-from .. import periods, scheduler
+from .. import build, periods, scheduler
 from .. import summaries as core
 from ..api import WomClient
 from ..colors import normalise, player_color, set_player_color
@@ -190,6 +190,7 @@ def settings():
         env_keys=ENV_KEYS, zones=COMMON_ZONES,
         job=current_app.config["JOBS"].status(),
         tripwire=tripwire.status() if tripwire else None,
+        build=build.info(),
         periods=[p.key for p in periods.PERIODS])
 
 

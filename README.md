@@ -65,6 +65,19 @@ one always-on machine with the update schedule inside it - a deploy restarts the
 tracker and interrupts whatever pass was mid-flight. The schedule catches the
 slot up afterwards, but the moment is worth choosing.
 
+The run confirms this for itself. "Deployed" is Fly's word for the machines
+having been told, so the workflow tags the image with the commit and then asks
+the machines what they are actually running - every one of them, since a fleet
+where only some had moved is the state worth failing on. Only then does it
+check the site answers.
+
+`/admin` says the same thing for a person: which commit is answering, and how
+long that process has been up. The commit says what code is running and the
+uptime says whether this is a process that started after the deploy or the one
+that was already there. It is baked into the image at build time; running from
+a clone it comes from git instead, and if neither can say, the page says so
+rather than showing a blank.
+
 It needs one secret, set once:
 
 ```bash
@@ -491,6 +504,7 @@ package.json         jsdom, for the browser tests
 wom/
   api.py             Wise Old Man client, rate limiting and retries
   config.py          settings file, with secrets overridable by environment
+  build.py           which commit is running, for confirming a deploy
   db.py              the name everything imports; wom/store is the code
   updater.py         one update pass over the username list
   scheduler.py       the ten-minute timer, the configured zone, the busy flag

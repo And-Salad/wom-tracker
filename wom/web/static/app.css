@@ -222,6 +222,13 @@
     text-transform: uppercase; letter-spacing: .04em;
   }
   .card p.hint { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+  /* The build line sits above the first card rather than inside one, so it
+     styles itself: `.card p.hint` above cannot reach it. */
+  p.hint.build {
+    margin: 0 0 var(--space-3); color: var(--muted);
+    font-size: var(--text-sm);
+  }
+  p.hint.build code { font-family: var(--font-mono); color: var(--ink); }
   .card-head {
     display: flex; align-items: flex-start; gap: var(--space-3);
     margin-bottom: var(--space-2);
