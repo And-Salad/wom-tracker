@@ -50,7 +50,7 @@ jobs:
     # group above against every later deploy.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # On the run's own summary page, so "why was this deployed" is
       # answerable six weeks later without anybody having to remember.
