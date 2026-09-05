@@ -113,6 +113,7 @@ def main(argv=None):
         # tree is checked clean above, so HEAD really is what is being built.
         sha = run(["git", "rev-parse", "HEAD"])
         subprocess.run([flyctl(), "deploy", "--now",
+                        "--image-label", sha,
                         "--build-arg", "GIT_SHA=" + sha],
                        cwd=HERE, check=True)
 
