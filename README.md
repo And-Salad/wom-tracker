@@ -522,6 +522,20 @@ been told about them - which is worth knowing on Windows, where activating
 means `Activate.ps1`, and running it means a PowerShell execution policy that
 a default install does not have.
 
+Build it on the version the Dockerfile ships, not on the floor. The point of
+a local environment is to behave like the one the code will actually run in,
+and the floor is covered by CI on every push. To check the floor before
+pushing anyway - worth doing if a change reaches for anything recent - put a
+second environment on it:
+
+```bash
+py -3.12 -m venv .venv-floor
+.venv-floor/Scripts/pip install -r requirements-dev.txt
+.venv-floor/Scripts/pytest -q
+```
+
+`.venv*` is ignored, so any number of these can sit side by side.
+
 Ruff can also run on the way into a commit, on the files being committed:
 
 ```bash
