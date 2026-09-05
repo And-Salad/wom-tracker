@@ -10,12 +10,13 @@ hash of its digest, and an unchanged digest is skipped rather than re-billed.
 """
 
 import hashlib
+import json
 import logging
 import os
 import re
 from datetime import datetime, timezone
 
-from . import periods, winners
+from . import gameplay, periods, winners
 from .config import data_dir
 from .icons import SKILL_ORDER
 from .scheduler import zone
@@ -84,6 +85,14 @@ coverage" line says what this period was actually measured from and to.
   else about their progress.
 - Otherwise say nothing about coverage. Only raise it when it changes how the
   numbers should be read.
+
+Some players' own game clients report what happened during a session - a quest
+finished, an achievement diary done, a combat task, a pet, which drop filled a
+collection log slot. Where a digest carries a "Reported" block, prefer
+those over the raw totals for what to actually write about: they are the things
+somebody would tell the group. They are opt-in per player, so an account with
+none of them was not silent, it was not reporting - never read an empty block
+as a quiet period, and never compare two players on how much of it they have.
 """
 
 
@@ -145,6 +154,14 @@ long gap has everything from that gap folded into their totals, and a player
 with no readings at all shows zeros that mean "not seen", not "did nothing".
 Never rank someone up or down on that without saying it is why, and never name
 a winner on a total that spans a longer stretch than everyone else's.
+
+Some players' own game clients report what happened during a session - a quest
+finished, an achievement diary done, a combat task, a pet, which drop filled a
+collection log slot. Where a digest carries a "Reported" block, prefer
+those over the raw totals for what to actually write about: they are the things
+somebody would tell the group. They are opt-in per player, so an account with
+none of them was not silent, it was not reporting - never read an empty block
+as a quiet period, and never compare two players on how much of it they have.
 """
 
 
@@ -179,6 +196,57 @@ def load_prompt(config=None, period=None, kind="player"):
             handle.write(DEFAULT_PROMPT if kind == "player" else GROUP_PROMPT)
     with open(path, encoding="utf-8") as handle:
         return handle.read().strip()
+
+
+# What a player's own client reported while they were playing. Wise Old Man's
+# milestones are 99s and thresholds - real, but a thin slice of an evening.
+# These are the things somebody would actually mention: a quest finished, a
+# diary done, a pet, which drop filled a collection log slot. They are stored
+# whole as they arrive and the Milestones page has always read them; the
+# round-up, the one thing whose job is writing about the period, was the last
+# thing that never saw them.
+#
+# Deaths are not among them, though they arrive on the same webhook and have
+# their own shelf in the Gallery. A round-up is about what somebody did, and a
+# recap that reaches for the deaths is writing about the thing they would
+# least like read back to them.
+REPORTED_KINDS = gameplay.FEED_KINDS
+
+REPORTED_LABELS = {"collection": "Collection log", "quest": "Quest",
+                   "diary": "Diary", "combat_task": "Combat task",
+                   "pet": "Pet"}
+
+# Said in both digests wherever the block appears at all. This is the one part
+# of a digest that is opt-in per player: it arrives only from accounts that
+# put the URL in a second box in Dink. An empty block therefore means "we were
+# not told", exactly as an empty coverage window means "not measured" - and a
+# model left to guess would read it as an account that did nothing worth
+# reporting, which is the opposite of true for whoever has not opted in.
+REPORTED_CAVEAT = ("(Reported events are opt-in per player. An account with"
+                   " none is one we were not told about, not one that did"
+                   " nothing.)")
+
+
+def _reported(database, player_ids, since, until, limit=40):
+    """[(display name, one line)] for what was reported during a window."""
+    if not player_ids:
+        return []
+    out = []
+    for row in database.feed_events(REPORTED_KINDS, player_ids=player_ids,
+                                    since=since, until=until, limit=limit):
+        try:
+            payload = json.loads(row["payload"] or "{}")
+        except ValueError:
+            payload = {}
+        label = REPORTED_LABELS.get(row["kind"], row["kind"])
+        detail = gameplay.detail(row["kind"], payload)
+        name = (row["subject"] or "").strip()
+        text = "{}: {}".format(label, name) if name else label
+        if detail:
+            text += " ({})".format(detail)
+        out.append((row["display_name"] or row["username"], text))
+    # Oldest first, so a list of an evening reads in the order it happened.
+    return list(reversed(out))
 
 
 # -- the digest -----------------------------------------------------------
@@ -245,6 +313,14 @@ def build_digest(database, config, player, window):
         for row in milestones:
             lines.append("  {} ({})".format(
                 row["name"], fmt_datetime(row["achieved_at"], "%d %b")))
+
+    reported = _reported(database, [player["id"]], since, until)
+    if reported:
+        lines.append("")
+        lines.append("Reported by their own client this period:")
+        for _who, text in reported:
+            lines.append("  " + text)
+        lines.append(REPORTED_CAVEAT)
 
     return "\n".join(lines)
 
@@ -387,6 +463,7 @@ def build_group_digest(database, config, players, window, board="maxing"):
     if window.period == "week":
         lines.extend(_week_context(database, players, window, board))
 
+    said = False
     for player in players:
         skills = database.metric_gains(player["id"], since, "skill", until=until)
         total_xp = sum(v for k, v in skills.items() if k != "overall")
@@ -424,6 +501,11 @@ def build_group_digest(database, config, players, window, board="maxing"):
                 fmt_int(clues), fmt_int(log_slots)))
         if milestones:
             lines.append("  Milestones: {}".format("; ".join(milestones[:6])))
+        reported = [text for _who, text
+                    in _reported(database, [player["id"]], since, until, limit=12)]
+        if reported:
+            lines.append("  Reported: {}".format("; ".join(reported)))
+            said = True
         if overall:
             lines.append("  Standing: total level {}, {} total XP".format(
                 fmt_int(overall["level"]), fmt_int(overall["value"])))
@@ -432,6 +514,11 @@ def build_group_digest(database, config, players, window, board="maxing"):
         for note in _coverage(database, player, window):
             lines.append("  " + note.replace("Data coverage: ", "Coverage: ").strip())
         lines.append("")
+
+    # Only where somebody reported something. Said against a roster where
+    # nobody has opted in, it explains an absence nothing on the page can see.
+    if said:
+        lines.append(REPORTED_CAVEAT)
 
     return "\n".join(lines).rstrip()
 
@@ -576,10 +663,26 @@ def _client(config):
     return anthropic.Anthropic()
 
 
-def estimate(config, system, digest):
+def setting(config, name, kind="player", fallback=None):
+    """A model or effort setting, which the round-up may have its own of.
+
+    One pair covered both kinds, and they are not the same job: a player note
+    is a paragraph of colour, where a round-up has to follow a stated rule,
+    respect a computed winner and handle a month it must not award. Left
+    unset the round-up uses whatever the notes use, which is what every
+    config written before this said.
+    """
+    if kind == "group":
+        chosen = (config.get("group_" + name) or "").strip()
+        if chosen:
+            return chosen
+    return (config.get("summary_" + name) or "").strip() or fallback
+
+
+def estimate(config, system, digest, kind="player"):
     """Token count and cost for a request, without sending it."""
     client = _client(config)
-    model = config.get("summary_model") or DEFAULT_MODEL
+    model = setting(config, "model", kind, DEFAULT_MODEL)
     counted = client.messages.count_tokens(
         model=model, system=system,
         messages=[{"role": "user", "content": digest}])
@@ -589,12 +692,12 @@ def estimate(config, system, digest):
     return counted.input_tokens, cost
 
 
-def generate(config, system, digest):
+def generate(config, system, digest, kind="player"):
     """Ask Claude for one summary. Returns (text, usage dict)."""
     import anthropic
     client = _client(config)
-    model = config.get("summary_model") or DEFAULT_MODEL
-    effort = config.get("summary_effort") or DEFAULT_EFFORT
+    model = setting(config, "model", kind, DEFAULT_MODEL)
+    effort = setting(config, "effort", kind, DEFAULT_EFFORT)
     try:
         response = client.messages.create(
             model=model,
@@ -640,7 +743,8 @@ def summarise_player(database, config, player, window, force=False):
 
     system = load_prompt(config, window.period)
     text, usage = generate(config, system, digest)
-    database.save_summary(player["id"], window, text, fingerprint, usage)
+    database.save_summary(player["id"], window, text, fingerprint, usage,
+                          digest=digest, prompt_hash=digest_hash(system))
     return text, "generated ({} in, {} out)".format(
         usage["input_tokens"], usage["output_tokens"])
 
@@ -740,10 +844,11 @@ def summarise_group(database, config, players, window, force=False,
         return existing["text"], "unchanged"
 
     system = load_prompt(config, window.period, kind="group")
-    text, usage = generate(config, system, digest)
+    text, usage = generate(config, system, digest, kind="group")
     winner, text = split_winner(text, players)
     database.save_group_summary(window, text, fingerprint, usage, winner=winner,
-                                board=board)
+                                board=board, digest=digest,
+                                prompt_hash=digest_hash(system))
     return text, "generated ({} in, {} out)".format(
         usage["input_tokens"], usage["output_tokens"])
 
