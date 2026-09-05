@@ -340,21 +340,26 @@ def test_an_interpreter_without_zoneinfo_is_refused_loudly():
     said = _io.StringIO()
     assert runtime.check((3, 8), said) is False
     message = said.getvalue()
-    assert "3.10 or newer" in message and "3.8" in message
+    assert "3.12 or newer" in message and "3.8" in message
     assert "zoneinfo" in message, "and says which missing piece is the reason"
 
 
-def test_the_floor_is_the_highest_of_the_reasons_for_one():
-    """zoneinfo wants 3.9 and the anthropic SDK wants 3.10, so it is 3.10.
+def test_the_floor_is_what_is_shipped_and_supported():
+    """3.12, which is the Dockerfile's version and the last one still patched.
 
-    It said 3.9 until CI tried to install requirements.txt on 3.9 and pip
-    refused - which is the sort of thing a check nobody runs cannot tell you.
+    This used to be 3.10, and used to be derived: zoneinfo wanted 3.9, the
+    anthropic SDK wanted 3.10, so the floor was the higher of the two. The
+    packages still ask only for 3.10 - the floor stopped being a fact about
+    them when 3.10 went out of security support on 31 October 2026, and is a
+    decision now. Which is why this test asserts the number rather than
+    recomputing it from anything.
     """
     from wom import runtime
-    assert runtime.MINIMUM == (3, 10)
-    assert runtime.check((3, 9)) is False, "anthropic will not install there"
-    assert runtime.check((3, 10)) is True
+    assert runtime.MINIMUM == (3, 12)
+    assert runtime.check((3, 10)) is False, "out of support, whatever pip allows"
+    assert runtime.check((3, 11)) is False
     assert runtime.check((3, 12)) is True
+    assert runtime.check((3, 14)) is True, "and does not cap the top end"
 
 
 def test_this_interpreter_passes_its_own_check():
