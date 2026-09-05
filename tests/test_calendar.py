@@ -77,7 +77,14 @@ def test_a_day_without_a_reading_is_a_quiet_day_not_an_unknown_one(app):
     assert "other" not in gains["2026-08-29"]["scores"], "tracked, and gained nothing"
 
 
-def test_the_round_up_overrules_the_figures_only_for_the_whole_group(app):
+def test_a_round_up_cannot_overrule_the_figures(app):
+    """A day is decided by the rule, and a written recap does not decide it.
+
+    The recap is a language model reading the same numbers. Letting it name
+    the winner meant the same day could be awarded differently depending on
+    whether one had been written for it yet - and a competition has to be
+    able to say why somebody won.
+    """
     from datetime import datetime, timezone
 
     from wom import periods, winners
@@ -85,18 +92,21 @@ def test_the_round_up_overrules_the_figures_only_for_the_whole_group(app):
     players = database.players()
     window = periods.latest_window("day", datetime(2026, 8, 31, 12,
                                                    tzinfo=timezone.utc))
-    database.save_group_summary(window, "A day.", "hash", winner="other")
     start, end = winners.month_range(
         datetime(2026, 8, 15, tzinfo=timezone.utc), back=0)
 
-    whole = winners.daily_winners(database, players, start, end, whole_group=True)
-    assert whole[window.key]["winner"] == "other"
-    assert whole[window.key]["written"] is True
+    # Whoever the rule gives the day to, before anything is written about it.
+    before = winners.daily_winners(database, players, start, end)[window.key]
+    assert before["winner"], "this day has to have a winner for the test to bite"
+    other = next(p["username"] for p in players
+                 if p["username"] != before["winner"])
 
-    # Narrowed to one account, the round-up is answering a different question.
-    one = [p for p in players if p["username"] == "zezima"]
-    narrowed = winners.daily_winners(database, one, start, end, whole_group=False)
-    assert narrowed[window.key]["winner"] == "zezima"
+    # A round-up for that day, naming somebody else.
+    database.save_group_summary(window, "A day.", "hash", winner=other)
+
+    after = winners.daily_winners(database, players, start, end)[window.key]
+    assert after["winner"] == before["winner"], (
+        "the square followed the prose instead of the rule")
 
 
 def test_the_calendar_names_a_winner_for_the_month_too(app, client):
@@ -128,8 +138,12 @@ def test_adding_a_player_does_not_blank_the_days_before_they_arrived(app):
 
 
 def test_the_standings_count_the_days_the_squares_colour(app):
-    """One card, one answer. The squares honour a written round-up over the
-    figures; the tally beside them was counting the figures regardless."""
+    """One card, one answer.
+
+    The two halves are built by different modules - the squares in views, the
+    tally in today - so it is worth asserting that they still agree about the
+    same day even now that both are pure arithmetic.
+    """
     from datetime import datetime, timezone
 
     from wom import periods
@@ -141,22 +155,28 @@ def test_the_standings_count_the_days_the_squares_colour(app):
     palette = {p["username"]: "#123456" for p in players}
     when = datetime(2026, 8, 31, 18, tzinfo=timezone.utc)
 
-    # The figures give the 30th to Other; the round-up for it says Zezima.
+    def card():
+        calendar = winner_calendar(database, players, palette, when)
+        august = calendar["months"][1]    # last month beside this one
+        square = [day for day in august["days"]
+                  if day["date"] == "30 Aug 2026"][0]
+        tally = {row["name"]: row["xp_wins"] + row["nine_wins"]
+                 for row in standings(database, players, palette, when)["rows"]}
+        return square["winner"], tally
+
+    square, tally = card()
+    assert square, "the 30th has to have a winner for this to be worth asserting"
+    assert tally.get(square, 0) >= 1, (
+        "the tally beside the squares credits whoever the squares coloured")
+
+    # And a round-up naming somebody else moves neither half of the card.
     window = periods.latest_window("day", datetime(2026, 8, 31, 12,
                                                    tzinfo=timezone.utc))
     assert window.key == "2026-08-30"
-    database.save_group_summary(window, "A day.", "hash", winner="zezima")
-
-    # The squares and the tally are built by different modules now, which is
-    # the whole reason to keep asserting they still agree.
-    calendar = winner_calendar(database, players, palette, when)
-    august = calendar["months"][1]        # last month beside this one
-    square = [day for day in august["days"] if day["date"] == "30 Aug 2026"][0]
-    credited = {row["name"]: row["xp_wins"] + row["nine_wins"]
-                for row in standings(database, players, palette, when)["rows"]}
-    assert square["winner"] == "Zezima", "the square went to the round-up's pick"
-    assert credited["Zezima"] >= 1, "and so must the tally beside it"
-    assert credited.get("Other", 0) == 0, "not to whoever the figures preferred"
+    someone_else = next(p["username"] for p in players
+                        if p["display_name"] != square)
+    database.save_group_summary(window, "A day.", "hash", winner=someone_else)
+    assert card() == (square, tally), "the prose moved the figures"
 
 
 def test_a_month_watched_for_less_than_a_fortnight_is_not_awarded(app):

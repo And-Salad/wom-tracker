@@ -69,6 +69,21 @@ paragraphs, in plain prose, addressed to the group rather than to the player.
 
 Do not use headings, bullet points, or emoji. Do not congratulate or cheerlead.
 Do not speculate about intentions beyond what the numbers support.
+
+The figures come from periodic snapshots, not continuous tracking, and a "Data
+coverage" line says what this period was actually measured from and to.
+
+- When the baseline sits before the period opened, the totals span that gap as
+  well. Say so, and describe the work as spread across the dark stretch rather
+  than done in a burst here - it was logged when the reading landed, not
+  necessarily earned in this period.
+- When the earliest reading falls well inside the period, whatever came before
+  it is missing. Say the figures are a partial view rather than a quiet spell.
+- When no pair of readings covers the period at all, do not report it as
+  inactivity. Say plainly that the account was not measured, and write nothing
+  else about their progress.
+- Otherwise say nothing about coverage. Only raise it when it changes how the
+  numbers should be read.
 """
 
 
@@ -86,19 +101,50 @@ You write a short group round-up for a handful of friends who track each
 other's Old School RuneScape accounts.
 
 You will be given every tracked player's figures for one period, side by side.
+
+Begin your reply with a single line naming the winner, exactly:
+
+    WINNER: <the account's display name, spelled as given>
+
+Copy the name from the digest's "Winner:" line exactly, or write
+"WINNER: nobody" wherever that line names nobody - whether because the period
+was empty or because too little of a month was watched for it to count. That
+line is read by the site, not by the group, so give it one name and nothing
+else. Then leave a blank line and write the paragraphs.
+
 Write exactly three short paragraphs, in plain prose, addressed to the group.
 
-- Open by naming a winner for the period and saying plainly why they won.
-  Choose on the numbers, and say what you judged on - most XP is the obvious
-  measure, but a huge boss haul or a real milestone can outweigh it. If it was
-  close, say it was close and name the runner-up.
+- Open with the winner the digest names and say plainly why they won by the
+  competition's rule. The digest's "Competition:" line states that rule, and
+  it is not the same on both boards - do not describe one board's rule while
+  reporting the other's standings. Do not judge it yourself and do not name a
+  different winner: the standings in the digest are the answer, and the site
+  colours a calendar by them. If it was close, say so and name the runner-up.
+  Where the digest says the month is not awarded, open by saying so and why -
+  too few of its days were watched with everyone on file - and crown nobody.
+  The standings still stand as a record of who did the most work; they are
+  just not a title.
 - Then pick out what is actually notable: a standout skill or boss, someone who
   changed what they were doing, anyone who went quiet.
+- Give the standings as a list, in the digest's order. It is the competition's
+  rule that decides the order, not raw experience. Where that rule counts
+  experience only up to level 99, an account that spent the period past 99 in
+  everything can place low on a big number - say so where it happens rather
+  than leaving it looking like an error.
 - Close with a comparison or two that puts the numbers in perspective - who is
   pulling ahead, who is gaining on whom, how the group did overall.
 
 Do not use headings, bullet points, or emoji. Do not congratulate or cheerlead,
-and do not hand out consolation prizes. If nobody did much, say so.
+and do not hand out consolation prizes. If nobody did much, say so. Try to
+add in dry humor or ways to get a little laugh without swinging for the
+fences.
+
+Coverage is not the same for every player: each one's "Coverage" line says what
+their figures were actually measured from and to. A player measured across a
+long gap has everything from that gap folded into their totals, and a player
+with no readings at all shows zeros that mean "not seen", not "did nothing".
+Never rank someone up or down on that without saying it is why, and never name
+a winner on a total that spans a longer stretch than everyone else's.
 """
 
 
@@ -214,7 +260,7 @@ def _week_context(database, players, window, board):
 
     lines = ["", "Days of this week, and who took each:"]
     won = winners.daily_winners(database, players, window.start, window.end,
-                                whole_group=True, board=board)
+                                board=board)
     names = {p["username"]: p["display_name"] for p in players}
     tally = {}
     for day in sorted(won):
@@ -249,7 +295,22 @@ def _week_context(database, players, window, board):
     return lines
 
 
-def _ranking_lines(ranked):
+# How the order was arrived at, said once per board. This used to be three
+# lines of Maxing spelled out here whatever board was asking, so a Grinding
+# digest opened by naming Grinding as the competition and then explained its
+# own standings by a rule that has no cap and no 99 in it. Two contradictory
+# statements of the rule in one digest, and the model got to pick.
+STANDINGS_RULE = {
+    "maxing": ["Standings by the Maxing rule - a ninety-nine takes a day, then",
+               "two beat one; failing that, experience counted only up to level",
+               "99 in each skill, since past that a skill stops levelling."],
+    "grinding": ["Standings by the Grinding rule - total experience gained, all",
+                 "of it, with no cap at level 99 and no credit for reaching",
+                 "one."],
+}
+
+
+def _ranking_lines(ranked, board="maxing"):
     """The order the group's own rule puts them in, for the digest.
 
     Worked out here rather than left to the model, so the round-up and the
@@ -258,9 +319,7 @@ def _ranking_lines(ranked):
 
     averaged = ranked and ranked[0]["points"] is not None
     voided = bool(ranked and ranked[0].get("voided"))
-    lines = ["Standings by the group's rule - a ninety-nine takes a day, then two",
-             "beat one; failing that, experience counted only up to level 99 in",
-             "each skill, since past that a skill stops levelling."]
+    lines = list(STANDINGS_RULE.get(board, STANDINGS_RULE["maxing"]))
     if voided:
         lines.append("This month is not awarded: only {} of its days were watched"
                      .format(ranked[0].get("days")))
@@ -324,7 +383,7 @@ def build_group_digest(database, config, players, window, board="maxing"):
              "Period: {} ({})".format(window.label, _period_noun(window.period)),
              "Players compared: {}".format(len(players)), ""]
     lines.extend(_ranking_lines(winners.ranking(database, players, window,
-                                                board=board)))
+                                                board=board), board))
     if window.period == "week":
         lines.extend(_week_context(database, players, window, board))
 

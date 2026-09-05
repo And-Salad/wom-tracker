@@ -108,3 +108,31 @@ def test_efficient_hours_keep_their_decimal(app):
                                   "ehp": 500.5, "ehb": 20.4})
     row = views.player_rows(database, database.players(), {"zezima": "#fff"})[0]
     assert row["ehp"] == "500.5" and row["ehb"] == "20.4"
+
+
+def test_a_digest_states_its_own_board_rule_and_not_the_other_ones(db, player):
+    """One digest, one rule.
+
+    The standings header spelled Maxing out whatever board was asking, so a
+    Grinding digest named Grinding as the competition at the top and then
+    explained its own order by a cap it does not have. Two contradictory
+    statements of the rule in one prompt, and the model got to choose.
+    """
+    from wom import periods, summaries
+    from wom.config import Config
+
+    window = periods.latest_window("day")
+    config = Config()
+    players = [player]
+
+    maxing = summaries.build_group_digest(db, config, players, window, "maxing")
+    grinding = summaries.build_group_digest(db, config, players, window,
+                                            "grinding")
+
+    assert "Standings by the Maxing rule" in maxing
+    assert "Standings by the Grinding rule" in grinding
+    assert "Standings by the Maxing rule" not in grinding, (
+        "the grinding digest explains itself by the other board's rule")
+    # And the cap is the whole difference, so it must not be claimed here.
+    assert "no cap at level 99" in grinding
+    assert "only up to level" in maxing
