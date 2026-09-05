@@ -1,3 +1,18 @@
+# Nothing here is ignored, and that is the policy rather than an omission.
+#
+# There was an ignore, briefly, holding the base image to patch releases so
+# that the shipped runtime, the floor in wom/runtime.py and the machine this
+# is developed on stayed one version. That tidiness is worth less than
+# staying current: a held-back version is a number nobody is watching, and
+# this repository already learned what those cost. node-version sat at 20
+# for four months past its end of life and surfaced as an unrelated jsdom
+# bump failing with an error naming neither Node nor a version.
+#
+# So bumps get taken. When one is red, the first question is whether our
+# environment is too old rather than whether the dependency is bad - which
+# is what that Node failure turned out to be. An ignore needs a reason
+# written next to it.
+#
 # What this is for is the actions, mostly.
 #
 # The Python and npm dependencies here are floors rather than pins, so they
@@ -49,19 +64,3 @@ updates:
       interval: monthly
     commit-message:
       prefix: "build"
-    # Patch releases only, which is what this was opened for: the security
-    # fixes that land in python:3.12.x without the shipped runtime becoming a
-    # different one.
-    #
-    # The first thing it proposed was 3.12.14 -> 3.14.7, which is not that. A
-    # minor bump moves what the image runs away from the floor wom/runtime.py
-    # enforces and away from the interpreter this is developed on - three
-    # numbers that were deliberately made one, and the whole reason the floor
-    # was raised to 3.12 rather than somewhere else. Moving it is a decision
-    # to take on purpose, in a change that moves all three, rather than a
-    # dependency bump to wave through on a Monday.
-    ignore:
-      - dependency-name: "python"
-        update-types:
-          - "version-update:semver-major"
-          - "version-update:semver-minor"

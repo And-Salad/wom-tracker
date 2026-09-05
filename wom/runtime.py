@@ -22,10 +22,12 @@ longer patched". Worth naming, because a floor that looks like a technical
 fact goes unquestioned - and this one wants revisiting each time a version
 ages out rather than being inherited.
 
-3.12 rather than 3.11 because 3.12 is what the Dockerfile ships. The floor,
-the image and the machine this is developed on are one version now, which
-closes the gap where something works in two of the three. 3.12 is supported
-until October 2028.
+3.12 rather than 3.11 because 3.12 is the oldest release still receiving
+security fixes, and rather than 3.14 because a floor is the oldest thing
+somebody cloning this should have to install, not the newest. The Dockerfile
+ships something newer - the container is ours, so it gets the longer support
+window - and CI runs the suite on both ends. 3.12 is supported until October
+2028.
 
 The check itself stays for the reason it always existed: below the floor the
 failures are quiet ones. Without zoneinfo, US Eastern keeps working off the

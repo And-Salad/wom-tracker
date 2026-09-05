@@ -497,7 +497,8 @@ Node 22 or newer, which `engines` in `package.json` states and the
 be discovered as a stack trace inside a dependency. CI runs 24.
 
 Four jobs run on every push and pull request - see
-`.github/workflows/tests.yml`. The suite on 3.12 and 3.14, the browser tests,
+`.github/workflows/tests.yml`. The suite on 3.12 and 3.14 - the floor and
+the shipped runtime - the browser tests,
 `ruff check .` as the linter (configured in `pyproject.toml`), and a build of
 the Dockerfile, so an image that cannot be produced fails on the pull request
 rather than in the middle of a deploy. All four are required to merge, and the
@@ -615,10 +616,12 @@ what the tables and the column names still call it.
 `tzdata` (no slim Linux image carries an IANA time zone database, and neither
 does Windows) and `anthropic` for the recaps.
 
-3.12 because that is what the Docker image ships and what the tests run on.
-The packages themselves ask for less - `anthropic` and `requests` want 3.10,
+3.12 because it is the oldest release still receiving security fixes. The
+packages themselves ask for less - `anthropic` and `requests` want 3.10,
 `flask` and `waitress` 3.9 - so this is a support decision rather than a
-technical floor: 3.10 stopped getting security fixes on 31 October 2026. It
+technical floor: 3.10 stopped getting fixes on 31 October 2026. The Docker
+image ships 3.14, which is newer on purpose: a floor is the oldest thing a
+clone should need, and the container is ours. The tests run on both. It
 cannot live in `requirements.txt` - pip is a Python program, so the
 interpreter is already chosen by the time that file is read - so the entry
 points check it themselves and say so, in `wom/runtime.py`.

@@ -3,8 +3,16 @@
 # The charts are drawn in the browser, so nothing here needs a display.
 #
 # Pinned rather than floating: an unpinned tag means the runtime can change
-# under a test suite that never ran on it.
-FROM python:3.12.14-slim
+# under a test suite that never ran on it. Pinned is not the same as held
+# back though - dependabot watches this line, and its bumps get taken. The
+# test suite runs on this version as well as on the floor, which is what
+# makes taking them safe rather than hopeful.
+#
+# Newer than the floor wom/runtime.py enforces, deliberately. The floor is
+# the oldest interpreter someone cloning this should need; this is the
+# newest one, because the container is ours and gets the longer support
+# window. CI runs the suite on both ends.
+FROM python:3.14.7-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
