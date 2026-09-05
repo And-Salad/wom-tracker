@@ -49,3 +49,19 @@ updates:
       interval: monthly
     commit-message:
       prefix: "build"
+    # Patch releases only, which is what this was opened for: the security
+    # fixes that land in python:3.12.x without the shipped runtime becoming a
+    # different one.
+    #
+    # The first thing it proposed was 3.12.14 -> 3.14.7, which is not that. A
+    # minor bump moves what the image runs away from the floor wom/runtime.py
+    # enforces and away from the interpreter this is developed on - three
+    # numbers that were deliberately made one, and the whole reason the floor
+    # was raised to 3.12 rather than somewhere else. Moving it is a decision
+    # to take on purpose, in a change that moves all three, rather than a
+    # dependency bump to wave through on a Monday.
+    ignore:
+      - dependency-name: "python"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
