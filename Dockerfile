@@ -18,12 +18,13 @@ WORKDIR /app
 # which they had. The floors live in requirements.txt, which the tests run
 # against; the base image above is what is actually pinned.
 #
-# tzdata is asked for on top of that list because requirements.txt marks it
-# Windows-only, and this image needs it just as much: a slim Debian carries no
-# system zone database, and without one every day boundary silently falls back
-# to UTC.
+# tzdata used to be named again on the end of this line, because that file
+# marked it Windows-only while a slim Debian needs it just as much - no system
+# zone database, and every day boundary silently falls back to UTC without
+# one. It is unmarked there now, so this is one list again in fact and not
+# only in the comment.
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt "tzdata>=2024.1"
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY wom/ ./wom/
 COPY assets/ ./assets/

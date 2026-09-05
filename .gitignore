@@ -49,7 +49,10 @@ backups/
 .coverage
 .pytest_cache/
 
-# The browser tests' one dependency (jsdom). package.json is committed; what
-# npm unpacks from it is not.
+# The browser tests' one dependency (jsdom). What npm unpacks is not
+# committed; the lockfile is. package.json alone only names a range, so
+# `npm install` resolved it afresh on every CI run - the suite was never
+# twice the same, nothing arriving in a transitive dependency was ever
+# reviewed, and setup-node had no file to key its cache on. The same argument
+# that pins the base image in the Dockerfile applies here.
 node_modules/
-package-lock.json

@@ -187,6 +187,24 @@ def test_an_unpushed_commit_is_counted_not_refused(tmp_path, monkeypatch):
     assert ahead == 1
 
 
+def test_a_branch_deploy_has_to_be_asked_for(tmp_path, monkeypatch):
+    """It used to print a note, which is something you read afterwards.
+
+    A branch deploy is a real thing to want - it is how a fix gets tried on
+    the live machine - but it leaves the site on a commit main does not have.
+    """
+    git = _repo(tmp_path)
+    git("checkout", "-q", "-b", "a-fix")
+    monkeypatch.setattr(deploy, "HERE", str(tmp_path))
+
+    with pytest.raises(deploy.Stop) as stopped:
+        deploy.check_git()
+    assert "--off-main" in str(stopped.value)
+
+    branch, _ahead = deploy.check_git(off_main=True)
+    assert branch == "a-fix"
+
+
 def test_a_missing_flyctl_says_so_rather_than_failing_obscurely(monkeypatch):
     monkeypatch.setattr(deploy.shutil, "which", lambda _name: None)
     monkeypatch.setattr(deploy.os.path, "exists", lambda _path: False)
@@ -199,7 +217,7 @@ def test_a_failing_check_stops_before_anything_is_deployed(tmp_path,
                                                            monkeypatch, capsys):
     """The whole point of the script: the deploy is downstream of the checks."""
     monkeypatch.setattr(deploy, "check_git",
-                        lambda: (_ for _ in ()).throw(deploy.Stop("no")))
+                        lambda *_a: (_ for _ in ()).throw(deploy.Stop("no")))
     deployed = []
     monkeypatch.setattr(deploy.subprocess, "run",
                         lambda *a, **k: deployed.append(a))
@@ -209,7 +227,7 @@ def test_a_failing_check_stops_before_anything_is_deployed(tmp_path,
 
 
 def test_a_dry_run_checks_and_stops(tmp_path, monkeypatch):
-    monkeypatch.setattr(deploy, "check_git", lambda: ("main", 0))
+    monkeypatch.setattr(deploy, "check_git", lambda *_a: ("main", 0))
     monkeypatch.setattr(deploy, "run", lambda *a, **k: "abc1234 a commit")
     deployed = []
     monkeypatch.setattr(deploy.subprocess, "run",

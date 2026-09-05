@@ -1,5 +1,7 @@
 # WOM Tracker
 
+[![tests](https://github.com/And-Salad/wom-tracker/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/And-Salad/wom-tracker/actions/workflows/tests.yml)
+
 A web app that keeps a list of Old School RuneScape accounts updated from Wise
 Old Man every ten minutes, charts what changed, runs a daily maxing
 leaderboard, and writes short recaps of it with the Claude API. One process
@@ -87,7 +89,11 @@ gh secret set FLY_API_TOKEN                # paste it at the prompt
 
 `deploy.py` still works and is still the way to deploy when GitHub is not
 answering. It refuses a dirty tree, runs the tests, deploys, then pushes;
-`--dry-run` checks without deploying.
+`--dry-run` checks without deploying. It builds from the working directory,
+which the workflow does not, so prefer the button when there is a choice. The
+two flags that weaken it have to be typed: `--skip-tests`, and `--off-main`
+for deploying a branch, which leaves the site on a commit `main` does not
+have.
 
 ### Maintenance jobs
 
@@ -478,15 +484,22 @@ The deploy workflow runs them before it deploys, and so does `deploy.py`.
 The browser half has its own, because it needs a different runtime:
 
 ```bash
-npm install
+npm ci
 npm test
 ```
 
-Both, on 3.10 and 3.12, run on every push and pull request - see
-`.github/workflows/tests.yml`. `ruff check .` is the linter, configured in
-`pyproject.toml`. The deploy workflow calls that same file rather than
-keeping a second copy of it, so the checks that guard a pull request are
-exactly the ones that gate a release.
+`npm ci` rather than `npm install`: the lockfile is committed, so what the
+tests run against is the same set of packages CI resolves and not whatever
+the version range happens to mean today.
+
+Four jobs run on every push and pull request - see
+`.github/workflows/tests.yml`. The suite on 3.10 and 3.12, the browser tests,
+`ruff check .` as the linter (configured in `pyproject.toml`), and a build of
+the Dockerfile, so an image that cannot be produced fails on the pull request
+rather than in the middle of a deploy. All four are required to merge, and the
+deploy workflow calls that same file rather than keeping a second copy of it -
+so the checks that guard a pull request are exactly the ones that gate a
+release.
 
 ## Layout
 
@@ -549,6 +562,7 @@ wom/
 tests/               a file per concern, each against its own data directory
   js/                the browser half, run by node against jsdom
 .github/workflows/   the tests, on 3.10 and 3.12, the linter, and the deploy
+.github/             CODEOWNERS, dependabot and how to report a security bug
 docs/notes.md        longer background on why parts are shaped as they are
 data/                settings, database, prompts and logs (created on first run)
 ```

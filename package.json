@@ -3,7 +3,7 @@
   "private": true,
   "description": "Tests for the browser half of WOM Tracker. The app itself is Python; this exists only so the 2300 lines of JavaScript it serves are not the one part nothing checks.",
   "scripts": {
-    "test": "node --test tests/js/"
+    "test": "cd tests/js && node --test"
   },
   "devDependencies": {
     "jsdom": "^25.0.1"
