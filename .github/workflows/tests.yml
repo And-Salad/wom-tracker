@@ -1,13 +1,17 @@
 # The suite, on the interpreters this actually runs on.
 #
-# 3.12 is the floor wom/runtime.py enforces and what the Dockerfile ships -
-# one version now, where it used to be two. 3.14 is the newest release, and
-# it is here because pytest is configured to turn DeprecationWarning into an
-# error: a future Python deprecating something under us fails a run here
-# rather than on the day the floor moves again.
+# The floor and the shipped runtime, which is what this pair has always been.
+# 3.12 is what wom/runtime.py enforces - the oldest interpreter a clone should
+# need - and 3.14 is what the Dockerfile ships, because the container is ours
+# and may as well have the longer support window.
 #
-# The pair used to be 3.10 and 3.12, the floor and the shipped runtime. 3.10
-# went out of security support on 31 October 2026 and the floor followed it.
+# They were both 3.12 for about an hour, when the floor was raised and the
+# base image had not moved yet. Testing the two ends is the arrangement worth
+# keeping: it is also what stops a deprecation in a newer Python arriving as
+# a surprise, since pytest here turns DeprecationWarning into an error.
+#
+# The pair used to be 3.10 and 3.12. 3.10 went out of security support on 31
+# October 2026 and the floor followed it up.
 name: tests
 
 on:
