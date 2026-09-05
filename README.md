@@ -497,7 +497,7 @@ Node 22 or newer, which `engines` in `package.json` states and the
 be discovered as a stack trace inside a dependency. CI runs 24.
 
 Four jobs run on every push and pull request - see
-`.github/workflows/tests.yml`. The suite on 3.10 and 3.12, the browser tests,
+`.github/workflows/tests.yml`. The suite on 3.12 and 3.14, the browser tests,
 `ruff check .` as the linter (configured in `pyproject.toml`), and a build of
 the Dockerfile, so an image that cannot be produced fails on the pull request
 rather than in the middle of a deploy. All four are required to merge, and the
@@ -597,7 +597,7 @@ wom/
 tests/               a file per concern, each against its own data directory
   js/                the browser half, run by node against jsdom
 .githooks/           ruff before a commit, opt-in per clone (see Tests)
-.github/workflows/   the tests, on 3.10 and 3.12, the linter, and the deploy
+.github/workflows/   the tests, on 3.12 and 3.14, the linter, and the deploy
 .github/             CODEOWNERS, dependabot and how to report a security bug
 docs/notes.md        longer background on why parts are shaped as they are
 data/                settings, database, prompts and logs (created on first run)
@@ -611,14 +611,17 @@ what the tables and the column names still call it.
 
 ## Requirements
 
-**Python 3.10 or newer**, with `requests`, `flask` and `waitress`, plus
-`tzdata` (Windows has no IANA time zone database of its own) and `anthropic`
-for the recaps.
+**Python 3.12 or newer**, with `requests`, `flask` and `waitress`, plus
+`tzdata` (no slim Linux image carries an IANA time zone database, and neither
+does Windows) and `anthropic` for the recaps.
 
-Two things set the floor. `zoneinfo` needs 3.9, and the `anthropic` SDK needs
-3.10 - so 3.10 it is. It cannot live in `requirements.txt` - pip is a
-Python program, so the interpreter is already chosen by the time that file is
-read - so the entry points check it themselves and say so, in `wom/runtime.py`.
+3.12 because that is what the Docker image ships and what the tests run on.
+The packages themselves ask for less - `anthropic` and `requests` want 3.10,
+`flask` and `waitress` 3.9 - so this is a support decision rather than a
+technical floor: 3.10 stopped getting security fixes on 31 October 2026. It
+cannot live in `requirements.txt` - pip is a Python program, so the
+interpreter is already chosen by the time that file is read - so the entry
+points check it themselves and say so, in `wom/runtime.py`.
 Without that check the failure is quiet: `zoneinfo` is imported inside a
 try/except so a missing time zone *database* degrades rather than crashes, and
 on too old an interpreter that same path turns every zone but US Eastern into
