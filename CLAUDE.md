@@ -35,11 +35,17 @@ and `.venv-floor` is the interpreter floor (3.12) that `wom/runtime.py`
 enforces. Build against `.venv`; reach for the floor only when a change uses
 something recent. CI runs both.
 
-The browser tests are `npm test` (Node 22+, from `tests/js/`). Check that node
-is actually on PATH before trying - a populated `node_modules/` is not evidence
-that it is, since the install may have happened on another machine or under a
-version manager that is not loaded. If node is missing, leave those tests to
-CI rather than spending the session installing one.
+The browser tests are `npm test` (Node 22+, from `tests/js/`).
+
+`node: command not found` does not mean node is absent. A winget install puts
+it under `%LOCALAPPDATA%\Microsoft\WinGet\Packages\` rather than
+`C:\Program Files\nodejs\`, and adds that directory to the *persisted* user
+PATH - which a shell started before the install never sees. Check
+`winget list --id OpenJS.NodeJS.LTS` and the output of
+`[Environment]::GetEnvironmentVariable('PATH','User')` before concluding
+anything, and restart the shell rather than installing a second copy. A search
+of the filesystem is the wrong instrument here: that path is seven levels deep,
+so a depth-limited sweep comes back empty and looks like proof.
 
 The dev server is `py web_app.py`, or the `wom` entry in `.claude/launch.json`
 via the preview tools. Never run it with Bash.
