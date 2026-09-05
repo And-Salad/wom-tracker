@@ -492,6 +492,10 @@ npm test
 tests run against is the same set of packages CI resolves and not whatever
 the version range happens to mean today.
 
+Node 22 or newer, which `engines` in `package.json` states and the
+`engine-strict` in `.npmrc` enforces at install time rather than leaving to
+be discovered as a stack trace inside a dependency. CI runs 24.
+
 Four jobs run on every push and pull request - see
 `.github/workflows/tests.yml`. The suite on 3.10 and 3.12, the browser tests,
 `ruff check .` as the linter (configured in `pyproject.toml`), and a build of

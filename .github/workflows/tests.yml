@@ -73,8 +73,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          # Needs the lockfile below to have something to key on.
+          # 24, which is the LTS supported into 2028. This said 20 from the
+          # commit that first added these tests until long after 20 went end
+          # of life in April 2026 - a pin nobody revisited, which is the usual
+          # way a version becomes a decision without ever having been one.
+          #
+          # It surfaced as a dependency bump failing: jsdom 30 asks for
+          # ^22.22.2 || ^24.15.0 || >=26, so on 20 it loaded an undici that
+          # the runtime had no markAsUncloneable for, and the error named
+          # neither jsdom nor Node. See the engines field in package.json,
+          # which is there so the next one says so plainly.
+          node-version: "24"
+          # Needs the lockfile to have something to key on.
           cache: npm
       # ci, not install: install resolves the range in package.json afresh on
       # every run, so the suite was never twice the same and nothing that
