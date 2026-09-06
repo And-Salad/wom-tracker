@@ -237,6 +237,18 @@ FEED_CATEGORIES = (
 # estimate with a width, and sometimes no estimate at all.
 EXACT, APPROXIMATE, UNKNOWN = "exact", "approximate", "unknown"
 
+# How many rows a load is, first and every time after. Generous on purpose:
+# the kind filter above the table runs in the browser over what has been
+# loaded, so a page that ends before your first pet does makes the filter
+# look broken. A hundred also covers this group's entire recorded history
+# today, which means nothing changes on screen until Dink volume arrives.
+PAGE = 100
+
+# What one request may ask for however it asks. Twenty loads is far past what
+# anyone scrolls, and the ceiling is what stops a hand-written limit from
+# asking for the whole table.
+MAX_ROWS = PAGE * 20
+
 # Wise Old Man's accuracy is the gap between those two snapshots, in
 # milliseconds. Wider than a day is not a date, it is a fortnight wearing a
 # day's name - most of ours are, and the widest is over four years.
@@ -303,7 +315,7 @@ def _feed_row(source, category, at, player, color, name, detail="",
 
 
 def milestone_feed(database, selected, palette, since=None, until=None,
-                   limit=300):
+                   limit=PAGE):
     """The achievements feed, newest first.
 
     Two sources. Wise Old Man's milestones, which every account has, and what
@@ -311,19 +323,24 @@ def milestone_feed(database, selected, palette, since=None, until=None,
     reader should not have to care which is which, so they are merged and
     sorted together - but each row says what it is, so they can be filtered.
 
-    Returns the rows and whether there were more than fit. Reading a whole
-    limit from each source and then cutting the merge to one limit threw away
-    up to half of what it read without saying so, and a player with Dink
-    running can bury every milestone in the group that way.
+    Returns the rows, how many there are in all, and whether that is more
+    than these. Reading a whole limit from each source and cutting the merge
+    to one limit used to throw away up to half of what it read without saying
+    so, and a player with Dink running can bury every milestone that way.
+
+    More is loaded by asking for a longer list, not for the next page. The
+    two sources have different tie-breakers and different id spaces, and
+    Wise Old Man stamps everything it found between two snapshots with one
+    instant - up to eight rows deep here - so a cursor would have to be
+    exactly right about ties to avoid dropping or repeating rows inside a
+    cluster. Re-reading rows the browser already has costs a few hundred
+    rows of query at these sizes and removes that whole class of bug.
     """
 
     ids = [p["id"] for p in selected]
     feed = []
-    # One more than we will show, from each side, so the merge can tell that
-    # it cut something without counting the whole table to find out.
-    reach = limit + 1
     for row in database.achievements(player_ids=ids, since=since, until=until,
-                                     limit=reach):
+                                     limit=limit):
         precision = _precision(row["achieved_at"], row["accuracy"])
         feed.append(_feed_row(
             "wom", "milestone", row["achieved_at"], row["display_name"],
@@ -333,7 +350,7 @@ def milestone_feed(database, selected, palette, since=None, until=None,
         ))
 
     for row in database.feed_events(gameplay.FEED_KINDS, player_ids=ids,
-                                    since=since, until=until, limit=reach):
+                                    since=since, until=until, limit=limit):
         feed.append(_feed_row(
             "dink", row["kind"], row["happened_at"],
             row["display_name"] or row["username"],
@@ -346,7 +363,15 @@ def milestone_feed(database, selected, palette, since=None, until=None,
     # a milestone with no date is not news, and putting it on top would push
     # what actually happened today off the screen.
     feed.sort(key=lambda row: row["at"] or "", reverse=True)
-    return {"rows": feed[:limit], "truncated": len(feed) > limit}
+
+    # The top of the merge is inside the top of each source, so a limit from
+    # each is enough to fill a page of that limit however the two are mixed.
+    rows = feed[:limit]
+    total = (database.count_achievements(player_ids=ids, since=since,
+                                         until=until)
+             + database.count_feed_events(gameplay.FEED_KINDS, player_ids=ids,
+                                          since=since, until=until))
+    return {"rows": rows, "total": total, "truncated": total > len(rows)}
 
 
 def _payload(text):

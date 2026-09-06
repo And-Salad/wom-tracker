@@ -9,6 +9,7 @@
   var body = document.getElementById("feed");
   var count = document.getElementById("count");
   var types = document.getElementById("types");
+  var more = document.getElementById("more");
   if (!body || !window.Sidebar) { return; }
 
   /* Which kinds are showing. Absent from the set means hidden, so a kind the
@@ -82,8 +83,14 @@
     return tr;
   }
 
-  function refill(feed, truncated) {
+  function refill(feed, truncated, total) {
     cut = !!truncated;
+    if (total !== undefined) { held = total; }
+    // A load that asked for more and got no more has hit the ceiling the
+    // server puts on one request. There is no further to go, so the button
+    // has to stop offering to go there.
+    stalled = cut && loaded > 0 && feed.length <= loaded;
+    loaded = feed.length;
     body.textContent = "";
     if (!feed.length) {
       var empty = el("tr");
@@ -97,22 +104,57 @@
       body.appendChild(frag);
     }
     say(applyFilter(), feed.length);
+    offerMore();
   }
 
-  /* Whether the server had more rows than it sent. Kept beside the feed
-     rather than recomputed, because only the server can know it. */
+  /* What the server said about the list this page is a slice of. Only it
+     can know how many there are; the browser knows what it was sent. */
   var cut = count.hasAttribute("data-truncated");
+  var held = parseInt(count.getAttribute("data-total"), 10) || 0;
+  var loaded = body.rows.length;
+  var stalled = false;
+
+  /* How long a list to ask for next. Load more asks for the whole feed one
+     page longer rather than for the next page: the two sources tie heavily
+     on date - Wise Old Man stamps a whole snapshot gap with one instant -
+     and a cursor through ties that dense is where rows go missing. The
+     server sends the size it is using, so this is only the opening guess. */
+  var PAGE = 100;
+  var asked = PAGE;
+
+  function offerMore() {
+    if (!more) { return; }
+    more.textContent = "";
+    if (!cut) { return; }
+    if (stalled) {
+      more.appendChild(el("p", "hint",
+        "That is as much as one request will carry. Narrow the window to "
+        + "see the rest."));
+      return;
+    }
+    var left = held - loaded;
+    var button = el("button", "load-more",
+                    left > 0 ? "Load more (" + left + " left)" : "Load more");
+    button.type = "button";
+    button.addEventListener("click", function () {
+      button.disabled = true;
+      button.textContent = "Loading...";
+      asked = loaded + PAGE;
+      load(latest);
+    });
+    more.appendChild(button);
+  }
 
   function say(shown, total) {
     var text = shown + (shown === 1 ? " milestone" : " milestones");
     if (total !== undefined && total !== shown) {
       text += " of " + total;
     }
-    text += ", newest first. A ~ marks a date Wise Old Man knows only roughly.";
-    if (cut) {
-      text += " More happened than fit - narrow the window to see the rest.";
-    }
-    count.textContent = text;
+    // No advice about narrowing the window here, unlike the sentence the
+    // server rendered: with script there is a button under the table, and
+    // the button is where the rest of the list is.
+    count.textContent =
+      text + ", newest first. A ~ marks a date Wise Old Man knows only roughly.";
   }
 
   if (types) {
@@ -141,16 +183,45 @@
   }
 
   var seq = 0;
+  var latest = "";
 
-  window.Sidebar.onChange(function (query) {
+  function load(query) {
     var mine = ++seq;
-    fetch("/api/milestones?" + query)
+    fetch("/api/milestones?" + query + "&limit=" + asked)
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (mine !== seq) { return; }      // an older reply, now out of date
+        if (data.page) { PAGE = data.page; }
         window.Sidebar.showWindow(data.span);
-        refill(data.feed || [], data.truncated);
+        refill(data.feed || [], data.truncated, data.total);
       })
-      .catch(function () { /* the feed on screen is still true */ });
+      .catch(function () {
+        // The feed on screen is still true. Only the button lied about being
+        // busy, so put it back the way it was rather than leaving it there
+        // saying Loading at somebody whose connection dropped.
+        if (mine === seq) { offerMore(); }
+      });
+  }
+
+  window.Sidebar.onChange(function (query) {
+    // A different window or a different set of players is a different list,
+    // so it opens at one page again rather than at however far the last one
+    // had been loaded.
+    if (query !== latest) {
+      // A different list, not a longer one: it opens at one page again, and
+      // it has not stalled just because it is shorter than the last one.
+      asked = PAGE;
+      loaded = 0;
+      stalled = false;
+    }
+    latest = query;
+    load(query);
   });
+
+  // The sentence the server rendered tells a reader with no script to narrow
+  // the window instead. There is script, so say it with a button.
+  if (cut) {
+    say(applyFilter(), loaded);
+    offerMore();
+  }
 })();

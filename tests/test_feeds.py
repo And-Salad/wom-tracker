@@ -112,6 +112,51 @@ def test_every_row_says_which_source_it_came_from(client, app):
     assert {row["source"] for row in feed} == {"wom", "dink"}
 
 
+def _many(database, count):
+    from wom import gameplay
+    for n in range(count):
+        gameplay.store(database, "zezima", "quest",
+                       "2026-08-{:02d}T12:00:00.000000Z".format(n % 28 + 1),
+                       {"type": "QUEST", "extra": {"questName": "Quest {}".format(n)}})
+
+
+def test_a_length_nobody_asked_for_is_a_page(client, app):
+    from wom.web import views
+    seed(app)
+    data = client.get("/api/milestones?period=Year").get_json()
+    assert data["page"] == views.PAGE
+
+
+def test_the_asked_for_length_is_clamped_at_both_ends(client, app):
+    """It arrives in a URL, so it is a number anyone can write. Below a page
+    there is nothing to gain, and above the ceiling is the whole table."""
+    from wom.web import views
+    database = seed(app)
+    _many(database, 3)
+
+    def asked(query):
+        return client.get("/api/milestones?period=Year&" + query).get_json()
+
+    assert asked("limit=1")["truncated"] is False, "a page still covers three"
+    for bad in ("limit=0", "limit=-5", "limit=nonsense", "limit="):
+        assert len(asked(bad)["feed"]) == 3, bad
+    # Nothing here reaches the ceiling; what matters is that asking past it
+    # is answered rather than refused, and answered with a real page.
+    assert len(asked("limit={}".format(views.MAX_ROWS * 100))["feed"]) == 3
+
+
+def test_load_more_returns_the_same_rows_with_more_on_the_end(client, app):
+    """The button asks for a longer list, so the longer list has to open the
+    same way or a reader watches rows they have read scroll past again."""
+    database = seed(app)
+    _many(database, 6)
+    short = client.get("/api/milestones?period=Year&limit=1").get_json()
+    long_ = client.get("/api/milestones?period=Year&limit=200").get_json()
+    assert short["total"] == long_["total"] == 6
+    names = [row["name"] for row in long_["feed"]]
+    assert [row["name"] for row in short["feed"]] == names[:len(short["feed"])]
+
+
 def _shot(app, kind="pet", caption="Ikkle hydra", extra=b"clickable"):
     from wom import gallery
     return gallery.store(app.config["DATABASE"], "zezima", kind,

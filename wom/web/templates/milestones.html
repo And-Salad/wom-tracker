@@ -6,10 +6,14 @@
 {% block content %}
   <div class="card">
     <h3>Milestones</h3>
-    <p class="hint" id="count"{% if feed.truncated %} data-truncated{% endif %}>
+    {# The total is on the element rather than only in the sentence: the
+       Load more button is added by script, and it needs to know how many are
+       still behind it without parsing the line back out again. #}
+    <p class="hint" id="count" data-total="{{ feed.total }}"
+       {%- if feed.truncated %} data-truncated{% endif %}>
       {{ feed.rows | length }} milestone{{ '' if feed.rows | length == 1 else 's' }},
       newest first. A ~ marks a date Wise Old Man knows only roughly.{% if feed.truncated %}
-      More happened than fit - narrow the window to see the rest.{% endif %}
+      {{ feed.total }} in all - narrow the window to see the rest.{% endif %}
     </p>
     {# Every kind is on by default. Unticking is the only way to lose a row,
        so a reader who ignores this sees everything. #}
@@ -47,6 +51,10 @@
         </tbody>
       </table>
     </div>
+    {# Empty until script fills it: a button that loads more is a button that
+       does nothing without script, and the sentence above already tells a
+       reader without it how to see the rest. #}
+    <div class="row more" id="more"></div>
   </div>
 {% endblock %}
 

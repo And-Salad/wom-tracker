@@ -561,11 +561,41 @@ Only a collection log row resolves an icon on the Dink side, from
 track, and a pet arrives as a name with nothing to map it to, so those leave
 the column empty rather than guess.
 
-The merge reads one more row than it will show from each source, so it can say
-that it cut something without counting the whole table to find out. It used to
-read a full limit from each and cut the merge to one limit, discarding up to
-half of what it read in silence - a player with Dink running could bury every
-milestone in the group that way.
+### Loading more
+
+A page is a hundred rows, first load and every load after. Generous on purpose:
+the kind filter runs in the browser over what has been loaded, so a page that
+ends before your first pet does makes the filter look broken. A hundred also
+covers this group's whole recorded history today, which means nothing changed
+on screen when this went in - the machinery is there for when Dink volume
+arrives, which is the half of the feed with no ceiling on it. Wise Old Man's
+half has one: the threshold catalogue is finite per player, it grows about
+four or five a month across six players, and it gets harder as it goes.
+
+**Load more asks for a longer list, not for the next page.** A cursor would be
+the usual answer and is the wrong one here. Wise Old Man stamps everything it
+found between two snapshots with a single instant - eight rows deep in the
+live data - so ties are the ordinary case, and the two sources tie-break
+differently and have different id spaces. A cursor would have to be exactly
+right about all of that or it would drop or repeat rows inside a cluster,
+which is the one failure a reader cannot see happening. Asking for the whole
+list one page longer re-reads rows the browser already has; at a few hundred
+rows that costs nothing and cannot go wrong.
+
+So the endpoint takes a length rather than an offset, clamped at both ends
+because it arrives in a URL anyone can edit: never less than a page, never
+more than `MAX_ROWS`. At that ceiling the answer stops growing, and the button
+notices it asked for more and got none - it says so rather than sitting there
+offering a click that does nothing.
+
+The count of what exists comes from a `COUNT(*)` through the same WHERE the
+rows came through, built once in each store and used by both. Written out
+twice they drift, and a total counted through a different filter is a wrong
+number rather than a rough one.
+
+A reader with no script gets the sentence the server rendered, telling them to
+narrow the window; the button is added by script and replaces that advice,
+because rendering a button that cannot work is worse than not rendering one.
 
 Levels are not written through. Our level total lives in the `level` column of
 the `overall` row, beside overall experience in `value`, and a level reported
