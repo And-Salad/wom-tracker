@@ -60,6 +60,15 @@ prompt each time. It is deliberately read-only: nothing in it installs,
 deploys, commits or pushes, and `data/` is denied outright because that is
 where the API keys live. Widen it only for commands with the same property.
 
+**Check you are not behind `origin/main` before planning a change.** This
+checkout is not always current - work has been planned, written and tested
+here against a base eighteen commits old, and the first anyone knew of it was
+a README paragraph attached to a section that had been deleted upstream. The
+`SessionStart` hook in `.claude/settings.json` fetches and says so, but it
+only speaks up when it is behind, so silence is the answer you want rather
+than the absence of one. `git rev-list --count HEAD..origin/main` asks
+directly.
+
 ## Conventions that are decisions, not accidents
 
 **`str.format()`, not f-strings.** Used throughout, roughly 170 call sites, and
