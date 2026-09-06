@@ -71,6 +71,11 @@ paragraphs, in plain prose, addressed to the group rather than to the player.
 Do not use headings, bullet points, or emoji. Do not congratulate or cheerlead.
 Do not speculate about intentions beyond what the numbers support.
 
+Write only conclusions you have already checked, and never correct yourself on
+the page: no "wait", no "actually", no claim revised halfway through. Work the
+comparison out first, and if the figures do not support it, write a different
+sentence.
+
 The figures come from periodic snapshots, not continuous tracking, and a "Data
 coverage" line says what this period was actually measured from and to.
 
@@ -93,6 +98,14 @@ those over the raw totals for what to actually write about: they are the things
 somebody would tell the group. They are opt-in per player, so an account with
 none of them was not silent, it was not reporting - never read an empty block
 as a quiet period, and never compare two players on how much of it they have.
+
+A reported event says all it knows about itself. Where a collection log entry
+names its source, that is what dropped it; where it names none, the item is
+all you have, and the item alone is what you write. Never take the source from
+somewhere else in the block - the boss they killed most that day, the tasks
+they were doing - and never say what dropped something because it sounds like
+it should have. A log slot beside a night at Alchemical Hydra was a medium
+clue, and the recap that put the two together made a drop up.
 """
 
 
@@ -157,6 +170,14 @@ and do not hand out consolation prizes. If nobody did much, say so. Try to
 add in dry humor or ways to get a little laugh without swinging for the
 fences.
 
+Write only conclusions you have already checked. Work out whether a comparison
+is true before you start the sentence, and if the figures do not support it,
+write a different sentence. Never correct yourself on the page: no "wait", no
+"actually", no revising a claim halfway through. A round-up that argues with
+itself in front of the group is worse than one that says less. Each account's
+standings line carries two figures - what counts toward the cap and the total -
+so read the one you mean before saying who out-gained whom.
+
 Coverage is not the same for every player: each one's "Coverage" line says what
 their figures were actually measured from and to. A player measured across a
 long gap has everything from that gap folded into their totals, and a player
@@ -171,6 +192,14 @@ those over the raw totals for what to actually write about: they are the things
 somebody would tell the group. They are opt-in per player, so an account with
 none of them was not silent, it was not reporting - never read an empty block
 as a quiet period, and never compare two players on how much of it they have.
+
+A reported event says all it knows about itself. Where a collection log entry
+names its source, that is what dropped it; where it names none, the item is
+all you have, and the item alone is what you write. Never take the source from
+somewhere else in the block - the boss they killed most that day, the tasks
+they were doing - and never say what dropped something because it sounds like
+it should have. A log slot beside a night at Alchemical Hydra was a medium
+clue, and the recap that put the two together made a drop up.
 """
 
 

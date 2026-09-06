@@ -126,13 +126,35 @@ def detail(kind, payload):
     if kind == "diary":
         total = extra.get("total")
         return "{} diaries done".format(_plain(total)) if total else ""
-    pairs = {"collection": ("completedEntries", "totalEntries"),
-             "quest": ("completedQuests", "totalQuests")}.get(kind)
-    if pairs:
-        done, total = extra.get(pairs[0]), extra.get(pairs[1])
+    if kind == "collection":
+        return _slot(extra)
+    if kind == "quest":
+        done, total = extra.get("completedQuests"), extra.get("totalQuests")
         if done and total:
             return "{} of {}".format(_plain(done), _plain(total))
     return ""
+
+
+def _slot(extra):
+    """What a collection log entry says beside the item's name.
+
+    The source belongs here. Dink knows what dropped the thing - it is the
+    "Source" field on the notification - and without it a recap has an item
+    and a list of the evening's bosses and no way to tell that the two are
+    unrelated. One that read "Orange boater" beside a night of Alchemical
+    Hydra reported a Hydra drop; it was a medium clue.
+
+    Not everything has one: a Forestry shop item or an event reward arrives
+    with no source at all, so this says what it knows and no more.
+    """
+    parts = []
+    where = str(extra.get("dropperName") or "").strip()
+    if where:
+        parts.append("from {}".format(where))
+    done, total = extra.get("completedEntries"), extra.get("totalEntries")
+    if done and total:
+        parts.append("{} of {}".format(_plain(done), _plain(total)))
+    return ", ".join(parts)
 
 
 def _plain(value):
