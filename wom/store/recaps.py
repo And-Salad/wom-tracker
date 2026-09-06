@@ -6,24 +6,27 @@ from .core import _utcnow
 class RecapStore:
     """The written notes and round-ups, and the runs that produce them."""
 
-    def save_summary(self, player_id, window, text, digest_hash, usage=None):
+    def save_summary(self, player_id, window, text, digest_hash, usage=None,
+                     digest=None, prompt_hash=None):
         usage = usage or {}
         conn = self.connect()
         with conn:
             conn.execute(
                 "INSERT INTO summaries (player_id, period, window_key, period_start,"
-                " period_end, label, text, digest_hash, model, input_tokens,"
-                " output_tokens, generated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+                " period_end, label, text, digest_hash, digest, prompt_hash, model,"
+                " input_tokens, output_tokens, generated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT(player_id, period, window_key) DO UPDATE SET"
                 "   period_start=excluded.period_start, period_end=excluded.period_end,"
                 "   label=excluded.label, text=excluded.text,"
-                "   digest_hash=excluded.digest_hash, model=excluded.model,"
+                "   digest_hash=excluded.digest_hash, digest=excluded.digest,"
+                "   prompt_hash=excluded.prompt_hash, model=excluded.model,"
                 "   input_tokens=excluded.input_tokens,"
                 "   output_tokens=excluded.output_tokens,"
                 "   generated_at=excluded.generated_at",
                 (player_id, window.period, window.key, window.start_iso(),
-                 window.end_iso(), window.label, text, digest_hash,
-                 usage.get("model"), usage.get("input_tokens"),
+                 window.end_iso(), window.label, text, digest_hash, digest,
+                 prompt_hash, usage.get("model"), usage.get("input_tokens"),
                  usage.get("output_tokens"), _utcnow()))
 
     def summary(self, player_id, period, window_key=None):
@@ -53,26 +56,30 @@ class RecapStore:
         return self.query(sql, params)
 
     def save_group_summary(self, window, text, digest_hash, usage=None,
-                           winner=None, board="maxing"):
+                           winner=None, board="maxing", digest=None,
+                           prompt_hash=None):
         usage = usage or {}
         conn = self.connect()
         with conn:
             conn.execute(
                 "INSERT INTO group_summaries (board, period, window_key,"
-                " period_start, period_end, label, text, digest_hash, model,"
-                " input_tokens, output_tokens, generated_at, winner)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " period_start, period_end, label, text, digest_hash, digest,"
+                " prompt_hash, model, input_tokens, output_tokens,"
+                " generated_at, winner)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT(board, period, window_key) DO UPDATE SET"
                 "   period_start=excluded.period_start, period_end=excluded.period_end,"
                 "   label=excluded.label, text=excluded.text,"
-                "   digest_hash=excluded.digest_hash, model=excluded.model,"
+                "   digest_hash=excluded.digest_hash, digest=excluded.digest,"
+                "   prompt_hash=excluded.prompt_hash, model=excluded.model,"
                 "   input_tokens=excluded.input_tokens,"
                 "   output_tokens=excluded.output_tokens,"
                 "   generated_at=excluded.generated_at,"
                 "   winner=excluded.winner",
                 (board, window.period, window.key, window.start_iso(),
                  window.end_iso(),
-                 window.label, text, digest_hash, usage.get("model"),
+                 window.label, text, digest_hash, digest, prompt_hash,
+                 usage.get("model"),
                  usage.get("input_tokens"), usage.get("output_tokens"),
                  _utcnow(), winner))
 

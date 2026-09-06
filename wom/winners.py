@@ -1,14 +1,20 @@
 """Who won each day, and each month.
 
-Two answers to the same question, and they do not always agree. The written
-round-up names a winner on judgement - a boss haul or a real milestone can
-outweigh raw experience, and it says so in the prose. The figures name one on
-experience gained, which is the measure the standings chart already sorts on.
+One answer, and it is arithmetic. A day goes to whoever the rule says it goes
+to, measured from the readings, and nothing else may overrule that.
 
-The round-up's answer is better where it exists, and it exists for one day in
-thirty: they are written one a day going forward, so a calendar driven by them
-alone would be blank for the two months it is meant to show. So the figures
-fill the grid and a round-up overrules them where one has been written.
+A written round-up used to. It names a winner too - on judgement, where a boss
+haul or a real milestone can outweigh raw experience - and where one had been
+written the square took its word. That put a language model on the deciding
+path of a scoreboard: the same day could be awarded differently depending on
+whether a recap had been written for it yet, and on what the model made of the
+figures that morning. A competition has to be able to say why somebody won,
+and "the recap said so" is not a rule anybody can play to.
+
+So the round-ups comment and the figures decide. A recap still names its own
+winner in its prose, and where that differs from the square the difference is
+the interesting part - which is the reason the chips on the Recaps tab quote
+the calendar rather than themselves.
 
 Days run midnight to midnight in the configured time zone - the setting the
 admin page writes, read here through scheduler.zone() - which is the same
@@ -84,6 +90,57 @@ BOARD_LABELS = {MAXING: "Maxing", GRINDING: "Grinding"}
 # competed over, and the winner it names is really a winner of those days.
 # Two weeks is where a month starts reading as a month rather than a sample.
 MIN_MONTH_DAYS = 14
+
+
+class Readings:
+    """One walk over the readings, shared by everything that judges the days.
+
+    Every question this module answers bottoms out in `skill_states`, which
+    runs three queries per player and carries a running state across every
+    reading in the span. Nothing about that walk depends on which board is
+    asking - a board changes how a day is scored, not what was read - so the
+    same walk was being repeated across a page that only ever wanted it once.
+
+    On the Leaderboards page that was eight times over: two months, each asked
+    both for its days (daily_winners) and for its month (month_winner, by way
+    of _scored_days), and the whole of that again for the second board. Pass
+    one of these through and every answer comes from the first walk.
+
+    Request-lived, and deliberately not a global: it holds what the database
+    said at the moment it was asked, and an update pass lands every ten
+    minutes in the same process.
+    """
+
+    def __init__(self, database, players):
+        self.db = database
+        self.players = players
+        self._states = {}
+        self._days = {}
+        self._polled = {}
+
+    def states(self, player_id, since, until):
+        key = (player_id, since, until)
+        if key not in self._states:
+            self._states[key] = skill_states(self.db, player_id, since, until)
+        return self._states[key]
+
+    def days(self, start, end):
+        key = (_stamp(start), _stamp(end))
+        if key not in self._days:
+            self._days[key] = gains_by_day(self.db, self.players, start, end,
+                                           readings=self)
+        return self._days[key]
+
+    def polled(self, start, end):
+        key = (_stamp(start), _stamp(end))
+        if key not in self._polled:
+            self._polled[key] = polled_days(self.db, self.players, start, end)
+        return self._polled[key]
+
+
+def _readings(database, players, readings):
+    """The cache passed in, or a fresh one for this call alone."""
+    return readings if readings is not None else Readings(database, players)
 
 
 def skill_states(database, player_id, since, until):
@@ -396,8 +453,9 @@ def polled_days(database, players, start, end):
     return days
 
 
-def gains_by_day(database, players, start, end):
+def gains_by_day(database, players, start, end, readings=None):
     """{date: {"scores": {username: measure}, "measured": [], "short": []}}."""
+    walk = _readings(database, players, readings)
     boundaries = [day for day, _ in days_in(start, end)] + [end]
     # A reading before the window is what its first day is measured from.
     lookback = _stamp(start - timedelta(days=60))
@@ -409,7 +467,7 @@ def gains_by_day(database, players, start, end):
             "scores": {}, "measured": [], "short": []}
 
     for player in players:
-        states = skill_states(database, player["id"], lookback, closes)
+        states = walk.states(player["id"], lookback, closes)
         if not states:
             continue
         for position, found in enumerate(_player_days(states, boundaries)):
@@ -433,9 +491,9 @@ def _best(scores, board=MAXING):
     return winner[0] if moved(winner[1], board) else None
 
 
-def daily_winners(database, players, start, end, whole_group=False, when=None,
-                  board=MAXING):
-    """{date: {"winner", "reason", "measured", "of", "written"}} for a range.
+def daily_winners(database, players, start, end, when=None,
+                  board=MAXING, readings=None):
+    """{date: {"winner", "reason", "measured", "of"}} for a range.
 
     A day is only answered once every included account was being tracked
     through it. Before that the question has no honest answer: an account
@@ -448,10 +506,9 @@ def daily_winners(database, players, start, end, whole_group=False, when=None,
     own accord as the history fills in. Days nobody gained anything on are
     blank too: nothing happened, and a colour would say something did.
     """
-    days = gains_by_day(database, players, start, end)
-    polled = polled_days(database, players, start, end)
-    known = {p["username"] for p in players}
-    written = _written_winners(database, "day", board) if whole_group else {}
+    walk = _readings(database, players, readings)
+    days = walk.days(start, end)
+    polled = walk.polled(start, end)
     of = len(players)
     running = today_key(when)
     out = {}
@@ -461,7 +518,7 @@ def daily_winners(database, players, start, end, whole_group=False, when=None,
         # hours from over, and the last poll of it has not happened.
         live = day == running
         entry = {"winner": None, "measured": measured, "of": of,
-                 "written": False, "reason": None, "live": live}
+                 "reason": None, "live": live}
         if measured < of:
             entry["reason"] = "{} of {} accounts were being tracked".format(
                 measured, of)
@@ -471,10 +528,7 @@ def daily_winners(database, players, start, end, whole_group=False, when=None,
             entry["reason"] = "the tracker was not watching that day"
             out[day] = entry
             continue
-        named = written.get(day)
-        entry["winner"] = (named if named in known
-                           else _best(found["scores"], board))
-        entry["written"] = entry["winner"] is not None and named in known
+        entry["winner"] = _best(found["scores"], board)
         if entry["winner"] is None:
             entry["reason"] = "nobody gained anything"
         out[day] = entry
@@ -493,7 +547,8 @@ def placings(found, of, board=MAXING):
     return {username: of - place for place, (username, _) in enumerate(ranked)}
 
 
-def month_points(database, players, start, end, minimum=0, board=MAXING):
+def month_points(database, players, start, end, minimum=0, board=MAXING,
+                 readings=None):
     """{username: average daily points} over the days the whole group was on.
 
     A month is the average of its days rather than one measurement across the
@@ -504,21 +559,23 @@ def month_points(database, players, start, end, minimum=0, board=MAXING):
     `minimum` is how many of those days there have to be before the answer
     means anything; below it there is no answer, not a provisional one.
     """
-    points, counted = _scored_days(database, players, start, end, board)
+    points, counted = _scored_days(database, players, start, end, board,
+                                   readings)
     if counted < max(1, minimum):
         return {}
     return {username: total / counted for username, total in points.items()}
 
 
-def counted_days(database, players, start, end, board=MAXING):
+def counted_days(database, players, start, end, board=MAXING, readings=None):
     """How many days of a span the whole group was watched through."""
-    return _scored_days(database, players, start, end, board)[1]
+    return _scored_days(database, players, start, end, board, readings)[1]
 
 
-def _scored_days(database, players, start, end, board=MAXING):
+def _scored_days(database, players, start, end, board=MAXING, readings=None):
     """({username: total points}, how many days those came from)."""
-    days = gains_by_day(database, players, start, end)
-    polled = polled_days(database, players, start, end)
+    walk = _readings(database, players, readings)
+    days = walk.days(start, end)
+    polled = walk.polled(start, end)
     of = len(players)
     running = today_key()
     points = {p["username"]: 0.0 for p in players}
@@ -534,48 +591,34 @@ def _scored_days(database, players, start, end, board=MAXING):
     return points, counted
 
 
-def month_winner(database, players, start, end, whole_group=False,
-                 board=MAXING):
+def month_winner(database, players, start, end, board=MAXING,
+                 readings=None):
     """Who took a month, on the average of the days that counted.
 
     Nobody, where too few of them counted: see MIN_MONTH_DAYS.
     """
     points = month_points(database, players, start, end,
-                          minimum=MIN_MONTH_DAYS, board=board)
+                          minimum=MIN_MONTH_DAYS, board=board,
+                          readings=readings)
     if not points:
         return None
-    if whole_group:
-        named = _written_winners(database, "month",
-                                 board).get(start.strftime("%Y-%m-%d"))
-        if named in {p["username"] for p in players}:
-            return named
     best = max(points.items(), key=lambda pair: (pair[1], pair[0]))
     return best[0] if best[1] > 0 else None
 
 
-def _written_winners(database, period, board=MAXING):
-    """{window_key: username} from the round-ups that named one.
-
-    Scoped to one board: the two judge the same days by different rules and
-    a Grinding verdict has no business overruling a Maxing square.
-    """
-    return {row["window_key"]: row["winner"]
-            for row in database.group_summaries(period=period, board=board)
-            if row["winner"]}
-
-
-def ranking(database, players, window, board=MAXING):
+def ranking(database, players, window, board=MAXING, readings=None):
     """Every account over one window, best first by the rule.
 
     A day is judged directly. Anything longer is judged on the average of its
     days, which is how the calendar heads a month - so a monthly round-up and
     the month above it cannot name different winners.
     """
+    walk = _readings(database, players, readings)
     totals = []
     for player in players:
-        states = skill_states(database, player["id"],
-                               _stamp(window.start - timedelta(days=60)),
-                               _stamp(window.end))
+        states = walk.states(player["id"],
+                             _stamp(window.start - timedelta(days=60)),
+                             _stamp(window.end))
         found = _player_days(states, [window.start, window.end])[0] if states else None
         shown = found[0] if found else {"nines": 0, "raw": 0.0, "capped": 0.0}
         totals.append({"username": player["username"],
@@ -587,12 +630,12 @@ def ranking(database, players, window, board=MAXING):
         # fortnight of a fortnight would void every one of them.
         minimum = MIN_MONTH_DAYS if window.period == "month" else 0
         points = month_points(database, players, window.start, window.end,
-                              minimum=minimum, board=board)
+                              minimum=minimum, board=board, readings=walk)
         voided = bool(minimum and not points)
         # Only worth asking when the answer is going to be printed: it walks
         # every player's readings again.
         days = counted_days(database, players, window.start, window.end,
-                            board) if voided else None
+                            board, readings=walk) if voided else None
         for row in totals:
             row["points"] = points.get(row["username"], 0.0)
             row["voided"] = voided

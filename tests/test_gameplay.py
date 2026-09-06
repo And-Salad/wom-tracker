@@ -230,8 +230,27 @@ def test_the_qualifier_says_how_much_it_meant():
     assert gameplay.detail("combat_task", combat()) == "Grandmaster"
     assert gameplay.detail("diary", diary()) == "15 diaries done"
     assert gameplay.detail("quest", quest()) == "22 of 156"
-    assert gameplay.detail("collection", collection(completed=651)) == "651 of 1,443"
+    assert gameplay.detail("collection", collection(completed=651)) == (
+        "from Clue Scroll (Hard), 651 of 1,443")
     assert gameplay.detail("kill_count", kill()) == "", "not a feed kind"
+
+
+def test_a_log_slot_says_what_dropped_it():
+    """Without the source, a recap has an item and a list of the evening's
+    bosses, and joins the two. One did: "Orange boater" beside a night of
+    Alchemical Hydra was reported as a Hydra drop, and it was a medium clue.
+
+    Zamorak chaps are the same trap - they read like a god wars drop and come
+    out of a hard clue."""
+    assert "from Clue Scroll (Hard)" in gameplay.detail("collection", collection())
+
+
+def test_a_log_slot_with_no_source_claims_none():
+    """A Forestry shop item or an event reward arrives without one, and a
+    guess would be worse than the silence."""
+    payload = collection()
+    del payload["extra"]["dropperName"]
+    assert gameplay.detail("collection", payload) == "420 of 1,443"
 
 
 def test_none_of_the_three_pretend_to_be_a_metric(db, player):

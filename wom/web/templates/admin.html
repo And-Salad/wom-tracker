@@ -141,6 +141,36 @@
         How hard the model thinks before writing. Higher costs more per
         round-up; low is enough to turn a table of figures into prose.
       </p>
+      {# The group round-up is a harder job than a player's note - a rule to
+         follow, a computed winner to respect - and it is the half anybody
+         reads. Left alone it uses the two above, which is what they always
+         meant. #}
+      <label class="field">
+        <span>Model for the group round-up</span>
+        <select name="group_model">
+          <option value="">same as above</option>
+          {% for model in models %}
+            <option value="{{ model }}"
+              {{ 'selected' if model == config.get('group_model') }}>{{ model }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Effort for the group round-up</span>
+        <select name="group_effort">
+          <option value="">same as above</option>
+          {% for effort in efforts %}
+            <option value="{{ effort }}"
+              {{ 'selected' if effort == config.get('group_effort') }}>{{ effort }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="hint">
+        The round-ups follow a stated rule and a winner the site has already
+        decided; the player notes are a paragraph of colour. Worth spending
+        differently on, and there are two round-ups a window against one note
+        per player.
+      </p>
       <label class="field">
         <span>Anthropic API key {% if config.is_from_env('anthropic_api_key') %}
           <em>set by the environment</em>{% endif %}</span>

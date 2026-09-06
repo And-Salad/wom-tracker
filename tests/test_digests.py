@@ -69,7 +69,12 @@ def test_a_window_an_account_predates_still_produces_a_digest(app):
 
 
 def test_one_uncovered_account_cannot_sink_the_group_recap(app):
-    """It is written for everyone, so it must survive any one of them."""
+    """It is written for everyone, so it must survive any one of them.
+
+    An account with a single reading and nothing measured in the window is
+    left out of the digest now rather than written up as a row of zeros - but
+    it must be left out quietly, not by raising on the way past.
+    """
     from wom import periods, summaries
     from wom.config import Config
     database = seed(app)
@@ -79,7 +84,8 @@ def test_one_uncovered_account_cannot_sink_the_group_recap(app):
                                        skills={"overall": (1000, 30)}))
     digest = summaries.build_group_digest(database, Config(), database.players(),
                                           periods.latest_window("year"))
-    assert "Newbie" in digest
+    assert "Competition:" in digest and "Winner:" in digest
+    assert "Newbie" not in digest, "nothing was measured, so there is nothing to say"
 
 
 def test_a_skill_that_was_unranked_still_counts_toward_the_day(app):
@@ -108,3 +114,93 @@ def test_efficient_hours_keep_their_decimal(app):
                                   "ehp": 500.5, "ehb": 20.4})
     row = views.player_rows(database, database.players(), {"zezima": "#fff"})[0]
     assert row["ehp"] == "500.5" and row["ehb"] == "20.4"
+
+
+def test_a_digest_states_its_own_board_rule_and_not_the_other_ones(db, player):
+    """One digest, one rule.
+
+    The standings header spelled Maxing out whatever board was asking, so a
+    Grinding digest named Grinding as the competition at the top and then
+    explained its own order by a cap it does not have. Two contradictory
+    statements of the rule in one prompt, and the model got to choose.
+    """
+    from wom import periods, summaries
+    from wom.config import Config
+
+    window = periods.latest_window("day")
+    config = Config()
+    players = [player]
+
+    maxing = summaries.build_group_digest(db, config, players, window, "maxing")
+    grinding = summaries.build_group_digest(db, config, players, window,
+                                            "grinding")
+
+    assert "Standings by the Maxing rule" in maxing
+    assert "Standings by the Grinding rule" in grinding
+    assert "Standings by the Maxing rule" not in grinding, (
+        "the grinding digest explains itself by the other board's rule")
+    # And the cap is the whole difference, so it must not be claimed here.
+    assert "no cap at level 99" in grinding
+    assert "only up to level" in maxing
+
+
+def _roster(database, count, window, mover=6):
+    """`count` tracked accounts, only the first `mover` of whom played.
+
+    Each mover gains a different amount, so the standings have an order to
+    them and the trim has something to cut on. The rest get one reading and
+    no second one - tracked, present on the site, and idle.
+    """
+    day = window.start_iso().split("T")[0]
+    opened, closed = day + "T01:00:00.000Z", day + "T23:00:00.000Z"
+    for number in range(1, count + 1):
+        name = "player{:02d}".format(number)
+        database.save_player_details({"id": number, "username": name,
+                                      "displayName": name.title(),
+                                      "type": "regular"})
+        database.save_snapshot(number, snapshot(
+            opened, skills={"attack": (1_000_000, 90), "overall": (1_000_000, 90)}))
+        if number <= mover:
+            gained = 1_000_000 + (mover - number + 1) * 10_000
+            database.save_snapshot(number, snapshot(
+                closed, skills={"attack": (gained, 90), "overall": (gained, 90)}))
+
+
+def test_the_digest_carries_only_the_active_and_only_ten_of_them(app):
+    """A digest of the whole roster is mostly zeros.
+
+    Every idle account cost a standings line and a block of nought-xp figures,
+    which is both what the round-up was paying for and what it ended up
+    writing about. Only players who moved go in now, and at most ten of them.
+    """
+    from wom import periods, summaries
+    from wom.config import Config
+    database = app.config["DATABASE"]
+    window = periods.latest_window("day")
+    _roster(database, 20, window, mover=14)
+
+    digest = summaries.build_group_digest(database, Config(), database.players(),
+                                          window)
+
+    assert "Player01" in digest and "Player10" in digest
+    assert "Player11" not in digest, "eleventh of fourteen active, so trimmed"
+    assert "Player20" not in digest, "did nothing, so nothing to write"
+    assert "Players compared: 10 of 20 tracked" in digest
+    assert digest.count("XP gained:") == 10, "one figures block per listed player"
+    assert "6 of the 20 tracked did nothing measurable" in digest
+
+
+def test_a_small_group_where_everyone_played_is_left_alone(app):
+    """The trim is for a roster that outgrew the digest, not for four friends."""
+    from wom import periods, summaries
+    from wom.config import Config
+    database = app.config["DATABASE"]
+    window = periods.latest_window("day")
+    _roster(database, 4, window, mover=4)
+
+    digest = summaries.build_group_digest(database, Config(), database.players(),
+                                          window)
+
+    assert "Players compared: 4 of 4 tracked" in digest
+    assert "did nothing measurable" not in digest, "nothing was left out"
+    assert all("Player0{}".format(n) in digest for n in range(1, 5))

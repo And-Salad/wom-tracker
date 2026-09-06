@@ -103,7 +103,7 @@ def run_compact(keep_days, dry_run):
 
 
 def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
-                  due_only=False):
+                  due_only=False, back=0):
     """Generate the written summaries, or price them up without spending."""
     from wom import periods, summaries
     config = Config()
@@ -153,28 +153,36 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
             return 1
 
     if dry_run:
+        from wom import winners
+
         total = 0.0
-        # The group round-up is one extra call per window, so price it too.
-        for key in keys:
-            window = periods.latest_window(key)
+        # A round-up per board per window, which is what a real run writes.
+        # Priced for one, this reported half the cost of the group half and
+        # never showed the second board's digest at all - so the one thing
+        # that differs between them, the rule at the top, could not be read
+        # here.
+        for key in [k for k in keys if k in periods.GROUP_PERIODS]:
+            window = periods.latest_window(key, offset=back)
             system = summaries.load_prompt(config, key, kind="group")
-            digest = summaries.build_group_digest(
-                database, config, database.players(), window)
-            try:
-                tokens, cost = summaries.estimate(config, system, digest)
-            except summaries.SummaryError as exc:
-                print(exc)
-                return 1
-            total += cost
-            print("=" * 68)
-            print("Group - {}   ~{} input tokens, up to ${:.4f}".format(
-                window.label, tokens, cost))
-            print("=" * 68)
-            print(digest)
-            print()
+            for board in winners.BOARDS:
+                digest = summaries.build_group_digest(
+                    database, config, database.players(), window, board=board)
+                try:
+                    tokens, cost = summaries.estimate(config, system, digest,
+                                                      kind="group")
+                except summaries.SummaryError as exc:
+                    print(exc)
+                    return 1
+                total += cost
+                print("=" * 68)
+                print("{} round-up - {}   ~{} input tokens, up to ${:.4f}".format(
+                    winners.BOARD_LABELS[board], window.label, tokens, cost))
+                print("=" * 68)
+                print(digest)
+                print()
         for player in players:
             for key in keys:
-                window = periods.latest_window(key)
+                window = periods.latest_window(key, offset=back)
                 system = summaries.load_prompt(config, key)
                 digest = summaries.build_digest(database, config, player, window)
                 try:
@@ -225,6 +233,9 @@ def main(argv=None):
                         help="how much recent history --compact leaves untouched")
     parser.add_argument("--dry-run", action="store_true",
                         help="report what would happen without doing it")
+    parser.add_argument("--back", type=int, default=0, metavar="N",
+                        help="with --dry-run, step back N windows instead of"
+                             " the newest closed one")
     parser.add_argument("--list", action="store_true",
                         help="print the tracked usernames")
     parser.add_argument("--verbose", action="store_true", help="debug logging")
@@ -240,7 +251,8 @@ def main(argv=None):
         return 0
     if args.summarize or args.show_prompt:
         return run_summaries(args.period, args.player, args.force,
-                             args.dry_run, args.show_prompt, args.due)
+                             args.dry_run, args.show_prompt, args.due,
+                             args.back)
     if args.compact:
         return run_compact(args.keep_days, args.dry_run)
     if args.backfill is not None:

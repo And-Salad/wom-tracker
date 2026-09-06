@@ -207,6 +207,14 @@ def save_settings():
     config["summary_model"] = model if model in SUMMARY_MODELS else "claude-sonnet-5"
     effort = request.form.get("summary_effort", "")
     config["summary_effort"] = effort if effort in SUMMARY_EFFORTS else "low"
+    # Blank is a real answer here and the stored one: it means the round-up
+    # follows the notes, so anything unrecognised falls back to it rather
+    # than to a model nobody chose.
+    group_model = request.form.get("group_model", "")
+    config["group_model"] = group_model if group_model in SUMMARY_MODELS else ""
+    group_effort = request.form.get("group_effort", "")
+    config["group_effort"] = (group_effort if group_effort in SUMMARY_EFFORTS
+                              else "")
     config["user_agent_contact"] = request.form.get("user_agent_contact", "").strip()
     # A zone this machine cannot resolve would move every day boundary to UTC
     # without saying so, which is a strange way to find out you typed it wrong.

@@ -33,16 +33,27 @@ env/
 *.sqlite3
 *.log
 
-# Editors and operating systems, and the local dev-server config that goes
-# with them: which port to preview on is a property of a machine, not of the
-# project.
-.claude/
+# Editors and operating systems.
 .vscode/
 .idea/
 *.swp
 Thumbs.db
 desktop.ini
 $RECYCLE.BIN/
+
+# .claude/ is only half personal, so it is ignored a file at a time rather than
+# as a directory. It has to be: git does not descend into an excluded
+# directory, so a `!.claude/settings.json` under an ignored `.claude/` would
+# never be read at all.
+#
+# What stays out is what belongs to a machine rather than to the project -
+# launch.json is which port to preview on, settings.local.json is personal
+# overrides. What is committed is settings.json, skills/ and agents/, which say
+# how this project is worked on and are no more personal than .githooks/ is.
+# Keep anything with a secret in it out of them; they are as public as the rest
+# of the repository.
+.claude/launch.json
+.claude/settings.local.json
 
 # Database copies pulled down by backup.py - the whole point is that they are
 # not in the repo.

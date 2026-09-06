@@ -206,18 +206,24 @@ def test_a_grinding_day_counts_experience_past_99(db, player):
     assert ground["total"] == 500000, "it all counts here"
 
 
-def test_a_round_up_only_overrules_its_own_board(db):
-    """The two judge the same days by different rules, so a grinding verdict
-    has no business colouring a maxing square."""
+def test_a_round_ups_own_pick_colours_nothing(db, app):
+    """A recap names a winner in its prose, and the calendar does not read it.
+
+    It used to: a written round-up overruled the figures for its day. That
+    put a model on the deciding path of a scoreboard, so the squares are
+    arithmetic now and the prose is comment.
+    """
     from wom import periods, winners
     window = periods.latest_window("day")
     db.save_group_summary(window, "text", "hash", winner="zezima",
                           board=winners.GRINDING)
 
-    assert winners._written_winners(db, "day", winners.GRINDING) == {
-        window.key: "zezima"}
-    assert winners._written_winners(db, "day", winners.MAXING) == {}, (
-        "the other board must not see it")
+    assert not hasattr(winners, "_written_winners"), (
+        "the override is gone; nothing should be reading the stored winner"
+        " back onto the calendar")
+    # The stored pick is still the recap's own, and still per board.
+    assert db.group_summary(window.period, window.key,
+                            winners.GRINDING)["winner"] == "zezima"
 
 
 def test_the_same_window_can_be_written_for_both_boards(db):
@@ -259,3 +265,57 @@ def test_round_ups_written_before_there_were_two_boards_are_maxing(tmp_path):
     rows = database.group_summaries(period="day", board="maxing")
     assert len(rows) == 1 and rows[0]["winner"] == "zezima"
     assert database.group_summaries(period="day", board="grinding") == []
+
+
+def test_the_page_walks_the_readings_once_for_both_boards(client, app):
+    """Two boards over the same two months, off one walk over the rows.
+
+    The boards judge the same readings and disagree only about how a day is
+    scored, so the second one should cost the arithmetic and not the
+    queries. Asked separately this page ran the same walk eight times over -
+    two months, each asked for its days and for its month, doubled by the
+    second board - and it grew with the history rather than with the group.
+
+    Counted rather than timed: a timing here would be a test that fails on a
+    slow machine, where the thing actually being protected is that nobody
+    puts the walk back inside the per-board loop.
+    """
+    database = seed(app)
+    calls = []
+    real = database.query
+    database.query = lambda sql, params=(): (calls.append(sql), real(sql, params))[1]
+    try:
+        assert client.get("/leaderboards").status_code == 200
+    finally:
+        database.query = real
+
+    walks = [sql for sql in calls if "kind='skill'" in sql and "captured_at>=?" in sql]
+    assert walks, ("the page stopped reading skills at all - this test is"
+                   " watching nothing")
+    # One month's walk per player, for the two months on the page. Both
+    # boards and both halves of each board's card share them.
+    assert len(walks) <= 2 * len(database.players()), (
+        "the readings are being walked once per board again: {} walks for {} "
+        "players over two months".format(len(walks), len(database.players())))
+
+
+def test_both_boards_still_answer_when_each_is_asked_alone(client, app):
+    """The cache is a saving, not a source of answers.
+
+    Passed one Readings the two boards read the same rows, so a mistake there
+    would have one board quietly answering with the other's figures. Asked on
+    its own, each has no cache to be wrong about - so the two pages have to
+    say the same thing as the one page does.
+    """
+    def figures(page, board):
+        # Past the opening tag, which carries the hidden that says which
+        # board is on screen - the one thing the two pages differ on by
+        # design.
+        half = section(page, board)
+        return half[half.index(">") + 1:]
+
+    seed(app)
+    together = client.get("/leaderboards").get_data(as_text=True)
+    for board in ("maxing", "grinding"):
+        alone = client.get("/leaderboards?board=" + board).get_data(as_text=True)
+        assert figures(alone, board) == figures(together, board), board

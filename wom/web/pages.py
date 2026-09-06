@@ -89,15 +89,20 @@ def leaderboards():
     """
     scope = page_context()
     everyone = scope["players"]
+    # One walk over the readings for the whole page. Both boards judge
+    # the same two months from the same rows, so the second one is a
+    # different sort of an answer already in hand.
+    walk = winners.Readings(database(), everyone)
     chosen = request.args.get("board")
     if chosen not in BOARDS:
         chosen = winners.MAXING
     shown = [
         dict(board,
              calendar=views.winner_calendar(database(), everyone,
-                                            scope["palette"], board=board["key"]),
+                                            scope["palette"], board=board["key"],
+                                            readings=walk),
              today=today.standings(database(), everyone, scope["palette"],
-                                   board=board["key"]))
+                                   board=board["key"], readings=walk))
         for board in BOARDS.values()
     ]
     return render_template("leaderboards.html", boards=shown, chosen=chosen,

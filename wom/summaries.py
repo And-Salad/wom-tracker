@@ -10,12 +10,13 @@ hash of its digest, and an unchanged digest is skipped rather than re-billed.
 """
 
 import hashlib
+import json
 import logging
 import os
 import re
 from datetime import datetime, timezone
 
-from . import periods, winners
+from . import gameplay, periods, winners
 from .config import data_dir
 from .icons import SKILL_ORDER
 from .scheduler import zone
@@ -69,6 +70,42 @@ paragraphs, in plain prose, addressed to the group rather than to the player.
 
 Do not use headings, bullet points, or emoji. Do not congratulate or cheerlead.
 Do not speculate about intentions beyond what the numbers support.
+
+Write only conclusions you have already checked, and never correct yourself on
+the page: no "wait", no "actually", no claim revised halfway through. Work the
+comparison out first, and if the figures do not support it, write a different
+sentence.
+
+The figures come from periodic snapshots, not continuous tracking, and a "Data
+coverage" line says what this period was actually measured from and to.
+
+- When the baseline sits before the period opened, the totals span that gap as
+  well. Say so, and describe the work as spread across the dark stretch rather
+  than done in a burst here - it was logged when the reading landed, not
+  necessarily earned in this period.
+- When the earliest reading falls well inside the period, whatever came before
+  it is missing. Say the figures are a partial view rather than a quiet spell.
+- When no pair of readings covers the period at all, do not report it as
+  inactivity. Say plainly that the account was not measured, and write nothing
+  else about their progress.
+- Otherwise say nothing about coverage. Only raise it when it changes how the
+  numbers should be read.
+
+Some players' own game clients report what happened during a session - a quest
+finished, an achievement diary done, a combat task, a pet, which drop filled a
+collection log slot. Where a digest carries a "Reported" block, prefer
+those over the raw totals for what to actually write about: they are the things
+somebody would tell the group. They are opt-in per player, so an account with
+none of them was not silent, it was not reporting - never read an empty block
+as a quiet period, and never compare two players on how much of it they have.
+
+A reported event says all it knows about itself. Where a collection log entry
+names its source, that is what dropped it; where it names none, the item is
+all you have, and the item alone is what you write. Never take the source from
+somewhere else in the block - the boss they killed most that day, the tasks
+they were doing - and never say what dropped something because it sounds like
+it should have. A log slot beside a night at Alchemical Hydra was a medium
+clue, and the recap that put the two together made a drop up.
 """
 
 
@@ -85,20 +122,84 @@ GROUP_PROMPT = """\
 You write a short group round-up for a handful of friends who track each
 other's Old School RuneScape accounts.
 
-You will be given every tracked player's figures for one period, side by side.
+You will be given one period's figures, side by side, for the players who were
+active in it - at most the ten who did the most by the competition's rule.
+
+Begin your reply with a single line naming the winner, exactly:
+
+    WINNER: <the account's display name, spelled as given>
+
+Copy the name from the digest's "Winner:" line exactly, or write
+"WINNER: nobody" wherever that line names nobody - whether because the period
+was empty or because too little of a month was watched for it to count. That
+line is read by the site, not by the group, so give it one name and nothing
+else. Then leave a blank line and write the paragraphs.
+
 Write exactly three short paragraphs, in plain prose, addressed to the group.
 
-- Open by naming a winner for the period and saying plainly why they won.
-  Choose on the numbers, and say what you judged on - most XP is the obvious
-  measure, but a huge boss haul or a real milestone can outweigh it. If it was
-  close, say it was close and name the runner-up.
+- Open with the winner the digest names and say plainly why they won by the
+  competition's rule. The digest's "Competition:" line states that rule, and
+  it is not the same on both boards - do not describe one board's rule while
+  reporting the other's standings. Do not judge it yourself and do not name a
+  different winner: the standings in the digest are the answer, and the site
+  colours a calendar by them. If it was close, say so and name the runner-up.
+  Where the digest says the month is not awarded, open by saying so and why -
+  too few of its days were watched with everyone on file - and crown nobody.
+  The standings still stand as a record of who did the most work; they are
+  just not a title.
 - Then pick out what is actually notable: a standout skill or boss, someone who
-  changed what they were doing, anyone who went quiet.
+  changed what they were doing, anyone whose numbers fell away from their usual.
+- Give the standings as a list, in the digest's order, and list exactly the
+  accounts the digest lists. It is the competition's rule that decides the
+  order, not raw experience. Where that rule counts experience only up to
+  level 99, an account that spent the period past 99 in everything can place
+  low on a big number - say so where it happens rather than leaving it looking
+  like an error.
+- The digest carries only the accounts that were active in the period, and at
+  most the top ten of them. Everyone else is left out on purpose. Write about
+  the ones you are given, name nobody you were not given, and never say who
+  went quiet or that anyone was missing - you cannot see them, so anything you
+  say about them is invented. Where the digest says how many were left out,
+  it is fine to say in passing that the rest did nothing measurable, but do
+  not name them or guess at why.
 - Close with a comparison or two that puts the numbers in perspective - who is
   pulling ahead, who is gaining on whom, how the group did overall.
 
 Do not use headings, bullet points, or emoji. Do not congratulate or cheerlead,
-and do not hand out consolation prizes. If nobody did much, say so.
+and do not hand out consolation prizes. If nobody did much, say so. Try to
+add in dry humor or ways to get a little laugh without swinging for the
+fences.
+
+Write only conclusions you have already checked. Work out whether a comparison
+is true before you start the sentence, and if the figures do not support it,
+write a different sentence. Never correct yourself on the page: no "wait", no
+"actually", no revising a claim halfway through. A round-up that argues with
+itself in front of the group is worse than one that says less. Each account's
+standings line carries two figures - what counts toward the cap and the total -
+so read the one you mean before saying who out-gained whom.
+
+Coverage is not the same for every player: each one's "Coverage" line says what
+their figures were actually measured from and to. A player measured across a
+long gap has everything from that gap folded into their totals, and a player
+with no readings at all shows zeros that mean "not seen", not "did nothing".
+Never rank someone up or down on that without saying it is why, and never name
+a winner on a total that spans a longer stretch than everyone else's.
+
+Some players' own game clients report what happened during a session - a quest
+finished, an achievement diary done, a combat task, a pet, which drop filled a
+collection log slot. Where a digest carries a "Reported" block, prefer
+those over the raw totals for what to actually write about: they are the things
+somebody would tell the group. They are opt-in per player, so an account with
+none of them was not silent, it was not reporting - never read an empty block
+as a quiet period, and never compare two players on how much of it they have.
+
+A reported event says all it knows about itself. Where a collection log entry
+names its source, that is what dropped it; where it names none, the item is
+all you have, and the item alone is what you write. Never take the source from
+somewhere else in the block - the boss they killed most that day, the tasks
+they were doing - and never say what dropped something because it sounds like
+it should have. A log slot beside a night at Alchemical Hydra was a medium
+clue, and the recap that put the two together made a drop up.
 """
 
 
@@ -133,6 +234,57 @@ def load_prompt(config=None, period=None, kind="player"):
             handle.write(DEFAULT_PROMPT if kind == "player" else GROUP_PROMPT)
     with open(path, encoding="utf-8") as handle:
         return handle.read().strip()
+
+
+# What a player's own client reported while they were playing. Wise Old Man's
+# milestones are 99s and thresholds - real, but a thin slice of an evening.
+# These are the things somebody would actually mention: a quest finished, a
+# diary done, a pet, which drop filled a collection log slot. They are stored
+# whole as they arrive and the Milestones page has always read them; the
+# round-up, the one thing whose job is writing about the period, was the last
+# thing that never saw them.
+#
+# Deaths are not among them, though they arrive on the same webhook and have
+# their own shelf in the Gallery. A round-up is about what somebody did, and a
+# recap that reaches for the deaths is writing about the thing they would
+# least like read back to them.
+REPORTED_KINDS = gameplay.FEED_KINDS
+
+REPORTED_LABELS = {"collection": "Collection log", "quest": "Quest",
+                   "diary": "Diary", "combat_task": "Combat task",
+                   "pet": "Pet"}
+
+# Said in both digests wherever the block appears at all. This is the one part
+# of a digest that is opt-in per player: it arrives only from accounts that
+# put the URL in a second box in Dink. An empty block therefore means "we were
+# not told", exactly as an empty coverage window means "not measured" - and a
+# model left to guess would read it as an account that did nothing worth
+# reporting, which is the opposite of true for whoever has not opted in.
+REPORTED_CAVEAT = ("(Reported events are opt-in per player. An account with"
+                   " none is one we were not told about, not one that did"
+                   " nothing.)")
+
+
+def _reported(database, player_ids, since, until, limit=40):
+    """[(display name, one line)] for what was reported during a window."""
+    if not player_ids:
+        return []
+    out = []
+    for row in database.feed_events(REPORTED_KINDS, player_ids=player_ids,
+                                    since=since, until=until, limit=limit):
+        try:
+            payload = json.loads(row["payload"] or "{}")
+        except ValueError:
+            payload = {}
+        label = REPORTED_LABELS.get(row["kind"], row["kind"])
+        detail = gameplay.detail(row["kind"], payload)
+        name = (row["subject"] or "").strip()
+        text = "{}: {}".format(label, name) if name else label
+        if detail:
+            text += " ({})".format(detail)
+        out.append((row["display_name"] or row["username"], text))
+    # Oldest first, so a list of an evening reads in the order it happened.
+    return list(reversed(out))
 
 
 # -- the digest -----------------------------------------------------------
@@ -200,6 +352,14 @@ def build_digest(database, config, player, window):
             lines.append("  {} ({})".format(
                 row["name"], fmt_datetime(row["achieved_at"], "%d %b")))
 
+    reported = _reported(database, [player["id"]], since, until)
+    if reported:
+        lines.append("")
+        lines.append("Reported by their own client this period:")
+        for _who, text in reported:
+            lines.append("  " + text)
+        lines.append(REPORTED_CAVEAT)
+
     return "\n".join(lines)
 
 
@@ -214,7 +374,7 @@ def _week_context(database, players, window, board):
 
     lines = ["", "Days of this week, and who took each:"]
     won = winners.daily_winners(database, players, window.start, window.end,
-                                whole_group=True, board=board)
+                                board=board)
     names = {p["username"]: p["display_name"] for p in players}
     tally = {}
     for day in sorted(won):
@@ -240,27 +400,116 @@ def _week_context(database, players, window, board):
     lines.append("The month so far ({} - {} days counted), running average"
                  " points per day, which is what the month is awarded on:"
                  .format(start.strftime("%B %Y"), counted))
-    if points:
-        for username, score in sorted(points.items(), key=lambda kv: -kv[1]):
+    scored = [(u, v) for u, v in sorted(points.items(), key=lambda kv: -kv[1])
+              if v]
+    if scored:
+        # Same trim as the standings above: a month table with a tail of
+        # zeroes is the roster, not the race.
+        for username, score in scored[:TOP_N]:
             lines.append("  {}: {:.2f}".format(names.get(username, username),
                                                score))
+        if len(scored) > TOP_N:
+            lines.append("  ({} more scored below these.)"
+                         .format(len(scored) - TOP_N))
     else:
         lines.append("  Not enough days counted yet to stand anybody up.")
     return lines
 
 
-def _ranking_lines(ranked):
+# How the order was arrived at, said once per board. This used to be three
+# lines of Maxing spelled out here whatever board was asking, so a Grinding
+# digest opened by naming Grinding as the competition and then explained its
+# own standings by a rule that has no cap and no 99 in it. Two contradictory
+# statements of the rule in one digest, and the model got to pick.
+STANDINGS_RULE = {
+    "maxing": ["Standings by the Maxing rule - a ninety-nine takes a day, then",
+               "two beat one; failing that, experience counted only up to level",
+               "99 in each skill, since past that a skill stops levelling."],
+    "grinding": ["Standings by the Grinding rule - total experience gained, all",
+                 "of it, with no cap at level 99 and no credit for reaching",
+                 "one."],
+}
+
+
+# How many of the standings the round-up is actually shown. A roster grows
+# and a recap that lists all of it reads as a phone book: the tail is the same
+# sentence about somebody who did nothing, and the model spends its three
+# paragraphs on them instead of on the month. Ten is enough for a podium, a
+# midfield and a bubble.
+TOP_N = 10
+
+
+def _was_active(row, stirred=()):
+    """Did this account actually do anything in the period?
+
+    Any experience at all counts, on either board - the cap only changes how
+    much of it is scored, never whether it happened. A row of zeros is either
+    a quiet period or an unmeasured one, and neither is worth a line.
+    """
+    return bool(row["nines"] or row["raw"] or row["capped"]
+                or row["name"] in stirred)
+
+
+def _stirred(database, players, since, until):
+    """Display names of accounts the standings row alone would miss.
+
+    The standings measure the period the way the calendar does, between the
+    readings that bracket its days; the blocks below measure it from the
+    window's own edges. The two disagree at the margins, and an account the
+    charts credit with a session should not drop out of the round-up because
+    the other measurement rounded it to nothing.
+
+    Reported events count here as well, and have to: a diary, a quest step or
+    a collection log slot can land without moving a single skill, and those
+    are exactly the things a round-up would rather write about than totals.
+    """
+    stirred = {who for who, _text in _reported(
+        database, [player["id"] for player in players], since, until,
+        limit=400)}
+    for player in players:
+        if player["display_name"] in stirred:
+            continue
+        skills = database.metric_gains(player["id"], since, "skill", until=until)
+        if any(value for metric, value in skills.items() if metric != "overall"):
+            stirred.add(player["display_name"])
+    return stirred
+
+
+def _shortlist(ranked, stirred=()):
+    """The rows the digest actually carries, and a line about the rest.
+
+    The full ranking still decides the winner and still decides the order -
+    only what is written out is trimmed, so the calendar square and the
+    round-up cannot disagree about who won.
+    """
+    active = [row for row in ranked if _was_active(row, stirred)]
+    shown = active[:TOP_N]
+    idle = len(ranked) - len(active)
+    note = []
+    if idle or len(active) > len(shown):
+        note.append("Listed below are the top {} of the {} accounts that were"
+                    " active; {} of the {} tracked did nothing measurable in"
+                    " this period.".format(len(shown), len(active), idle,
+                                           len(ranked)))
+        note.append("Write about the accounts listed and no others. Do not"
+                    " name the ones left out or read their absence as having"
+                    " gone quiet.")
+    return shown, note
+
+
+def _ranking_lines(ranked, board="maxing", shown=None, note=()):
     """The order the group's own rule puts them in, for the digest.
 
     Worked out here rather than left to the model, so the round-up and the
-    calendar square beside it cannot name different winners.
+    calendar square beside it cannot name different winners. `shown` is the
+    slice of that order actually written out; the winner and whether the
+    month counts still come from the whole of it.
     """
 
     averaged = ranked and ranked[0]["points"] is not None
     voided = bool(ranked and ranked[0].get("voided"))
-    lines = ["Standings by the group's rule - a ninety-nine takes a day, then two",
-             "beat one; failing that, experience counted only up to level 99 in",
-             "each skill, since past that a skill stops levelling."]
+    lines = list(STANDINGS_RULE.get(board, STANDINGS_RULE["maxing"]))
+    lines.extend(note)
     if voided:
         lines.append("This month is not awarded: only {} of its days were watched"
                      .format(ranked[0].get("days")))
@@ -272,7 +521,7 @@ def _ranking_lines(ranked):
         lines.append("its days, so one big day does not decide the whole of it:")
     else:
         lines.append("")
-    for place, row in enumerate(ranked, start=1):
+    for place, row in enumerate(ranked if shown is None else shown, start=1):
         lines.append("  {}. {} - {}{} new 99s, {} xp toward 99s,"
                      " {} xp in total{}".format(
             place, row["name"],
@@ -308,11 +557,16 @@ BOARD_RULES = {
 
 
 def build_group_digest(database, config, players, window, board="maxing"):
-    """Every tracked player's figures for one window, side by side.
+    """The period's figures for the players who actually played it.
 
     Built from the same numbers the individual summaries use rather than from
     their prose: comparisons need the figures, and this way the round-up does
     not depend on the individual write-ups having been generated first.
+
+    Only the top ten accounts that moved are written out. The whole roster used
+    to go in, which as it grew meant most of the digest - and most of what the
+    model had to work with - was rows of zeroes belonging to people who were
+    not there.
 
     The competition's own rule goes at the top, because the two boards are the
     same figures judged differently and a round-up handed only the numbers
@@ -320,15 +574,25 @@ def build_group_digest(database, config, players, window, board="maxing"):
     """
 
     since, until = window.start_iso(), window.end_iso()
+    ranked = winners.ranking(database, players, window, board=board)
+    shown, note = _shortlist(ranked, _stirred(database, players, since, until))
+    # Ranking order, and only the accounts written up above: a figures block
+    # for somebody the standings never named is a paragraph waiting to happen
+    # about a player the round-up was told to leave out.
+    by_username = {player["username"]: player for player in players}
+    compared = [by_username[row["username"]] for row in shown
+                if row["username"] in by_username]
+
     lines = ["Competition: {}".format(BOARD_RULES.get(board, board)),
              "Period: {} ({})".format(window.label, _period_noun(window.period)),
-             "Players compared: {}".format(len(players)), ""]
-    lines.extend(_ranking_lines(winners.ranking(database, players, window,
-                                                board=board)))
+             "Players compared: {} of {} tracked".format(len(compared),
+                                                         len(players)), ""]
+    lines.extend(_ranking_lines(ranked, board, shown=shown, note=note))
     if window.period == "week":
         lines.extend(_week_context(database, players, window, board))
 
-    for player in players:
+    said = False
+    for player in compared:
         skills = database.metric_gains(player["id"], since, "skill", until=until)
         total_xp = sum(v for k, v in skills.items() if k != "overall")
         top = sorted(((m, v) for m, v in skills.items() if m != "overall" and v),
@@ -365,6 +629,11 @@ def build_group_digest(database, config, players, window, board="maxing"):
                 fmt_int(clues), fmt_int(log_slots)))
         if milestones:
             lines.append("  Milestones: {}".format("; ".join(milestones[:6])))
+        reported = [text for _who, text
+                    in _reported(database, [player["id"]], since, until, limit=12)]
+        if reported:
+            lines.append("  Reported: {}".format("; ".join(reported)))
+            said = True
         if overall:
             lines.append("  Standing: total level {}, {} total XP".format(
                 fmt_int(overall["level"]), fmt_int(overall["value"])))
@@ -373,6 +642,11 @@ def build_group_digest(database, config, players, window, board="maxing"):
         for note in _coverage(database, player, window):
             lines.append("  " + note.replace("Data coverage: ", "Coverage: ").strip())
         lines.append("")
+
+    # Only where somebody reported something. Said against a roster where
+    # nobody has opted in, it explains an absence nothing on the page can see.
+    if said:
+        lines.append(REPORTED_CAVEAT)
 
     return "\n".join(lines).rstrip()
 
@@ -517,10 +791,26 @@ def _client(config):
     return anthropic.Anthropic()
 
 
-def estimate(config, system, digest):
+def setting(config, name, kind="player", fallback=None):
+    """A model or effort setting, which the round-up may have its own of.
+
+    One pair covered both kinds, and they are not the same job: a player note
+    is a paragraph of colour, where a round-up has to follow a stated rule,
+    respect a computed winner and handle a month it must not award. Left
+    unset the round-up uses whatever the notes use, which is what every
+    config written before this said.
+    """
+    if kind == "group":
+        chosen = (config.get("group_" + name) or "").strip()
+        if chosen:
+            return chosen
+    return (config.get("summary_" + name) or "").strip() or fallback
+
+
+def estimate(config, system, digest, kind="player"):
     """Token count and cost for a request, without sending it."""
     client = _client(config)
-    model = config.get("summary_model") or DEFAULT_MODEL
+    model = setting(config, "model", kind, DEFAULT_MODEL)
     counted = client.messages.count_tokens(
         model=model, system=system,
         messages=[{"role": "user", "content": digest}])
@@ -530,12 +820,12 @@ def estimate(config, system, digest):
     return counted.input_tokens, cost
 
 
-def generate(config, system, digest):
+def generate(config, system, digest, kind="player"):
     """Ask Claude for one summary. Returns (text, usage dict)."""
     import anthropic
     client = _client(config)
-    model = config.get("summary_model") or DEFAULT_MODEL
-    effort = config.get("summary_effort") or DEFAULT_EFFORT
+    model = setting(config, "model", kind, DEFAULT_MODEL)
+    effort = setting(config, "effort", kind, DEFAULT_EFFORT)
     try:
         response = client.messages.create(
             model=model,
@@ -581,7 +871,8 @@ def summarise_player(database, config, player, window, force=False):
 
     system = load_prompt(config, window.period)
     text, usage = generate(config, system, digest)
-    database.save_summary(player["id"], window, text, fingerprint, usage)
+    database.save_summary(player["id"], window, text, fingerprint, usage,
+                          digest=digest, prompt_hash=digest_hash(system))
     return text, "generated ({} in, {} out)".format(
         usage["input_tokens"], usage["output_tokens"])
 
@@ -681,10 +972,11 @@ def summarise_group(database, config, players, window, force=False,
         return existing["text"], "unchanged"
 
     system = load_prompt(config, window.period, kind="group")
-    text, usage = generate(config, system, digest)
+    text, usage = generate(config, system, digest, kind="group")
     winner, text = split_winner(text, players)
     database.save_group_summary(window, text, fingerprint, usage, winner=winner,
-                                board=board)
+                                board=board, digest=digest,
+                                prompt_hash=digest_hash(system))
     return text, "generated ({} in, {} out)".format(
         usage["input_tokens"], usage["output_tokens"])
 

@@ -22,40 +22,25 @@ from ..util import api_stamp as _stamp
 from ..util import fmt_int, parse_api_time, pretty_metric
 
 
-def is_whole_group(database, players):
-    """Whether every tracked account is included.
-
-    The round-up judged the whole group. Narrowed to some of them it is
-    answering a different question from the one on screen, so its verdict
-    stops overruling the figures.
-    """
-    everyone = database.players()
-    return len(players) >= len(everyone) > 0
-
-
-def standings(database, players, palette, when=None, board=winners.MAXING):
+def standings(database, players, palette, when=None, board=winners.MAXING,
+              readings=None):
     """Where everyone stands in the day now in progress, and this month.
 
     Deliberately not a verdict - today has not been polled to its end and
     cannot qualify yet - so it shows the running figures and lets the squares
     do the awarding.
 
-    It counts the month's wins the same way the squares are coloured, down to
-    whether a written round-up overruled the figures. Asked differently, the
-    two halves of one card disagreed: a square in somebody's colour, and a
-    tally beside it crediting the day to whoever the figures alone preferred.
-
-    Which is why `whole_group` is worked out here rather than passed in. It
-    was a parameter with a default, and a default is a way for one half of
-    the card to be asked a different question from the other by accident -
-    which is the very bug this function exists to have fixed. Both halves
-    derive it from the same two counts, so they cannot drift apart.
+    It counts the month's wins the same way the squares are coloured, from
+    the same daily verdicts. Asked differently, the two halves of one card
+    disagreed: a square in somebody's colour, and a tally beside it
+    crediting the day to somebody else.
     """
-    whole_group = is_whole_group(database, players)
+    walk = readings if readings is not None else winners.Readings(
+        database, players)
     start, end = winners.month_range(when, back=0)
-    days = winners.gains_by_day(database, players, start, end)
-    won = winners.daily_winners(database, players, start, end,
-                                whole_group=whole_group, board=board)
+    days = walk.days(start, end)
+    won = winners.daily_winners(database, players, start, end, board=board,
+                                readings=walk)
     by_nine, by_xp = _month_wins(days, won)
 
     start_of_day = winners.today_range(when)[0]
