@@ -172,7 +172,8 @@ A link with a query string always wins over it, so a shared view still means
 the same thing to whoever opens it.
 
 A page that is open when an update lands picks the new figures up on its own,
-and the header counts down to the next run rather than naming a time - see
+the header counts down to the next run rather than naming a time, and it says
+how many people are reading right now - see
 [Noticing a run from an open page](docs/data.md#noticing-a-run-from-an-open-page).
 
 ## Requirements
