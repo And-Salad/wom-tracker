@@ -109,7 +109,8 @@ GROUP_PROMPT = """\
 You write a short group round-up for a handful of friends who track each
 other's Old School RuneScape accounts.
 
-You will be given every tracked player's figures for one period, side by side.
+You will be given one period's figures, side by side, for the players who were
+active in it - at most the ten who did the most by the competition's rule.
 
 Begin your reply with a single line naming the winner, exactly:
 
@@ -134,12 +135,20 @@ Write exactly three short paragraphs, in plain prose, addressed to the group.
   The standings still stand as a record of who did the most work; they are
   just not a title.
 - Then pick out what is actually notable: a standout skill or boss, someone who
-  changed what they were doing, anyone who went quiet.
-- Give the standings as a list, in the digest's order. It is the competition's
-  rule that decides the order, not raw experience. Where that rule counts
-  experience only up to level 99, an account that spent the period past 99 in
-  everything can place low on a big number - say so where it happens rather
-  than leaving it looking like an error.
+  changed what they were doing, anyone whose numbers fell away from their usual.
+- Give the standings as a list, in the digest's order, and list exactly the
+  accounts the digest lists. It is the competition's rule that decides the
+  order, not raw experience. Where that rule counts experience only up to
+  level 99, an account that spent the period past 99 in everything can place
+  low on a big number - say so where it happens rather than leaving it looking
+  like an error.
+- The digest carries only the accounts that were active in the period, and at
+  most the top ten of them. Everyone else is left out on purpose. Write about
+  the ones you are given, name nobody you were not given, and never say who
+  went quiet or that anyone was missing - you cannot see them, so anything you
+  say about them is invented. Where the digest says how many were left out,
+  it is fine to say in passing that the rest did nothing measurable, but do
+  not name them or guess at why.
 - Close with a comparison or two that puts the numbers in perspective - who is
   pulling ahead, who is gaining on whom, how the group did overall.
 
@@ -362,10 +371,17 @@ def _week_context(database, players, window, board):
     lines.append("The month so far ({} - {} days counted), running average"
                  " points per day, which is what the month is awarded on:"
                  .format(start.strftime("%B %Y"), counted))
-    if points:
-        for username, score in sorted(points.items(), key=lambda kv: -kv[1]):
+    scored = [(u, v) for u, v in sorted(points.items(), key=lambda kv: -kv[1])
+              if v]
+    if scored:
+        # Same trim as the standings above: a month table with a tail of
+        # zeroes is the roster, not the race.
+        for username, score in scored[:TOP_N]:
             lines.append("  {}: {:.2f}".format(names.get(username, username),
                                                score))
+        if len(scored) > TOP_N:
+            lines.append("  ({} more scored below these.)"
+                         .format(len(scored) - TOP_N))
     else:
         lines.append("  Not enough days counted yet to stand anybody up.")
     return lines
@@ -386,16 +402,85 @@ STANDINGS_RULE = {
 }
 
 
-def _ranking_lines(ranked, board="maxing"):
+# How many of the standings the round-up is actually shown. A roster grows
+# and a recap that lists all of it reads as a phone book: the tail is the same
+# sentence about somebody who did nothing, and the model spends its three
+# paragraphs on them instead of on the month. Ten is enough for a podium, a
+# midfield and a bubble.
+TOP_N = 10
+
+
+def _was_active(row, stirred=()):
+    """Did this account actually do anything in the period?
+
+    Any experience at all counts, on either board - the cap only changes how
+    much of it is scored, never whether it happened. A row of zeros is either
+    a quiet period or an unmeasured one, and neither is worth a line.
+    """
+    return bool(row["nines"] or row["raw"] or row["capped"]
+                or row["name"] in stirred)
+
+
+def _stirred(database, players, since, until):
+    """Display names of accounts the standings row alone would miss.
+
+    The standings measure the period the way the calendar does, between the
+    readings that bracket its days; the blocks below measure it from the
+    window's own edges. The two disagree at the margins, and an account the
+    charts credit with a session should not drop out of the round-up because
+    the other measurement rounded it to nothing.
+
+    Reported events count here as well, and have to: a diary, a quest step or
+    a collection log slot can land without moving a single skill, and those
+    are exactly the things a round-up would rather write about than totals.
+    """
+    stirred = {who for who, _text in _reported(
+        database, [player["id"] for player in players], since, until,
+        limit=400)}
+    for player in players:
+        if player["display_name"] in stirred:
+            continue
+        skills = database.metric_gains(player["id"], since, "skill", until=until)
+        if any(value for metric, value in skills.items() if metric != "overall"):
+            stirred.add(player["display_name"])
+    return stirred
+
+
+def _shortlist(ranked, stirred=()):
+    """The rows the digest actually carries, and a line about the rest.
+
+    The full ranking still decides the winner and still decides the order -
+    only what is written out is trimmed, so the calendar square and the
+    round-up cannot disagree about who won.
+    """
+    active = [row for row in ranked if _was_active(row, stirred)]
+    shown = active[:TOP_N]
+    idle = len(ranked) - len(active)
+    note = []
+    if idle or len(active) > len(shown):
+        note.append("Listed below are the top {} of the {} accounts that were"
+                    " active; {} of the {} tracked did nothing measurable in"
+                    " this period.".format(len(shown), len(active), idle,
+                                           len(ranked)))
+        note.append("Write about the accounts listed and no others. Do not"
+                    " name the ones left out or read their absence as having"
+                    " gone quiet.")
+    return shown, note
+
+
+def _ranking_lines(ranked, board="maxing", shown=None, note=()):
     """The order the group's own rule puts them in, for the digest.
 
     Worked out here rather than left to the model, so the round-up and the
-    calendar square beside it cannot name different winners.
+    calendar square beside it cannot name different winners. `shown` is the
+    slice of that order actually written out; the winner and whether the
+    month counts still come from the whole of it.
     """
 
     averaged = ranked and ranked[0]["points"] is not None
     voided = bool(ranked and ranked[0].get("voided"))
     lines = list(STANDINGS_RULE.get(board, STANDINGS_RULE["maxing"]))
+    lines.extend(note)
     if voided:
         lines.append("This month is not awarded: only {} of its days were watched"
                      .format(ranked[0].get("days")))
@@ -407,7 +492,7 @@ def _ranking_lines(ranked, board="maxing"):
         lines.append("its days, so one big day does not decide the whole of it:")
     else:
         lines.append("")
-    for place, row in enumerate(ranked, start=1):
+    for place, row in enumerate(ranked if shown is None else shown, start=1):
         lines.append("  {}. {} - {}{} new 99s, {} xp toward 99s,"
                      " {} xp in total{}".format(
             place, row["name"],
@@ -443,11 +528,16 @@ BOARD_RULES = {
 
 
 def build_group_digest(database, config, players, window, board="maxing"):
-    """Every tracked player's figures for one window, side by side.
+    """The period's figures for the players who actually played it.
 
     Built from the same numbers the individual summaries use rather than from
     their prose: comparisons need the figures, and this way the round-up does
     not depend on the individual write-ups having been generated first.
+
+    Only the top ten accounts that moved are written out. The whole roster used
+    to go in, which as it grew meant most of the digest - and most of what the
+    model had to work with - was rows of zeroes belonging to people who were
+    not there.
 
     The competition's own rule goes at the top, because the two boards are the
     same figures judged differently and a round-up handed only the numbers
@@ -455,16 +545,25 @@ def build_group_digest(database, config, players, window, board="maxing"):
     """
 
     since, until = window.start_iso(), window.end_iso()
+    ranked = winners.ranking(database, players, window, board=board)
+    shown, note = _shortlist(ranked, _stirred(database, players, since, until))
+    # Ranking order, and only the accounts written up above: a figures block
+    # for somebody the standings never named is a paragraph waiting to happen
+    # about a player the round-up was told to leave out.
+    by_username = {player["username"]: player for player in players}
+    compared = [by_username[row["username"]] for row in shown
+                if row["username"] in by_username]
+
     lines = ["Competition: {}".format(BOARD_RULES.get(board, board)),
              "Period: {} ({})".format(window.label, _period_noun(window.period)),
-             "Players compared: {}".format(len(players)), ""]
-    lines.extend(_ranking_lines(winners.ranking(database, players, window,
-                                                board=board), board))
+             "Players compared: {} of {} tracked".format(len(compared),
+                                                         len(players)), ""]
+    lines.extend(_ranking_lines(ranked, board, shown=shown, note=note))
     if window.period == "week":
         lines.extend(_week_context(database, players, window, board))
 
     said = False
-    for player in players:
+    for player in compared:
         skills = database.metric_gains(player["id"], since, "skill", until=until)
         total_xp = sum(v for k, v in skills.items() if k != "overall")
         top = sorted(((m, v) for m, v in skills.items() if m != "overall" and v),
