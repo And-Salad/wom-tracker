@@ -95,7 +95,7 @@
     function load() {
       if (loaded) { return; }
       host.textContent = "";
-      host.appendChild(el("p", "hint", "Loading..."));
+      host.appendChild(el("p", "hint", "Loading…"));
       fetch("/api/" + board + "/player/" + encodeURIComponent(row.dataset.username))
         .then(function (r) { return r.json(); })
         .then(function (data) {

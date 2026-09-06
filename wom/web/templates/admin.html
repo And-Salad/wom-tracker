@@ -117,7 +117,7 @@
       <label class="tick">
         <input type="checkbox" name="summaries_enabled"
                {{ 'checked' if config.get('summaries_enabled') }}>
-        Write round-ups with the Claude API (each one costs about half a cent)
+        Write round-ups with the Claude API
       </label>
       <label class="field">
         <span>Model</span>
@@ -139,7 +139,9 @@
       </label>
       <p class="hint">
         How hard the model thinks before writing. Higher costs more per
-        round-up; low is enough to turn a table of figures into prose.
+        round-up; low is enough to turn a table of figures into prose. The two
+        together set the bill: a round-up runs from a fraction of a cent on
+        Haiku at low effort to a few cents on Opus at high.
       </p>
       {# The group round-up is a harder job than a player's note - a rule to
          follow, a computed winner to respect - and it is the half anybody

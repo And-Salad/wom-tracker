@@ -138,7 +138,7 @@
     button.type = "button";
     button.addEventListener("click", function () {
       button.disabled = true;
-      button.textContent = "Loading...";
+      button.textContent = "Loading…";
       asked = loaded + PAGE;
       load(latest);
     });
