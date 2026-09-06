@@ -6,6 +6,8 @@ drawn in. These were closures inside the app factory, which meant nothing else
 could call them and nothing could test them.
 """
 
+from datetime import datetime, timezone
+
 from flask import current_app, request
 
 from ..colors import player_color
@@ -68,12 +70,25 @@ def current_span(players=None):
 
 
 def status(config):
-    """The line in the header: how many, how fresh, when next."""
+    """The line in the header: how many, how fresh, when next.
+
+    Rendered into every page, and also answered as JSON to a browser that
+    polls it - so it carries a machine-readable half beside the prose. `last`
+    is "3m ago", which is unusable as an equality test, and `next` is
+    "Wed 14:20", which cannot be counted down from.
+    """
     last = parse_last_run(config.get("last_run", ""))
+    upcoming = next_slot()
     return {
         "last": fmt_ago(last.isoformat()) if last else "never",
-        "next": next_slot().astimezone().strftime("%a %H:%M"),
+        "next": upcoming.astimezone().strftime("%a %H:%M"),
         "players": len(config.get("usernames", [])),
+        # What actually changes when a run lands: the stored stamp itself.
+        "stamp": config.get("last_run", "") or "",
+        # The same instant `next` names, and this clock's reading of now, so a
+        # countdown survives a browser whose clock is wrong.
+        "next_at": upcoming.isoformat(timespec="seconds"),
+        "now": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 
 

@@ -249,7 +249,7 @@ def test_every_data_endpoint_refuses_to_be_cached(client, app):
     populated = ("/api/chart/standings", "/api/table", "/api/players",
                  "/api/milestones", "/api/history?kind=skill&metric=attack",
                  "/api/player/zezima", "/api/maxing/player/zezima",
-                 "/api/maxing/trend")
+                 "/api/maxing/trend", "/api/status")
     empty = ("/api/chart/standings?picked=1", "/api/table?picked=1",
              "/api/maxing/trend?picked=1",
              "/api/history?kind=skill&metric=attack&picked=1",
@@ -383,3 +383,98 @@ def test_no_page_still_claims_the_session_events_go_unread(signed_in):
     """They were collected and unread for about an hour. Then they were not."""
     page = signed_in.get("/admin").get_data(as_text=True)
     assert "Nothing on the dashboard reads this yet" not in page
+
+
+# -- the live header ------------------------------------------------------
+
+
+def test_the_status_endpoint_carries_the_stamp_the_header_was_rendered_from(
+        client, app):
+    """The page and the poll that refreshes it must not be able to disagree.
+
+    Both come out of selection.status(), which is the point: an open tab
+    compares the stamp it was served with against the one it is told, so two
+    routes computing "when did the data last change" their own way would mean
+    a refresh that never fires or one that fires forever.
+    """
+    seed(app)
+    body = client.get("/api/status").get_json()
+    page = client.get("/").get_data(as_text=True)
+    assert 'data-stamp="{}"'.format(body["stamp"]) in page
+    assert 'data-next="{}"'.format(body["next_at"]) in page
+
+
+def test_the_status_endpoint_answers_the_change_rather_than_the_prose(client, app):
+    """`last` is "3m ago" and unusable as a test of anything; `stamp` is not."""
+    from wom.config import Config
+    from wom.scheduler import stamp_now
+
+    seed(app)
+    before = client.get("/api/status").get_json()
+
+    settings = Config()
+    settings["last_run"] = stamp_now()
+    settings.save()
+
+    after = client.get("/api/status").get_json()
+    assert after["stamp"] == settings["last_run"]
+    assert after["stamp"] != before["stamp"], "a finished run has to be visible"
+
+
+def test_the_countdown_has_something_to_count_down_to(client, app):
+    """"next Wed 14:20" cannot be counted down from, so the same instant is
+    also given as a timestamp - along with this clock's reading of now, which
+    is what lets a browser whose own clock is wrong still be right."""
+    from wom.util import parse_api_time
+
+    seed(app)
+    body = client.get("/api/status").get_json()
+    ahead = parse_api_time(body["next_at"]) - parse_api_time(body["now"])
+    assert 0 < ahead.total_seconds() <= 600, "the next slot, and it is ahead"
+
+
+def test_the_heartbeat_stops_when_the_tripwire_has(client, app, monkeypatch):
+    """It is behind the same guard as everything else on purpose.
+
+    A dashboard whose data endpoints are refusing has nothing to refresh, and
+    a tab polling a paused site all evening is precisely the traffic the wire
+    exists to stop.
+    """
+    from wom.web.limits import TRUSTED_HEADER_ENV, Budget, Tripwire
+
+    monkeypatch.setenv(TRUSTED_HEADER_ENV, "Fly-Client-IP")
+    limits = app.config["LIMITS"]
+    limits.api_tripwire = Tripwire(allowance=2, window=60)
+    limits.api_per_address = Budget(allowance=999, window=60)
+    headers = {"Fly-Client-IP": "203.0.113.60"}
+
+    # The call that crosses the wire is refused along with everything after it.
+    assert client.get("/api/status", headers=headers).status_code == 200
+    client.get("/api/status", headers=headers)
+    assert limits.api_tripwire.tripped
+    refused = client.get("/api/status", headers=headers)
+    assert refused.status_code == 503
+    assert refused.headers.get("Retry-After"), "the browser is told how long"
+
+
+def test_every_page_carries_the_live_header(client, app):
+    """Including the bare ones: the header line is on all of them, and admin's
+    goes stale the same way the dashboard's did."""
+    seed(app)
+    for path in ("/", "/recaps", "/gallery", "/help", "/players"):
+        page = client.get(path).get_data(as_text=True)
+        assert "live.js" in page, path
+        assert 'id="freshness"' in page, path
+
+
+def test_a_page_that_cannot_refetch_is_offered_a_reload_rather_than_given_one(
+        client):
+    """Recaps and Gallery are documents the server renders whole. There is
+    nothing to redraw in place, and reloading under a reader mid-sentence is
+    worse than a link they can press."""
+    script = client.get("/static/live.js").get_data(as_text=True)
+    assert "sidebar.refresh && sidebar.refresh()" in script
+    assert "button.hidden = false" in script
+
+    sidebar = client.get("/static/sidebar.js").get_data(as_text=True)
+    assert "if (reloads || !listeners.length) { return false; }" in sidebar

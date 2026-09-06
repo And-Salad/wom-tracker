@@ -34,10 +34,17 @@
       <a href="/admin" class="{{ 'on' if page == 'admin' }}">{{ 'Admin' if signed_in else 'Sign in' }}</a>
     {% endif %}
   </nav>
-  <span class="status">
-    {{ status.players }} players &middot; updated {{ status.last }} &middot;
-    next {{ status.next }}
+  {# The sentence stays here rather than in JavaScript; live.js only swaps
+     the three values inside it, and reads the two data- attributes to know
+     what it is comparing against before its first poll has answered. #}
+  <span class="status" id="freshness"
+        data-stamp="{{ status.stamp }}" data-next="{{ status.next_at }}">
+    <span id="stat-players">{{ status.players }}</span> players &middot;
+    updated <span id="stat-last">{{ status.last }}</span> &middot;
+    <span id="stat-next">next {{ status.next }}</span>
   </span>
+  {# Unhidden by live.js only on the pages that cannot refetch in place. #}
+  <button type="button" class="link" id="refresh-now" hidden>New data &middot; refresh</button>
 </header>
 <main>
   {% if not bare %}
@@ -116,6 +123,9 @@
 <script src="/static/store.js?v={{ assets }}"></script>
 <script src="/static/fit.js?v={{ assets }}"></script>
 {% if not bare %}<script src="/static/sidebar.js?v={{ assets }}"></script>{% endif %}
+{# Outside the bare guard: the header line is on every page, admin included,
+   and live.js copes with there being no sidebar to refresh. #}
+<script src="/static/live.js?v={{ assets }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
