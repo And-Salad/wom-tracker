@@ -173,10 +173,15 @@ def _toward_99(ctx, player):
 
 
 def _skill_state(ctx, player_id, when):
-    """{skill: experience} as it stood at one reading."""
-    return {row["metric"]: row["value"]
-            for row in ctx.db.state_at(player_id, when, "skill")
-            if row["value"] is not None}
+    """{skill: experience} as it stood at one reading.
+
+    values_at rather than state_at with the NULLs filtered off, which is what
+    this was: a skill unranked at the window's opening edge dropped out of the
+    baseline entirely, and winners.measure counts a missing baseline from
+    zero - so this tile reported a skill's lifetime experience as one period's
+    gain. See values_at.
+    """
+    return ctx.db.values_at(player_id, when, "skill")
 
 
 @chart("standings")

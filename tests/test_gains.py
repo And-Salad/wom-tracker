@@ -128,3 +128,75 @@ def test_long_windows_keep_a_proportional_allowance():
     from wom.periods import coverage_slack
     assert coverage_slack(365 * 86400) > 86400
     assert coverage_slack(365 * 86400) < 7 * 86400, "but a week late is"
+
+
+def test_a_metric_that_went_unranked_keeps_its_last_real_baseline(db, player):
+    """The counterpart to the unranked-baseline test above, and its opposite.
+
+    There, a metric with no reading behind it counts from zero, because
+    unranked means below the cutoff and there is genuinely nothing to measure
+    from. Here there is: the metric was ranked, fell off the hiscores, and the
+    NULL that records it is merely the newest row rather than the newest
+    answer.
+
+    Matching the newest row whatever it holds and rejecting the NULL
+    afterwards dropped the metric from the baseline, where "counts from zero"
+    then applied to a value we knew - reporting a boss's lifetime kills as
+    this window's. Same rule as winners.skill_states: it stands still.
+    """
+    db.save_snapshot(player["id"], snapshot(
+        "2026-08-01T12:00:00.000Z", bosses={"zulrah": 4000}))
+    db.save_snapshot(player["id"], snapshot(
+        "2026-08-02T12:00:00.000Z", bosses={"zulrah": -1}))
+    db.save_snapshot(player["id"], snapshot(
+        "2026-08-10T12:00:00.000Z", bosses={"zulrah": 4100}))
+
+    gains = db.metric_gains(player["id"], "2026-08-03T00:00:00.000Z", "boss")
+    assert gains["zulrah"] == 100, "measured from 4000, not from zero"
+
+
+def test_a_metric_unranked_at_the_close_stands_still_rather_than_vanishing(db, player):
+    """The same rule at the other edge of the window.
+
+    A metric that gained and then fell off the hiscores was skipped entirely,
+    so the gain it had actually made went unreported.
+    """
+    db.save_snapshot(player["id"], snapshot(
+        "2026-08-01T12:00:00.000Z", bosses={"zulrah": 4000}))
+    db.save_snapshot(player["id"], snapshot(
+        "2026-08-10T12:00:00.000Z", bosses={"zulrah": 4100}))
+    db.save_snapshot(player["id"], snapshot(
+        "2026-08-11T12:00:00.000Z", bosses={"zulrah": -1}))
+
+    gains = db.metric_gains(player["id"], "2026-08-02T00:00:00.000Z", "boss")
+    assert gains["zulrah"] == 100
+
+
+def test_values_at_reads_past_an_unranked_row(db, player):
+    """The accessor the two above are built on, on its own.
+
+    state_at answers with the newest row whatever it holds, which a table
+    printing a dash and a level wants. values_at answers with the newest row
+    that holds a number, which is what measuring a gain wants.
+    """
+    db.save_snapshot(player["id"], snapshot(
+        "2026-08-01T12:00:00.000Z", skills={"mining": (4000000, 88)}))
+    db.save_snapshot(player["id"], snapshot(
+        "2026-08-02T12:00:00.000Z", skills={"mining": (-1, -1)}))
+
+    at = "2026-08-03T00:00:00.000Z"
+    assert db.values_at(player["id"], at, "skill") == {"mining": 4000000.0}
+    # state_at is deliberately left alone: /players and the Data table both
+    # read an unranked row to print it.
+    newest = {row["metric"]: row["value"]
+              for row in db.state_at(player["id"], at, "skill")}
+    assert newest == {"mining": None}
+
+
+def test_a_metric_never_ranked_is_absent_rather_than_zero(db, player):
+    """values_at says nothing about a metric it has never had a value for,
+    which is what lets metric_gains count it from zero."""
+    db.save_snapshot(player["id"], snapshot(
+        "2026-08-01T12:00:00.000Z", bosses={"zulrah": -1}))
+
+    assert db.values_at(player["id"], "2026-08-03T00:00:00.000Z", "boss") == {}

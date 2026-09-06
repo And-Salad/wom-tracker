@@ -271,6 +271,44 @@ class SnapshotStore:
         params.append(edge)
         return self.query(sql + " ORDER BY metric", params)
 
+    def values_at(self, player_id, when=None, kind=None):
+        """{metric: the newest *real* value at or before `when`}.
+
+        The measuring counterpart to state_at, and the difference is what a
+        NULL means. The API sends -1 for a metric below the hiscore cutoff and
+        _num stores that as NULL, so a metric that falls off the hiscores gets
+        a row saying nothing rather than no row at all.
+
+        state_at answers "what does the newest row hold", which for that
+        metric is NULL - the right answer for a table that wants to print a
+        dash and a level beside it. It is the wrong answer for measuring a
+        gain: dropping the NULL afterwards loses the metric entirely, and
+        every caller here reads a missing baseline as zero (deliberately - an
+        unranked metric taken to 286 kills is 286 kills). The two together
+        turn a skill's whole lifetime total into one window's gain.
+
+        So the rule winners.skill_states already follows, which is that an
+        unranked metric stands still at its last real value rather than
+        vanishing. Written out here rather than left to each caller, because
+        three of them had derived it independently and two got it wrong.
+        """
+        edge = when or "9999"
+        sql = ("SELECT metric, value FROM metrics m"
+               " WHERE player_id=? AND value IS NOT NULL AND captured_at<=?")
+        params = [player_id, edge]
+        if kind:
+            sql += " AND kind=?"
+            params.append(kind)
+        # `x.value IS NOT NULL` in here as well as outside is the whole point:
+        # without it the subquery finds the unranked row, the filter above
+        # then rejects it, and the metric drops out rather than falling back.
+        sql += (" AND captured_at = (SELECT MAX(captured_at) FROM metrics x"
+                "   WHERE x.player_id=m.player_id AND x.kind=m.kind"
+                "     AND x.metric=m.metric AND x.value IS NOT NULL"
+                "     AND x.captured_at<=?)")
+        params.append(edge)
+        return {row["metric"]: row["value"] for row in self.query(sql, params)}
+
     def latest_snapshot_metrics(self, player_id, kind=None):
         return self.state_at(player_id, None, kind)
 
@@ -417,13 +455,16 @@ class SnapshotStore:
         # being dropped: unranked means below the hiscore cutoff, and a boss
         # taken from unranked to 286 kills is 286 kills, not none. The same
         # goes for a boss that did not exist yet when the window opened.
-        opened = {row["metric"]: row["value"]
-                  for row in self.state_at(player_id, start["captured_at"], kind)}
+        #
+        # values_at, not state_at, on both edges. "Missing" has to mean never
+        # ranked at all, or the zero above is applied to a metric whose value
+        # we know perfectly well and the window is credited with the whole of
+        # it. See values_at.
+        opened = self.values_at(player_id, start["captured_at"], kind)
         gains = {}
-        for row in self.state_at(player_id, end["captured_at"], kind):
-            if row["value"] is None:
-                continue
-            moved = row["value"] - (opened.get(row["metric"]) or 0.0)
+        for metric, value in self.values_at(player_id, end["captured_at"],
+                                            kind).items():
+            moved = value - (opened.get(metric) or 0.0)
             if moved:
-                gains[row["metric"]] = max(0.0, moved)
+                gains[metric] = max(0.0, moved)
         return gains

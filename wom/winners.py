@@ -319,6 +319,12 @@ def reading_at_or_before(database, player_id, boundary):
 
     Only changes are stored, so the state is the newest row per skill at or
     before the boundary, and the stamp is the reading those rows belong to.
+
+    Newest *real* row, on the same rule skill_states above follows: a skill
+    that has fallen off the hiscores holds a NULL, and matching the newest row
+    whatever it holds only to reject it below drops the skill from the
+    baseline. measure() then counts it from zero, so a quiet day carrying a
+    single unranked skill reported that skill's whole total as the day's work.
     """
     rows = database.query(
         "SELECT captured_at, metric, value FROM metrics m"
@@ -326,7 +332,8 @@ def reading_at_or_before(database, player_id, boundary):
         "   AND captured_at<=?"
         "   AND captured_at=(SELECT MAX(captured_at) FROM metrics x"
         "      WHERE x.player_id=m.player_id AND x.kind='skill'"
-        "        AND x.metric=m.metric AND x.captured_at<=?)",
+        "        AND x.metric=m.metric AND x.value IS NOT NULL"
+        "        AND x.captured_at<=?)",
         (player_id, boundary, boundary))
     if not rows:
         return None
