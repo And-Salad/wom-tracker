@@ -293,6 +293,20 @@
        rendered by the server - skips it and lets that one arrive, rather
        than asking for the same thing twice on every morning's first visit. */
     restored: restored,
+    /* Ask the page for the same view again, because the data behind it
+       changed rather than the controls. Answers whether it could: a page
+       that reloads instead, or one whose content the server rendered and
+       that registered no listener, has to be offered a reload by whoever
+       asked - see adopt(), which draws the same line for the same reason.
+
+       Not announce(): nothing moved, so there is no run of clicks to wait
+       out, no address bar to rewrite and nothing new to remember. */
+    refresh: function () {
+      if (reloads || !listeners.length) { return false; }
+      var q = query();
+      listeners.forEach(function (fn) { fn(q); });
+      return true;
+    },
     onChange: function (fn) { listeners.push(fn); }
   };
 })();

@@ -16,6 +16,24 @@ Everything dated - day boundaries, the calendar, the window each recap covers
 place's daylight saving rather than the server's. The ten-minute interval itself
 is `SLOT_MINUTES` in `wom/scheduler.py`.
 
+### Noticing a run from an open page
+
+A page left open used to show the figures it was opened with, under a header
+whose "updated 2m ago" went on saying so an hour later. So a tab that is being
+looked at asks `/api/status` once a minute whether the stored `last_run` has
+moved, and the header counts down to the next slot in the meantime.
+
+When it has moved, the pages that fetch their own figures refetch in place -
+the same query they already hold, so a Milestones feed somebody has loaded
+four pages of comes back at that length rather than at the first page. Recaps
+and Gallery are rendered whole by the server and have nothing to redraw, so
+they offer a refresh link instead of reloading under a reader mid-paragraph.
+
+A hidden tab asks nothing at all, and asks straight away when it is looked at
+again. Polling rather than a pushed stream because waitress serves this with
+eight worker threads and an event stream would hold one of them for as long as
+its tab lived. `wom/web/static/live.js` is the whole client half of it.
+
 ## Session logins
 
 Wise Old Man can only ever tell us a session has *ended*: the hiscores do not

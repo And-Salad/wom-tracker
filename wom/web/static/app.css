@@ -127,6 +127,12 @@
   }
   nav a.on, nav a:hover { color: var(--accent); }
   .status { margin-left: auto; color: var(--muted); font-size: var(--text-sm); }
+  /* Hidden until live.js unhides it, and only on the pages whose content the
+     server renders whole: there is nothing to redraw in place there, so the
+     reader is offered the reload rather than handed one mid-sentence. Its own
+     margin, because .status already claims the free space with an auto one
+     and two of those would split it between them. */
+  #refresh-now { margin-left: var(--space-3); }
 
   main {
     display: flex; gap: 18px; padding: 18px var(--space-5);

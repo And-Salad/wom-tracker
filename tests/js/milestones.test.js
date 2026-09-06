@@ -191,6 +191,20 @@ test("changing the window starts again at one page", async () => {
   assert.match(asked[asked.length - 1], /limit=100$/);
 });
 
+test("a refresh behind a reader's back keeps the length they had loaded",
+     async () => {
+       /* When an update lands, live.js asks these same listeners for the same
+          view again. The reset above is keyed on the query changing, which is
+          what keeps the two apart - a run finishing must not collapse a feed
+          somebody has loaded four pages of back to the first one. */
+       const { asked, draw, click } = feedPage([row()], true, { total: 500 });
+       await draw("period=Year");
+       await click();
+       await draw("period=Year");        // the same view again, not a new one
+       assert.match(asked[asked.length - 1], /limit=101$/,
+                    "the length they were reading, asked for again");
+     });
+
 test("a load that fails puts the button back rather than leaving it busy", async () => {
   const { win, draw, click } = feedPage([row()], true, { total: 9 });
   await draw();

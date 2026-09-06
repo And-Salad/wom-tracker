@@ -23,5 +23,19 @@
     "deny": [
       "Read(./data/**)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git fetch --quiet origin 2>/dev/null; behind=$(git rev-list --count HEAD..origin/main 2>/dev/null); if [ -n \"$behind\" ] && [ \"$behind\" -gt 0 ]; then echo \"NOTE: this checkout is $behind commit(s) behind origin/main. Check before planning changes - work built on a stale base may need rebasing.\"; fi",
+            "timeout": 20,
+            "statusMessage": "Checking against origin/main"
+          }
+        ]
+      }
+    ]
   }
 }

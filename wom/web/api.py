@@ -14,7 +14,7 @@ from ..util import parse_api_time, pretty_metric
 from . import data as web_data
 from . import today, views
 from .data import NOBODY_PICKED
-from .selection import database, scope
+from .selection import database, scope, settings, status
 
 api = Blueprint("api", __name__)
 
@@ -81,6 +81,25 @@ def guard():
     if limits.api_tripwire.note(address):
         return _paused()
     return None
+
+
+@api.route("/api/status")
+def freshness():
+    """When the data last changed, so an open page can notice on its own.
+
+    Cheap on purpose - one settings read and no database work - because every
+    open tab asks for it on a timer. It is the same dictionary the header is
+    rendered from, so the line a reader is looking at and the answer that
+    refreshes it cannot drift apart.
+
+    Behind guard() like everything else rather than around it: a tripped
+    tripwire should stop the heartbeat too, and the 503 is what tells the
+    browser to give up rather than poll a paused dashboard all evening.
+    """
+    refused = guard()
+    if refused is not None:
+        return refused
+    return _fresh(status(settings()))
 
 
 @api.route("/api/chart/<key>")
