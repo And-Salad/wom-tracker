@@ -43,6 +43,53 @@ def test_a_skill_that_falls_off_the_hiscores_keeps_its_last_real_value(db, playe
     assert states[0][1] == {"attack": 5000.0}
 
 
+def test_the_day_opens_on_the_last_real_reading_of_an_unranked_skill(db, player):
+    """The rule the test above pins for skill_states, at the day boundary.
+
+    day_span opens the day through reading_at_or_before, which matched the
+    newest row per skill whatever it held and then rejected the NULL an
+    unranked skill leaves. The skill dropped out of the baseline, measure()
+    counts a missing baseline from zero, and a hundred points of mining read
+    as four million.
+    """
+    from datetime import datetime, timezone
+
+    from wom import winners
+    db.save_snapshot(1, snapshot("2026-08-30T20:00:00.000Z",
+                                 skills={"attack": (5000000, 99),
+                                         "mining": (4000000, 88)}))
+    db.save_snapshot(1, snapshot("2026-08-30T23:00:00.000Z",
+                                 skills={"attack": (5000000, 99),
+                                         "mining": (-1, -1)}))
+    db.save_snapshot(1, snapshot("2026-08-31T12:00:00.000Z",
+                                 skills={"attack": (5000000, 99),
+                                         "mining": (4000100, 88)}))
+
+    opens = datetime(2026, 8, 31, tzinfo=timezone.utc)
+    closes = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    baseline, latest = winners.day_span(db, player["id"], opens, closes)
+    assert baseline[1]["mining"] == 4000000.0, "mining stands still, not absent"
+    assert winners.measure(baseline[1], latest[1])["raw"] == 100.0
+
+
+def test_a_baseline_survives_every_skill_being_unranked_at_the_boundary(db, player):
+    """With one skill on file, the same fault answered "no reading at all".
+
+    reading_at_or_before returned None, so the day was measured from its own
+    first reading instead of from the evening before it - the opposite error,
+    and one the multi-skill case above hides.
+    """
+    from wom import winners
+    db.save_snapshot(1, snapshot("2026-08-30T20:00:00.000Z",
+                                 skills={"attack": (5000000, 99)}))
+    db.save_snapshot(1, snapshot("2026-08-30T23:00:00.000Z",
+                                 skills={"attack": (-1, -1)}))
+
+    found = winners.reading_at_or_before(db, player["id"],
+                                         "2026-08-31T00:00:00.000Z")
+    assert found is not None, "a reading exists; an unranked row is not its absence"
+    assert found[1] == {"attack": 5000000.0}
+
 def test_a_long_gap_is_not_counted_as_one_days_work(app):
     """Measured from the far side of a seven-week gap, an account that came
     back on the 30th would have all seven weeks folded into that day."""

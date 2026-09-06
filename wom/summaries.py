@@ -639,8 +639,13 @@ def build_group_digest(database, config, players, window, board="maxing"):
                 fmt_int(overall["level"]), fmt_int(overall["value"])))
         # Coverage varies wildly between players, and a ranking that ignores
         # that is a ranking of who happened to be measured.
-        for note in _coverage(database, player, window):
-            lines.append("  " + note.replace("Data coverage: ", "Coverage: ").strip())
+        #
+        # Not `note`: that name holds the shortlist's instruction about the
+        # accounts left out, which _ranking_lines has already been given. It
+        # survives only because nothing reads it after this point, which is
+        # not a property worth leaving for the next edit to discover.
+        for line in _coverage(database, player, window):
+            lines.append("  " + line.replace("Data coverage: ", "Coverage: ").strip())
         lines.append("")
 
     # Only where somebody reported something. Said against a roster where
