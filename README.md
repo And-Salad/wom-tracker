@@ -171,6 +171,10 @@ it never leaves the machine and nothing about it reaches the server - see
 A link with a query string always wins over it, so a shared view still means
 the same thing to whoever opens it.
 
+A page that is open when an update lands picks the new figures up on its own,
+and the header counts down to the next run rather than naming a time - see
+[Noticing a run from an open page](docs/data.md#noticing-a-run-from-an-open-page).
+
 ## Requirements
 
 **Python 3.12 or newer**, with `requests`, `flask` and `waitress`, plus
