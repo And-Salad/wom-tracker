@@ -34,6 +34,19 @@ again. Polling rather than a pushed stream because waitress serves this with
 eight worker threads and an event stream would hold one of them for as long as
 its tab lived. `wom/web/static/live.js` is the whole client half of it.
 
+That poll is also what the header's viewer count is read from. It used to name
+the size of the roster, which the Players page already gives and which changes
+about once a month; how many other people are on the site right now is not
+knowable anywhere else. Nobody is asked to announce themselves - every page
+load and every one-a-minute poll notes a fingerprint of the caller's address
+and browser string, and the count is however many distinct ones have been seen
+in the last five minutes. A tab in the background polls nothing, so it drops
+out a few minutes after it is looked away from, which is the honest answer. It
+is held in memory per process (`wom/web/viewers.py`), so a deploy resets it and
+every open page restores itself within the minute. Behind a proxy the count is
+only as good as `WOM_TRUSTED_IP_HEADER`: without one every visitor arrives from
+the proxy's address, and only their browser strings tell them apart.
+
 ## Session logins
 
 Wise Old Man can only ever tell us a session has *ended*: the hiscores do not

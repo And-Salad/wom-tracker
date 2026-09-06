@@ -27,6 +27,7 @@ from .jobs import JobRunner
 from .limits import ConfigLatch, Limits
 from .pages import pages as pages_blueprint
 from .selection import settings, status
+from .viewers import Viewers, fingerprint
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ def create_app(limits=None):
     app.config["DATABASE"] = Database(db_path())
     app.config["JOBS"] = JobRunner()
     app.config["LIMITS"] = limits or Limits(latch=ConfigLatch())
+    app.config["VIEWERS"] = Viewers()
     # Set by web_app.py when it starts the scheduler; None when the dashboard
     # is served without one, in which case there is nothing to collide with.
     app.config.setdefault("SCHEDULER", None)
@@ -60,6 +62,7 @@ def create_app(limits=None):
     app.register_blueprint(exporting_blueprint)
     app.register_blueprint(hooks_blueprint)
     _add_hardening(app)
+    _count_viewers(app)
     _note_hook_attempts(app)
     _add_template_globals(app)
     _refuse_bad_dates(app)
@@ -118,6 +121,29 @@ def _add_hardening(app):
             response.headers.setdefault(
                 "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
+
+
+def _count_viewers(app):
+    """Note whoever is asking, so the header can say how many that is.
+
+    Here rather than in the views because every one of them counts equally:
+    a page render, a chart fetch, and the /api/status poll an open tab makes
+    once a minute are all the same person still being here. Static files are
+    not - they are cached for a year, so a reader who has been on the site
+    for an hour has asked for none of them - and /hook is a plugin rather
+    than a person.
+
+    Before the request rather than after, because the header is rendered
+    from this count: a reader on their own should see themselves.
+    """
+    @app.before_request
+    def note_viewer():
+        if request.endpoint == "static" or request.path.startswith("/hook"):
+            return None
+        address, _source = app.config["LIMITS"].address()
+        app.config["VIEWERS"].saw(
+            fingerprint(address, request.headers.get("User-Agent")))
+        return None
 
 
 def _note_hook_attempts(app):

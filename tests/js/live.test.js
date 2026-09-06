@@ -19,7 +19,7 @@ const { page, source } = require("./page");
 
 const HEADER = `<!doctype html><html><body><header>
   <span class="status" id="freshness" data-stamp="STAMP" data-next="NEXT">
-    <span id="stat-players">2</span> players &middot;
+    <span id="stat-viewers">2 viewers</span> &middot;
     updated <span id="stat-last">3m ago</span> &middot;
     <span id="stat-next">next Wed 14:20</span>
   </span>
@@ -28,7 +28,7 @@ const HEADER = `<!doctype html><html><body><header>
 
 /* What the server answers, in the shape selection.status() builds. */
 function status(fields) {
-  return Object.assign({players: 2, last: "just now", next: "Wed 14:30",
+  return Object.assign({viewers: 2, last: "just now", next: "Wed 14:30",
                         next_at: null, now: null, stamp: "seen"}, fields || {});
 }
 
@@ -123,6 +123,15 @@ test("a poll that changes nothing does not disturb the page", async () => {
   assert.strictEqual(it.text("stat-last"), "4m ago",
                      "but how old it is still ages");
   assert.deepStrictEqual(it.delays, [60000], "and it asks again in a minute");
+});
+
+test("the header says how many people are here, and says it in English", async () => {
+  const it = await live({stamp: "seen",
+                         reply: {body: status({stamp: "seen", viewers: 1})}});
+  assert.strictEqual(it.text("stat-viewers"), "1 viewer",
+                     "\"1 viewers\" is why the word is written here");
+  await it.clear().live.poll();
+  assert.strictEqual(it.text("stat-viewers"), "1 viewer");
 });
 
 test("a finished run is what makes the page ask again", async () => {

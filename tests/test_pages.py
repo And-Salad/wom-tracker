@@ -388,6 +388,48 @@ def test_no_page_still_claims_the_session_events_go_unread(signed_in):
 # -- the live header ------------------------------------------------------
 
 
+def test_the_header_counts_the_people_here_rather_than_the_roster(client, app):
+    """How many accounts are tracked is on the Players page and changes about
+    once a month; who else is reading right now is not knowable anywhere."""
+    seed(app)
+    page = client.get("/").get_data(as_text=True)
+    assert "1 viewer<" in page, "the reader asking counts as one, and reads as one"
+    assert "players &middot;" not in page
+
+    other = app.test_client()
+    other.get("/", headers={"User-Agent": "another browser"})
+    assert client.get("/api/status").get_json()["viewers"] == 2
+
+
+def test_a_cached_asset_is_not_a_second_reader(client, app):
+    """Static files are cached for a year, so a reader an hour in has asked
+    for none of them - counting them would say the opposite."""
+    seed(app)
+    before = client.get("/api/status").get_json()["viewers"]
+    client.get("/static/live.js", headers={"User-Agent": "cache warmer"})
+    assert client.get("/api/status").get_json()["viewers"] == before
+
+
+def test_a_reader_who_has_gone_stops_counting():
+    """Nobody says goodbye - a closed tab is silence, and silence is all we
+    have to read it from."""
+    from wom.web.viewers import Viewers
+
+    counter = Viewers(window=300)
+    assert counter.saw("someone", now=0) == 1
+    assert counter.saw("somebody else", now=100) == 2
+    assert counter.count(now=350) == 1, "the first one has been quiet too long"
+    assert counter.count(now=500) == 0
+
+
+def test_two_phones_on_one_connection_are_two_readers():
+    """The address alone would count a household or an office as one."""
+    from wom.web.viewers import fingerprint
+
+    assert fingerprint("1.2.3.4", "Firefox") != fingerprint("1.2.3.4", "Safari")
+    assert fingerprint("1.2.3.4", "Firefox") == fingerprint("1.2.3.4", "Firefox")
+
+
 def test_the_status_endpoint_carries_the_stamp_the_header_was_rendered_from(
         client, app):
     """The page and the poll that refreshes it must not be able to disagree.

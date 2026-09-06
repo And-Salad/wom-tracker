@@ -69,6 +69,16 @@ def current_span(players=None):
     return current_timespan(database(), players)
 
 
+def viewers():
+    """How many people are on the site right now, this one included.
+
+    Counted rather than configured - see viewers.py. Zero when there is no
+    counter, which is only ever a status() called outside an application.
+    """
+    counter = current_app.config.get("VIEWERS") if current_app else None
+    return counter.count() if counter else 0
+
+
 def status(config):
     """The line in the header: how many, how fresh, when next.
 
@@ -82,7 +92,10 @@ def status(config):
     return {
         "last": fmt_ago(last.isoformat()) if last else "never",
         "next": upcoming.astimezone().strftime("%a %H:%M"),
-        "players": len(config.get("usernames", [])),
+        # The roster used to be counted here, which is a number that changes
+        # about once a month and that the Players page already gives. Who
+        # else is reading it right now is not knowable anywhere else.
+        "viewers": viewers(),
         # What actually changes when a run lands: the stored stamp itself.
         "stamp": config.get("last_run", "") or "",
         # The same instant `next` names, and this clock's reading of now, so a

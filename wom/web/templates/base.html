@@ -39,7 +39,7 @@
      what it is comparing against before its first poll has answered. #}
   <span class="status" id="freshness"
         data-stamp="{{ status.stamp }}" data-next="{{ status.next_at }}">
-    <span id="stat-players">{{ status.players }}</span> players &middot;
+    <span id="stat-viewers">{{ status.viewers }} viewer{{ '' if status.viewers == 1 else 's' }}</span> &middot;
     updated <span id="stat-last">{{ status.last }}</span> &middot;
     <span id="stat-next">next {{ status.next }}</span>
   </span>

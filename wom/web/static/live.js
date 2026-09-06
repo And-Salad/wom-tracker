@@ -21,7 +21,7 @@
   var head = document.getElementById("freshness");
   if (!head || !window.fetch) { return; }        // nothing to keep true
 
-  var players = document.getElementById("stat-players");
+  var viewers = document.getElementById("stat-viewers");
   var lastBox = document.getElementById("stat-last");
   var nextBox = document.getElementById("stat-next");
   var button = document.getElementById("refresh-now");
@@ -100,8 +100,12 @@
   }
 
   function show(status) {
-    if (players && status.players !== undefined) {
-      players.textContent = String(status.players);
+    /* The count includes whoever is reading this, so it is never 0 while
+       anyone can see it - but "1 viewers" is, so the word comes from here
+       rather than being left standing in the markup beside a number. */
+    if (viewers && status.viewers !== undefined) {
+      viewers.textContent = status.viewers +
+        (status.viewers === 1 ? " viewer" : " viewers");
     }
     // "3m ago" ages even when nothing has changed, which is most polls.
     if (lastBox && status.last) { lastBox.textContent = status.last; }
