@@ -43,6 +43,11 @@ class AchievementStore:
         if until:
             sql += " AND a.achieved_at < ?"
             params.append(until)
-        sql += " ORDER BY a.achieved_at DESC, a.name LIMIT ?"
+        # Wise Old Man dates everything it found between two snapshots to the
+        # same instant, so a tie here is the common case, not the edge one.
+        # Ordering those by name puts "1000 Zulrah kills" above "500 Zulrah
+        # kills"; ordering by the threshold reads as the run it was.
+        sql += (" ORDER BY a.achieved_at DESC, a.metric, a.measure,"
+                " a.threshold, a.name LIMIT ?")
         params.append(limit)
         return self.query(sql, params)

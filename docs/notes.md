@@ -241,14 +241,35 @@ The **Since** dropdown filters to a rolling window or shows all time, and the
 feed only lists the players included by the sidebar swatches, so it narrows the
 same way the Overview page does.
 
-Two quirks of the API worth knowing, both handled in the display:
+A Wise Old Man milestone is not an event it watched. It keeps a catalogue of
+thresholds — a 99 in each skill, Base 60/70/80 Stats, experience totals, kill
+counts — and on each snapshot it checks the player against that catalogue and
+back-dates anything newly crossed by interpolating between the two snapshots
+either side. The row exists because of a line in a table; the date is an
+estimate, and `accuracy` is the width of the window it was estimated in.
 
-- Wise Old Man records how precisely it knows each date. Anything vaguer than a
-  day is shown with a leading `~`, because a milestone reconstructed from
-  imported history can be off by months.
+That width is not a rounding error. Across the live database, 31 of 52
+milestones are vaguer than a day and the widest is a window of over four
+years. Everything crossed inside one snapshot gap lands on the same instant,
+so ties are the ordinary case here rather than the exception.
+
+Three consequences, all handled in the display:
+
+- Anything vaguer than a day is shown with a leading `~`, and the date carries
+  a tooltip saying how wide the window actually was. Within two days and
+  within four years are not the same claim, and the `~` alone cannot tell them
+  apart.
 - A milestone it cannot place at all comes back dated to the epoch. Those read
   **unknown** and sort to the bottom rather than claiming to have happened in
   1970.
+- A cluster sharing one instant is ordered by the threshold that was passed,
+  not by name. Alphabetically `1000 Zulrah kills` sorts above `500`, which
+  tells a run backwards.
+
+`measure` (`experience`, `levels`, `kills`, `score`) and `threshold` are stored
+too. `threshold` is in the metric's own unit rather than the measure's — `Base
+80 Stats` carries 47,665,632, which is experience, not 80 — so it orders a
+cluster and is never shown raw.
 
 Milestones are fetched once per player per update pass from
 `GET /players/{username}/achievements`, which returns a player's whole list, so
@@ -524,6 +545,27 @@ by date, with anything Wise Old Man could not date at all last - an undated
 milestone is not news, and on top it would push out what happened today. Every
 row carries its kind so the filter above the table can hide one, including the
 rows redrawn from `/api/milestones` when the sidebar changes.
+
+Both sources build their rows through one constructor, `_feed_row` in
+`views.py`. They used to build the same dict by hand side by side and drifted
+apart where nobody was looking: Dink rows passed `None` for the icon whatever
+they were about, so half the feed was iconless by construction, and `pet` was
+on `FEED_KINDS` and off `FEED_CATEGORIES`, which left pet rows permanently
+visible because `milestones.js` treats a category it does not recognise as one
+to show. A test now holds those two lists together. Each row says which source
+it came from and how well it is dated; nothing renders the source yet, but the
+two facts a reader would need to weigh a row are on it.
+
+Only a collection log row resolves an icon on the Dink side, from
+`COLLECTION_METRIC`. A quest, a diary and a combat task are not metrics we
+track, and a pet arrives as a name with nothing to map it to, so those leave
+the column empty rather than guess.
+
+The merge reads one more row than it will show from each source, so it can say
+that it cut something without counting the whole table to find out. It used to
+read a full limit from each and cut the merge to one limit, discarding up to
+half of what it read in silence - a player with Dink running could bury every
+milestone in the group that way.
 
 Levels are not written through. Our level total lives in the `level` column of
 the `overall` row, beside overall experience in `value`, and a level reported

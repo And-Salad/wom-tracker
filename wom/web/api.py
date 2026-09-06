@@ -158,7 +158,8 @@ def milestones():
     here = scope()
     feed = views.milestone_feed(database(), here.selected, here.palette,
                                 since=here.span.since, until=here.span.until)
-    return _fresh({"feed": feed, "span": here.span.as_dict()})
+    return _fresh({"feed": feed["rows"], "truncated": feed["truncated"],
+                   "span": here.span.as_dict()})
 
 
 @api.route("/api/table")

@@ -217,13 +217,89 @@ def player_recaps(database, player):
 
 # What each feed row is, for the filter above the table. The order is the
 # order the filter offers them in.
+#
+# Every kind gameplay puts on the feed needs an entry here or it cannot be
+# filtered at all: milestones.js leaves a category it does not recognise
+# permanently visible, which is the right default and a bad way to discover
+# that these two lists have drifted apart. A test holds them together.
 FEED_CATEGORIES = (
     ("milestone", "Milestones"),
     ("collection", "Collection log"),
     ("quest", "Quests"),
     ("diary", "Diaries"),
     ("combat_task", "Combat tasks"),
+    ("pet", "Pets"),
 )
+
+# How well we know when a row happened, which is the real difference between
+# the two sources. Dink reports the moment itself; Wise Old Man reconstructs a
+# milestone from the two snapshots either side of it, so its date is an
+# estimate with a width, and sometimes no estimate at all.
+EXACT, APPROXIMATE, UNKNOWN = "exact", "approximate", "unknown"
+
+# Wise Old Man's accuracy is the gap between those two snapshots, in
+# milliseconds. Wider than a day is not a date, it is a fortnight wearing a
+# day's name - most of ours are, and the widest is over four years.
+A_DAY_IN_MS = 86400000
+
+
+def _precision(at, accuracy):
+    """How much of Wise Old Man's date to believe.
+
+    A milestone it cannot place at all comes back dated to the epoch rather
+    than undated, so anything before 1990 means "no idea", not 1970.
+    """
+    if not at or at <= "1990":
+        return UNKNOWN
+    if accuracy is None or accuracy < 0 or accuracy > A_DAY_IN_MS:
+        return APPROXIMATE
+    return EXACT
+
+
+def _within(accuracy):
+    """How wide an estimate is, in words, for the date's tooltip.
+
+    The ~ on the page says a date is rough; this says how rough, because
+    "within two days" and "within four years" are not the same claim.
+    """
+    if accuracy is None or accuracy < 0:
+        return "Wise Old Man could not date this at all."
+    hours = accuracy / 3600000.0
+    if hours < 48:
+        span = "{:,.0f} hours".format(hours)
+    elif hours < 24 * 365:
+        span = "{:,.0f} days".format(hours / 24)
+    else:
+        span = "{:,.1f} years".format(hours / 24 / 365)
+    return "Somewhere in a window of {}.".format(span)
+
+
+def _feed_row(source, category, at, player, color, name, detail="",
+              metric=None, precision=EXACT, within=""):
+    """One row of the feed, whichever source it came from.
+
+    Both sources used to build this dict by hand, side by side, and drifted
+    apart where nobody was looking - Dink rows passed None for the icon
+    whatever they were about, and stayed iconless for it. The shape is decided
+    here now, and each source only says what it actually knows.
+    """
+    dated = precision != UNKNOWN
+    when = fmt_datetime(at, "%d %b %Y") if dated else "unknown"
+    return {
+        "at": at if dated else "",
+        "when": ("~" + when) if precision == APPROXIMATE else when,
+        "ago": fmt_ago(at) if dated else "",
+        "within": within,
+        "player": player,
+        "color": color,
+        "name": name,
+        "detail": detail,
+        "category": category,
+        "metric": metric,
+        "kind": icon_kind_for(metric) if metric else None,
+        "source": source,
+        "precision": precision,
+    }
 
 
 def milestone_feed(database, selected, palette, since=None, until=None,
@@ -234,51 +310,43 @@ def milestone_feed(database, selected, palette, since=None, until=None,
     a player's own client reported, which only the ones who opted in have. A
     reader should not have to care which is which, so they are merged and
     sorted together - but each row says what it is, so they can be filtered.
+
+    Returns the rows and whether there were more than fit. Reading a whole
+    limit from each source and then cutting the merge to one limit threw away
+    up to half of what it read without saying so, and a player with Dink
+    running can bury every milestone in the group that way.
     """
 
     ids = [p["id"] for p in selected]
     feed = []
+    # One more than we will show, from each side, so the merge can tell that
+    # it cut something without counting the whole table to find out.
+    reach = limit + 1
     for row in database.achievements(player_ids=ids, since=since, until=until,
-                                     limit=limit):
-        dated = row["achieved_at"] and row["achieved_at"] > "1990"
-        accuracy = row["accuracy"]
-        vague = accuracy is None or accuracy < 0 or accuracy > 86400000
-        feed.append({
-            "at": row["achieved_at"] if dated else "",
-            "when": (("~" if vague else "")
-                     + fmt_datetime(row["achieved_at"], "%d %b %Y")) if dated
-                    else "unknown",
-            "ago": fmt_ago(row["achieved_at"]) if dated else "",
-            "player": row["display_name"],
-            "color": palette.get(row["username"], theme.MUTED),
-            "name": row["name"],
-            "detail": "",
-            "category": "milestone",
-            "metric": row["metric"],
-            "kind": icon_kind_for(row["metric"]) if row["metric"] else None,
-        })
+                                     limit=reach):
+        precision = _precision(row["achieved_at"], row["accuracy"])
+        feed.append(_feed_row(
+            "wom", "milestone", row["achieved_at"], row["display_name"],
+            palette.get(row["username"], theme.MUTED), row["name"],
+            metric=row["metric"], precision=precision,
+            within=_within(row["accuracy"]) if precision != EXACT else "",
+        ))
 
     for row in database.feed_events(gameplay.FEED_KINDS, player_ids=ids,
-                                    since=since, until=until, limit=limit):
-        payload = _payload(row["payload"])
-        feed.append({
-            "at": row["happened_at"],
-            "when": fmt_datetime(row["happened_at"], "%d %b %Y"),
-            "ago": fmt_ago(row["happened_at"]),
-            "player": row["display_name"] or row["username"],
-            "color": palette.get(row["username"], theme.MUTED),
-            "name": row["subject"] or "",
-            "detail": gameplay.detail(row["kind"], payload),
-            "category": row["kind"],
-            "metric": None,
-            "kind": None,
-        })
+                                    since=since, until=until, limit=reach):
+        feed.append(_feed_row(
+            "dink", row["kind"], row["happened_at"],
+            row["display_name"] or row["username"],
+            palette.get(row["username"], theme.MUTED), row["subject"] or "",
+            detail=gameplay.detail(row["kind"], _payload(row["payload"])),
+            metric=gameplay.feed_metric(row["kind"]),
+        ))
 
     # Newest first, and anything Wise Old Man could not date at all last -
     # a milestone with no date is not news, and putting it on top would push
     # what actually happened today off the screen.
     feed.sort(key=lambda row: row["at"] or "", reverse=True)
-    return feed[:limit]
+    return {"rows": feed[:limit], "truncated": len(feed) > limit}
 
 
 def _payload(text):

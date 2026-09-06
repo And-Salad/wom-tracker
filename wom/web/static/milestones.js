@@ -51,6 +51,7 @@
   function rowNode(row) {
     var tr = el("tr");
     if (row.category) { tr.setAttribute("data-category", row.category); }
+    if (row.source) { tr.setAttribute("data-source", row.source); }
     var icon = el("td");
     if (row.kind) {
       var img = el("img", "feed-icon");
@@ -63,7 +64,11 @@
       icon.appendChild(img);
     }
     tr.appendChild(icon);
-    tr.appendChild(el("td", null, row.when));
+    var when = el("td", null, row.when);
+    // How wide the estimate behind a ~ actually is. Only rough dates carry
+    // one, so an exact date gets no tooltip rather than an empty one.
+    if (row.within) { when.title = row.within; }
+    tr.appendChild(when);
     tr.appendChild(el("td", "dim", row.ago));
     var who = el("td", "named", row.player);
     who.style.setProperty("--dot", row.color);
@@ -77,7 +82,8 @@
     return tr;
   }
 
-  function refill(feed) {
+  function refill(feed, truncated) {
+    cut = !!truncated;
     body.textContent = "";
     if (!feed.length) {
       var empty = el("tr");
@@ -93,13 +99,20 @@
     say(applyFilter(), feed.length);
   }
 
+  /* Whether the server had more rows than it sent. Kept beside the feed
+     rather than recomputed, because only the server can know it. */
+  var cut = count.hasAttribute("data-truncated");
+
   function say(shown, total) {
     var text = shown + (shown === 1 ? " milestone" : " milestones");
     if (total !== undefined && total !== shown) {
       text += " of " + total;
     }
-    count.textContent = text +
-      ", newest first. A ~ marks a date Wise Old Man knows only roughly.";
+    text += ", newest first. A ~ marks a date Wise Old Man knows only roughly.";
+    if (cut) {
+      text += " More happened than fit - narrow the window to see the rest.";
+    }
+    count.textContent = text;
   }
 
   if (types) {
@@ -136,7 +149,7 @@
       .then(function (data) {
         if (mine !== seq) { return; }      // an older reply, now out of date
         window.Sidebar.showWindow(data.span);
-        refill(data.feed || []);
+        refill(data.feed || [], data.truncated);
       })
       .catch(function () { /* the feed on screen is still true */ });
   });
