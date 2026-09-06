@@ -6,7 +6,7 @@ def test_the_milestones_page_offers_a_filter_for_each_kind(client, app):
     seed(app)
     page = client.get("/milestones").get_data(as_text=True)
     for label in ("Milestones", "Collection log", "Quests", "Diaries",
-                  "Combat tasks"):
+                  "Combat tasks", "Pets"):
         assert label in page, label
     assert 'id="types"' in page
 
@@ -45,6 +45,116 @@ def test_the_json_feed_carries_the_kind_too(client, app):
     row = [r for r in feed if r["name"] == "Peach Conjurer"][0]
     assert row["category"] == "combat_task"
     assert row["detail"] == "Grandmaster"
+
+
+def test_milestones_crossed_in_one_gap_read_as_the_run_they_were(app):
+    """Wise Old Man dates everything it found between two snapshots to the
+    same instant, so a tie is the common case here, not the edge one.
+
+    Ordering those by name sorts "1000" above "500", which is a progression
+    told backwards. The threshold is the number that was actually passed.
+    """
+    from wom.web import views
+    database = seed(app)
+    same = "2026-08-30T10:00:00.000Z"
+    database.save_achievements(1, [
+        {"name": "{} Zulrah kills".format(n), "metric": "zulrah",
+         "measure": "kills", "threshold": n, "createdAt": same,
+         "accuracy": 3600000}
+        for n in (500, 50, 1000, 100)])
+    feed = views.milestone_feed(database, [{"id": 1}], {})["rows"]
+    assert [row["name"] for row in feed] == [
+        "50 Zulrah kills", "100 Zulrah kills",
+        "500 Zulrah kills", "1000 Zulrah kills"]
+
+
+def test_a_rough_date_says_how_rough_it_is(app):
+    """The ~ says a date is an estimate. Within two days and within four
+    years are not the same claim, and only one of them is a date."""
+    from wom.web import views
+    database = seed(app)
+    database.save_achievements(1, [
+        {"name": "99 Attack", "metric": "attack", "measure": "experience",
+         "threshold": 13034431, "createdAt": "2026-08-30T10:00:00.000Z",
+         "accuracy": 3600000},
+        {"name": "99 Magic", "metric": "magic", "measure": "experience",
+         "threshold": 13034431, "createdAt": "2026-08-29T10:00:00.000Z",
+         "accuracy": 132841642470},
+        {"name": "Base 60 Stats", "metric": "overall", "measure": "levels",
+         "threshold": 6569808, "createdAt": None, "accuracy": -1}])
+    rows = {row["name"]: row
+            for row in views.milestone_feed(database, [{"id": 1}], {})["rows"]}
+
+    assert rows["99 Attack"]["precision"] == views.EXACT
+    assert not rows["99 Attack"]["within"], "an exact date explains nothing"
+    assert not rows["99 Attack"]["when"].startswith("~")
+
+    assert rows["99 Magic"]["precision"] == views.APPROXIMATE
+    assert rows["99 Magic"]["when"].startswith("~")
+    assert "years" in rows["99 Magic"]["within"]
+
+    assert rows["Base 60 Stats"]["precision"] == views.UNKNOWN
+    assert rows["Base 60 Stats"]["when"] == "unknown"
+
+
+def test_every_row_says_which_source_it_came_from(client, app):
+    """One is a threshold Wise Old Man reconstructed, the other a moment a
+    client stamped. Nothing distinguishes them once they are merged."""
+    from wom import gameplay
+    database = seed(app)
+    database.save_achievements(1, [{
+        "name": "99 Attack", "metric": "attack", "measure": "experience",
+        "threshold": 13034431, "createdAt": "2026-08-30T10:00:00.000Z",
+        "accuracy": 3600000}])
+    gameplay.store(database, "zezima", "quest", "2026-08-30T21:15:00.000000Z",
+                   {"type": "QUEST", "extra": {"questName": "Dragon Slayer I"}})
+    feed = client.get("/api/milestones?period=Year").get_json()["feed"]
+    assert {row["source"] for row in feed} == {"wom", "dink"}
+
+
+def _many(database, count):
+    from wom import gameplay
+    for n in range(count):
+        gameplay.store(database, "zezima", "quest",
+                       "2026-08-{:02d}T12:00:00.000000Z".format(n % 28 + 1),
+                       {"type": "QUEST", "extra": {"questName": "Quest {}".format(n)}})
+
+
+def test_a_length_nobody_asked_for_is_a_page(client, app):
+    from wom.web import views
+    seed(app)
+    data = client.get("/api/milestones?period=Year").get_json()
+    assert data["page"] == views.PAGE
+
+
+def test_the_asked_for_length_is_clamped_at_both_ends(client, app):
+    """It arrives in a URL, so it is a number anyone can write. Below a page
+    there is nothing to gain, and above the ceiling is the whole table."""
+    from wom.web import views
+    database = seed(app)
+    _many(database, 3)
+
+    def asked(query):
+        return client.get("/api/milestones?period=Year&" + query).get_json()
+
+    assert asked("limit=1")["truncated"] is False, "a page still covers three"
+    for bad in ("limit=0", "limit=-5", "limit=nonsense", "limit="):
+        assert len(asked(bad)["feed"]) == 3, bad
+    # Nothing here reaches the ceiling; what matters is that asking past it
+    # is answered rather than refused, and answered with a real page.
+    assert len(asked("limit={}".format(views.MAX_ROWS * 100))["feed"]) == 3
+
+
+def test_load_more_returns_the_same_rows_with_more_on_the_end(client, app):
+    """The button asks for a longer list, so the longer list has to open the
+    same way or a reader watches rows they have read scroll past again."""
+    database = seed(app)
+    _many(database, 6)
+    short = client.get("/api/milestones?period=Year&limit=1").get_json()
+    long_ = client.get("/api/milestones?period=Year&limit=200").get_json()
+    assert short["total"] == long_["total"] == 6
+    names = [row["name"] for row in long_["feed"]]
+    assert [row["name"] for row in short["feed"]] == names[:len(short["feed"])]
 
 
 def _shot(app, kind="pet", caption="Ikkle hydra", extra=b"clickable"):

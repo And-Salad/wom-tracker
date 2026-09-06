@@ -683,6 +683,13 @@
   .types { margin: 0 0 var(--space-2); gap: var(--space-2) 14px; }
   .types .tick { margin: 0; font-size: var(--text-sm); }
 
+  /* Load more, under the feed. Centred and quiet: it is the end of the list
+     rather than the point of the page, and it is absent whenever the whole
+     list is already on screen. */
+  .more { justify-content: center; margin: var(--space-2) 0 0; }
+  .more:empty { margin: 0; }
+  .load-more { padding: 6px 18px; border-radius: var(--radius); }
+
   /* The gallery. A grid that gives each screenshot room without a fixed
      column count, so it reflows on a phone rather than scrolling sideways. */
   .panel { margin: 0 0 var(--space-3); }

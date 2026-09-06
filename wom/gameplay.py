@@ -72,6 +72,16 @@ def boss_metric(database, name):
     return None
 
 
+def feed_metric(kind):
+    """The metric a feed row's icon comes from, or None if it has none.
+
+    Only a collection log row has one. A quest, a diary and a combat task are
+    not metrics we track at all, and a pet arrives as a name with nothing to
+    map it to, so those leave the icon column empty rather than guess at it.
+    """
+    return COLLECTION_METRIC if kind == "collection" else None
+
+
 def extract(kind, body):
     """The rows this event becomes, as [(subject, quantity)].
 

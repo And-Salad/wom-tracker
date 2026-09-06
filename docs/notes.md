@@ -241,14 +241,35 @@ The **Since** dropdown filters to a rolling window or shows all time, and the
 feed only lists the players included by the sidebar swatches, so it narrows the
 same way the Overview page does.
 
-Two quirks of the API worth knowing, both handled in the display:
+A Wise Old Man milestone is not an event it watched. It keeps a catalogue of
+thresholds — a 99 in each skill, Base 60/70/80 Stats, experience totals, kill
+counts — and on each snapshot it checks the player against that catalogue and
+back-dates anything newly crossed by interpolating between the two snapshots
+either side. The row exists because of a line in a table; the date is an
+estimate, and `accuracy` is the width of the window it was estimated in.
 
-- Wise Old Man records how precisely it knows each date. Anything vaguer than a
-  day is shown with a leading `~`, because a milestone reconstructed from
-  imported history can be off by months.
+That width is not a rounding error. Across the live database, 31 of 52
+milestones are vaguer than a day and the widest is a window of over four
+years. Everything crossed inside one snapshot gap lands on the same instant,
+so ties are the ordinary case here rather than the exception.
+
+Three consequences, all handled in the display:
+
+- Anything vaguer than a day is shown with a leading `~`, and the date carries
+  a tooltip saying how wide the window actually was. Within two days and
+  within four years are not the same claim, and the `~` alone cannot tell them
+  apart.
 - A milestone it cannot place at all comes back dated to the epoch. Those read
   **unknown** and sort to the bottom rather than claiming to have happened in
   1970.
+- A cluster sharing one instant is ordered by the threshold that was passed,
+  not by name. Alphabetically `1000 Zulrah kills` sorts above `500`, which
+  tells a run backwards.
+
+`measure` (`experience`, `levels`, `kills`, `score`) and `threshold` are stored
+too. `threshold` is in the metric's own unit rather than the measure's — `Base
+80 Stats` carries 47,665,632, which is experience, not 80 — so it orders a
+cluster and is never shown raw.
 
 Milestones are fetched once per player per update pass from
 `GET /players/{username}/achievements`, which returns a player's whole list, so
@@ -519,6 +540,57 @@ by date, with anything Wise Old Man could not date at all last - an undated
 milestone is not news, and on top it would push out what happened today. Every
 row carries its kind so the filter above the table can hide one, including the
 rows redrawn from `/api/milestones` when the sidebar changes.
+
+Both sources build their rows through one constructor, `_feed_row` in
+`views.py`. They used to build the same dict by hand side by side and drifted
+apart where nobody was looking: Dink rows passed `None` for the icon whatever
+they were about, so half the feed was iconless by construction, and `pet` was
+on `FEED_KINDS` and off `FEED_CATEGORIES`, which left pet rows permanently
+visible because `milestones.js` treats a category it does not recognise as one
+to show. A test now holds those two lists together. Each row says which source
+it came from and how well it is dated; nothing renders the source yet, but the
+two facts a reader would need to weigh a row are on it.
+
+Only a collection log row resolves an icon on the Dink side, from
+`COLLECTION_METRIC`. A quest, a diary and a combat task are not metrics we
+track, and a pet arrives as a name with nothing to map it to, so those leave
+the column empty rather than guess.
+
+### Loading more
+
+A page is a hundred rows, first load and every load after. Generous on purpose:
+the kind filter runs in the browser over what has been loaded, so a page that
+ends before your first pet does makes the filter look broken. A hundred also
+covers this group's whole recorded history today, which means nothing changed
+on screen when this went in - the machinery is there for when Dink volume
+arrives, which is the half of the feed with no ceiling on it. Wise Old Man's
+half has one: the threshold catalogue is finite per player, it grows about
+four or five a month across six players, and it gets harder as it goes.
+
+**Load more asks for a longer list, not for the next page.** A cursor would be
+the usual answer and is the wrong one here. Wise Old Man stamps everything it
+found between two snapshots with a single instant - eight rows deep in the
+live data - so ties are the ordinary case, and the two sources tie-break
+differently and have different id spaces. A cursor would have to be exactly
+right about all of that or it would drop or repeat rows inside a cluster,
+which is the one failure a reader cannot see happening. Asking for the whole
+list one page longer re-reads rows the browser already has; at a few hundred
+rows that costs nothing and cannot go wrong.
+
+So the endpoint takes a length rather than an offset, clamped at both ends
+because it arrives in a URL anyone can edit: never less than a page, never
+more than `MAX_ROWS`. At that ceiling the answer stops growing, and the button
+notices it asked for more and got none - it says so rather than sitting there
+offering a click that does nothing.
+
+The count of what exists comes from a `COUNT(*)` through the same WHERE the
+rows came through, built once in each store and used by both. Written out
+twice they drift, and a total counted through a different filter is a wrong
+number rather than a rough one.
+
+A reader with no script gets the sentence the server rendered, telling them to
+narrow the window; the button is added by script and replaces that advice,
+because rendering a button that cannot work is worse than not rendering one.
 
 Levels are not written through. Our level total lives in the `level` column of
 the `overall` row, beside overall experience in `value`, and a level reported

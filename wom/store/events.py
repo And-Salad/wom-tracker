@@ -56,22 +56,16 @@ class EventStore:
         row = self.query_one(sql, params)
         return row["n"] if row is not None else 0
 
-    def feed_events(self, kinds, player_ids=None, since=None, until=None,
-                    limit=300):
-        """Reported events for the milestones feed, newest first.
+    def _game_event_filter(self, kinds, player_ids, since, until):
+        """The WHERE the feed's rows and the feed's count share.
 
-        Joined to players the way achievements() is, because the feed needs a
-        display name and a colour and both live there. An event stored before
-        we knew the account still finds its player by name.
+        Built once and used by both, for the reason the achievement store
+        gives: a total counted through a different filter is a wrong number
+        rather than a rough one.
         """
-        marks = ",".join("?" * len(kinds))
-        sql = ("SELECT g.*, p.username, p.display_name FROM game_events g"
-               " LEFT JOIN players p ON p.username = g.username"
-               " WHERE g.kind IN ({})".format(marks))
+        sql = " WHERE g.kind IN ({})".format(",".join("?" * len(kinds)))
         params = list(kinds)
         if player_ids is not None:
-            if not player_ids:
-                return []
             sql += " AND p.id IN ({})".format(",".join("?" * len(player_ids)))
             params += list(player_ids)
         if since:
@@ -80,8 +74,33 @@ class EventStore:
         if until:
             sql += " AND g.happened_at<?"
             params.append(until)
-        return self.query(sql + " ORDER BY g.happened_at DESC LIMIT ?",
-                          params + [limit])
+        return sql, params
+
+    def feed_events(self, kinds, player_ids=None, since=None, until=None,
+                    limit=300):
+        """Reported events for the milestones feed, newest first.
+
+        Joined to players the way achievements() is, because the feed needs a
+        display name and a colour and both live there. An event stored before
+        we knew the account still finds its player by name.
+        """
+        if player_ids is not None and not player_ids:
+            return []
+        where, params = self._game_event_filter(kinds, player_ids, since, until)
+        return self.query(
+            "SELECT g.*, p.username, p.display_name FROM game_events g"
+            " LEFT JOIN players p ON p.username = g.username" + where +
+            " ORDER BY g.happened_at DESC LIMIT ?", params + [limit])
+
+    def count_feed_events(self, kinds, player_ids=None, since=None, until=None):
+        """How many there are, which is not how many a page shows."""
+        if player_ids is not None and not player_ids:
+            return 0
+        where, params = self._game_event_filter(kinds, player_ids, since, until)
+        row = self.query_one(
+            "SELECT COUNT(*) AS n FROM game_events g"
+            " LEFT JOIN players p ON p.username = g.username" + where, params)
+        return row["n"] if row is not None else 0
 
     def record_session_event(self, username, kind, reading, payload, when=None,
                              happened_at=None,

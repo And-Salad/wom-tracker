@@ -6,9 +6,14 @@
 {% block content %}
   <div class="card">
     <h3>Milestones</h3>
-    <p class="hint" id="count">
-      {{ feed | length }} milestone{{ '' if feed | length == 1 else 's' }},
-      newest first. A ~ marks a date Wise Old Man knows only roughly.
+    {# The total is on the element rather than only in the sentence: the
+       Load more button is added by script, and it needs to know how many are
+       still behind it without parsing the line back out again. #}
+    <p class="hint" id="count" data-total="{{ feed.total }}"
+       {%- if feed.truncated %} data-truncated{% endif %}>
+      {{ feed.rows | length }} milestone{{ '' if feed.rows | length == 1 else 's' }},
+      newest first. A ~ marks a date Wise Old Man knows only roughly.{% if feed.truncated %}
+      {{ feed.total }} in all - narrow the window to see the rest.{% endif %}
     </p>
     {# Every kind is on by default. Unticking is the only way to lose a row,
        so a reader who ignores this sees everything. #}
@@ -26,15 +31,15 @@
           <tr><th></th><th>Achieved</th><th></th><th>Player</th><th>Milestone</th></tr>
         </thead>
         <tbody id="feed">
-          {% for row in feed %}
-            <tr data-category="{{ row.category }}">
+          {% for row in feed.rows %}
+            <tr data-category="{{ row.category }}" data-source="{{ row.source }}">
               <td>
                 {% if row.kind %}
                   <img class="feed-icon" src="/icon/{{ row.kind }}/{{ row.metric }}.png"
                        alt="{{ row.metric }}" title="{{ row.metric }}">
                 {% endif %}
               </td>
-              <td>{{ row.when }}</td>
+              <td{% if row.within %} title="{{ row.within }}"{% endif %}>{{ row.when }}</td>
               <td class="dim">{{ row.ago }}</td>
               <td class="named" style="--dot: {{ row.color }}">{{ row.player }}</td>
               <td>{{ row.name }}{% if row.detail %}
@@ -46,6 +51,10 @@
         </tbody>
       </table>
     </div>
+    {# Empty until script fills it: a button that loads more is a button that
+       does nothing without script, and the sentence above already tells a
+       reader without it how to see the rest. #}
+    <div class="row more" id="more"></div>
   </div>
 {% endblock %}
 

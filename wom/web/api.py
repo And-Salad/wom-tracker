@@ -27,6 +27,21 @@ PAUSED = ("The dashboard has paused its data endpoints after a burst of "
 
 
 
+def _rows_wanted():
+    """How long a feed the browser asked for.
+
+    Load more asks for the whole list one page longer rather than for the
+    next page - views.milestone_feed says why - so this grows across clicks.
+    Clamped at both ends: below, because a page is the unit; above, because
+    the number arrives in a URL anyone can edit.
+    """
+    try:
+        wanted = int(request.args.get("limit", views.PAGE))
+    except (TypeError, ValueError):
+        return views.PAGE
+    return max(views.PAGE, min(wanted, views.MAX_ROWS))
+
+
 def _fresh(payload):
     """A JSON answer the browser must not keep.
 
@@ -157,8 +172,11 @@ def milestones():
         return refused
     here = scope()
     feed = views.milestone_feed(database(), here.selected, here.palette,
-                                since=here.span.since, until=here.span.until)
-    return _fresh({"feed": feed, "span": here.span.as_dict()})
+                                since=here.span.since, until=here.span.until,
+                                limit=_rows_wanted())
+    return _fresh({"feed": feed["rows"], "total": feed["total"],
+                   "truncated": feed["truncated"], "page": views.PAGE,
+                   "span": here.span.as_dict()})
 
 
 @api.route("/api/table")

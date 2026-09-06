@@ -274,10 +274,101 @@ def test_the_feed_merges_both_sources_newest_first(db, player):
     gameplay.store(db, player["username"], "collection",
                    "2026-09-01T08:00:00.000000Z", collection())
 
-    feed = views.milestone_feed(db, [dict(player)], {})
+    feed = views.milestone_feed(db, [dict(player)], {})["rows"]
     assert [row["category"] for row in feed] == ["quest", "milestone", "collection"]
     assert feed[0]["name"] == "Dragon Slayer I"
     assert feed[0]["detail"] == "22 of 156"
+
+
+def test_the_two_lists_of_feed_kinds_agree(db, player):
+    """A kind on the feed with no filter entry cannot be hidden.
+
+    milestones.js leaves a category it does not recognise permanently
+    visible, which is the right default and a silent one - pets were on the
+    feed and off the filter for exactly that reason.
+    """
+    from wom.web import views
+    filterable = {key for key, _ in views.FEED_CATEGORIES}
+    assert set(gameplay.FEED_KINDS) <= filterable, (
+        "every kind the feed carries needs a tick box")
+
+
+def test_a_collection_row_carries_the_icon_its_metric_has(db, player):
+    """Half the feed was iconless because the Dink branch passed None for the
+    metric whatever the row was about."""
+    from wom.web import views
+    gameplay.store(db, player["username"], "collection", WHEN, collection())
+    gameplay.store(db, player["username"], "quest", WHEN, quest())
+    feed = views.milestone_feed(db, [dict(player)], {})["rows"]
+    rows = {row["category"]: row for row in feed}
+    assert rows["collection"]["metric"] == gameplay.COLLECTION_METRIC
+    assert rows["collection"]["kind"], "the sprite is on disk, so it resolves"
+    # A quest is not a metric we track, so it leaves the column empty rather
+    # than guessing at one.
+    assert rows["quest"]["metric"] is None
+    assert rows["quest"]["kind"] is None
+
+
+def test_a_feed_longer_than_it_shows_says_how_much_longer(db, player):
+    """Reading a whole limit from each source and cutting the merge to one
+    limit used to throw away half of what it read in silence."""
+    from wom.web import views
+    for minute in range(4):
+        gameplay.store(db, player["username"], "quest",
+                       "2026-09-03T21:0{}:00.000000Z".format(minute),
+                       quest("Quest {}".format(minute)))
+    whole = views.milestone_feed(db, [dict(player)], {})
+    assert len(whole["rows"]) == 4 and whole["total"] == 4
+    assert not whole["truncated"]
+
+    cut = views.milestone_feed(db, [dict(player)], {}, limit=2)
+    assert len(cut["rows"]) == 2 and cut["truncated"]
+    assert cut["total"] == 4, "the count is of the list, not of the page"
+
+
+def test_loading_more_grows_the_page_without_dropping_or_repeating_a_row(db, player):
+    """Load more asks for a longer list, not for the next page.
+
+    Which means the longer answer has to be the shorter one with more on the
+    end - if it were not, a reader clicking the button would watch rows they
+    had already read shuffle past again.
+    """
+    from wom.web import views
+    db.save_achievements(player["id"], [
+        {"name": "{} Zulrah kills".format(n), "metric": "zulrah",
+         "measure": "kills", "threshold": n,
+         "createdAt": "2026-09-02T10:00:00.000Z", "accuracy": 3600000}
+        for n in (50, 100, 500, 1000)])
+    for minute in range(4):
+        gameplay.store(db, player["username"], "quest",
+                       "2026-09-03T21:0{}:00.000000Z".format(minute),
+                       quest("Quest {}".format(minute)))
+
+    def names(limit):
+        return [row["name"] for row
+                in views.milestone_feed(db, [dict(player)], {}, limit=limit)["rows"]]
+
+    whole = names(8)
+    assert len(whole) == len(set(whole)) == 8
+    for page in range(1, 9):
+        assert names(page) == whole[:page], "page {} drifted".format(page)
+
+
+def test_a_page_of_milestones_can_be_filled_from_either_source_alone(db, player):
+    """A limit is read from each source and the merge is cut to one limit.
+
+    That is only enough because the top of the merge lies inside the top of
+    each source - so a page has to fill even when one source supplies all of
+    it and the other supplies none.
+    """
+    from wom.web import views
+    for minute in range(5):
+        gameplay.store(db, player["username"], "quest",
+                       "2026-09-03T21:0{}:00.000000Z".format(minute),
+                       quest("Quest {}".format(minute)))
+    feed = views.milestone_feed(db, [dict(player)], {}, limit=3)
+    assert len(feed["rows"]) == 3, "a page must fill from one source"
+    assert feed["total"] == 5
 
 
 def test_a_milestone_with_no_date_sorts_last(db, player):
@@ -288,7 +379,7 @@ def test_a_milestone_with_no_date_sorts_last(db, player):
         "threshold": 1, "createdAt": None, "accuracy": -1}])
     gameplay.store(db, player["username"], "quest", "2026-09-03T21:15:00.000000Z",
                    quest())
-    feed = views.milestone_feed(db, [dict(player)], {})
+    feed = views.milestone_feed(db, [dict(player)], {})["rows"]
     assert feed[-1]["name"] == "Undated thing"
     assert feed[-1]["when"] == "unknown"
 
@@ -297,7 +388,7 @@ def test_only_the_selected_players_appear(db, player):
     from wom.web import views
     gameplay.store(db, "someone else", "quest", WHEN, quest())
     gameplay.store(db, player["username"], "quest", WHEN, quest("Cook's Assistant"))
-    feed = views.milestone_feed(db, [dict(player)], {})
+    feed = views.milestone_feed(db, [dict(player)], {})["rows"]
     assert [row["name"] for row in feed] == ["Cook's Assistant"]
 
 
@@ -313,7 +404,7 @@ def test_a_feed_row_with_unreadable_stored_json_still_appears(db, player):
     conn = db.connect()
     with conn:
         conn.execute("UPDATE game_events SET payload='{not json'")
-    feed = views.milestone_feed(db, [dict(player)], {})
+    feed = views.milestone_feed(db, [dict(player)], {})["rows"]
     assert len(feed) == 1, "the event happened whatever the payload says now"
     assert feed[0]["detail"] == ""
 
