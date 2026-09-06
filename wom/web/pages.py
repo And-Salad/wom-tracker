@@ -34,9 +34,9 @@ def dashboard():
 BOARDS = {
     winners.MAXING: {
         "key": winners.MAXING, "label": "Maxing",
-        "measure": "XP Towards 99",
-        "measure_hint": "Experience toward a 99 since midnight, which is what"
-                        " the day is judged on",
+        "measure": "XP toward 99",
+        "measure_hint": "Experience toward a 99 since midnight, which decides"
+                        " the day where nobody reached one",
         "chart_title": "Experience toward 99 today",
         "second": "99s Today", "second_hint": "Ninety-nines reached today",
         "split_wins": True,

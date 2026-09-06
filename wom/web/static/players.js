@@ -143,7 +143,7 @@
       var wanted = window.Sidebar.query();
       if (shown === wanted) { return; }
       host.textContent = "";
-      host.appendChild(el("p", "hint", "Loading..."));
+      host.appendChild(el("p", "hint", "Loading…"));
       var mine = wanted;
       fetch("/api/player/" + encodeURIComponent(row.dataset.username) +
             "?" + wanted)
