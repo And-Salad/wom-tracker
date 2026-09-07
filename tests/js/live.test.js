@@ -189,8 +189,40 @@ test("past the slot it says so, and starts asking more often", async () => {
   it.clear().advance(2000);
   it.live.tick();
   assert.strictEqual(it.text("stat-next"), "updating…");
-  assert.deepStrictEqual(it.delays, [15000],
-                         "a run is owed, so the gap tightens to fifteen seconds");
+  assert.deepStrictEqual(it.delays, [3000],
+                         "a run is owed, so the next look is seconds away");
+});
+
+test("the gap eases out while a run goes on rather than staying tight",
+     async () => {
+       /* Three seconds is the right first look and the wrong hundredth: the
+          readings usually land straight away, and a wait still going after a
+          minute is not one worth hammering. */
+       const it = await live({next: 1000, stamp: "seen",
+                              reply: {body: status({stamp: "seen"})}});
+       it.advance(2000);
+       it.live.tick();
+       assert.strictEqual(it.text("stat-next"), "updating…");
+
+       it.clear();
+       for (let n = 0; n < 6; n += 1) { await it.live.poll(); }
+       assert.deepStrictEqual(it.delays, [4800, 7680, 12288, 15000, 15000, 15000],
+                              "easing off, and never wider than fifteen seconds");
+     });
+
+test("a slot coming due does not undo a refusal", async () => {
+  /* The gap after a 503 is one the server named. tick() reaching a slot used
+     to overwrite it, which turned an hour of Retry-After into another request
+     every five minutes for as long as the tab stayed open. */
+  const it = await live({next: 1000});
+  it.clear().settings.reply = {status: 503, headers: {"Retry-After": "3600"}};
+  await it.live.poll();
+  assert.deepStrictEqual(it.delays, [3600000]);
+
+  it.clear().advance(2000);
+  it.live.tick();
+  assert.strictEqual(it.text("stat-next"), "updating…", "it still says so");
+  assert.deepStrictEqual(it.delays, [], "but it does not ask ahead of the hour");
 });
 
 test("a run landing ends the wait and settles the gap back down", async () => {
@@ -274,4 +306,42 @@ test("it asks straight away when a reader comes back to the tab", async () => {
   await settle();
   assert.deepStrictEqual(it.asked, ["/api/status"],
                          "right by the time it is read, not a minute after");
+});
+
+test("an answer nobody is waiting on any more draws nothing", async () => {
+  /* A poll left in flight when the tab was hidden used to come back and arm a
+     timer in a stopped tab, and - worse - a page alt-tabbed at twice could
+     have two in flight and be drawn by the older one. */
+  const it = await live({stamp: "seen", reply: {body: status({stamp: "seen"})}});
+  const stale = it.clear().live.poll();      // asked for by this reader...
+  it.live.stop();                            // ...who then left the tab
+  await stale;
+  assert.deepStrictEqual(it.delays, [], "no timer armed in a stopped tab");
+});
+
+test("a page coming back from the browser cache asks again", async () => {
+  /* Back and forward restore the page with its timers frozen and the figures
+     it was left with, and fire no visibilitychange at all. */
+  const it = await live({});
+  it.clear();
+  const event = new it.win.Event("pageshow");
+  event.persisted = true;
+  it.win.dispatchEvent(event);
+  await settle();
+  assert.deepStrictEqual(it.asked, ["/api/status"]);
+});
+
+test("the network coming back is not waited out", async () => {
+  const it = await live({});
+  it.clear().settings.offline = true;
+  await it.live.poll();
+  await it.live.poll();
+  assert.deepStrictEqual(it.delays, [120000, 240000], "backed off while down");
+
+  it.clear().settings.offline = false;
+  it.win.dispatchEvent(new it.win.Event("online"));
+  await settle();
+  assert.deepStrictEqual(it.asked, ["/api/status"],
+                         "the browser knows before the next gap is up");
+  assert.deepStrictEqual(it.delays, [60000], "and the gap is a normal one again");
 });
