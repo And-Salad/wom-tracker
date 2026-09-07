@@ -36,6 +36,7 @@
      actually owed. Five extra requests per slot, against a budget of six
      hundred per five minutes, is not a cost worth that delay. */
   var SOON = 3000;
+  var EAGER = 45000;      // how long a run gets SOON before the gap opens out
   var DUE = 15000;
   var CEILING = 600000;   // the longest an error backs us off to
   var PATIENCE = 300000;  // how long "updating" may stand before we disbelieve it
@@ -59,6 +60,11 @@
      passing a slot quietly undid an hour of Retry-After, every five minutes,
      for as long as the tab stayed open. */
   var holding = false;
+  /* When a poll last came back. "updating…" is a claim about right now, and
+     nothing that has not heard from the server for PATIENCE is in a position
+     to make it - see tick(). Seeded as if we had just heard, because the
+     server rendered the header we are standing on. */
+  var heardAt = 0;
   /* Bumped whenever the poll stops or starts. An answer stamped with an older
      one is from a fetch nobody is waiting on any more - a tab that went away
      and came back, or one alt-tabbed at a few times - and it must not draw
@@ -93,10 +99,21 @@
     if (!nextBox) { return; }
     if (overdueAt) {
       /* The slot came due and the readings have not landed yet. A run takes a
-         few seconds, so this is the honest thing to say - but only for a
-         while: served without a scheduler in the process it would stand all
-         day, and then the wall-clock time is the better answer. */
-      if (serverNow() - overdueAt < PATIENCE) {
+         few seconds, so this is the honest thing to say - but only while we
+         are in a position to say it. Two ways we are not.
+
+         One, it has stood too long: served without a scheduler in the process
+         nothing will ever land, and "updating" would stand all day.
+
+         Two, and this is the one readers actually hit: we have not heard from
+         the server in as long. A page whose polls are failing has a countdown
+         frozen wherever it stopped, which runs out and never restarts - so it
+         said "updating…" for five minutes, blinked, and said it again, for as
+         long as the tab stayed open, while the site itself had been updating
+         all along. It was not describing a run. It was describing its own
+         silence, and a reader could only find out by reloading. */
+      if (serverNow() - overdueAt < PATIENCE &&
+          serverNow() - heardAt < PATIENCE) {
         nextBox.textContent = "updating…";
         return;
       }
@@ -113,7 +130,17 @@
       nextBox.textContent = countdown(left);
       return;
     }
-    // Due. Say so, and start asking more often until the run answers for it.
+    /* Due - but the same question as above, asked on the way in rather than
+       on the way out. Without it the two halves disagreed once the polls
+       stopped: this one entered the wait on a countdown that had run out, the
+       one above threw it straight back out again for not having heard from
+       the server, and the header flickered between "updating…" and a time,
+       once a second, for as long as the tab stayed open. */
+    if (serverNow() - heardAt >= PATIENCE) {
+      nextBox.textContent = plain;
+      return;
+    }
+    // Say so, and start asking more often until the run answers for it.
     overdueAt = serverNow();
     owedGap = SOON;
     nextBox.textContent = "updating…";
@@ -123,7 +150,7 @@
     if (!holding) { schedule(owedGap); }
   }
 
-  function show(status) {
+  function show(status, changed) {
     /* The count includes whoever is reading this, so it is never 0 while
        anyone can see it - but "1 viewers" is, so the word comes from here
        rather than being left standing in the markup beside a number. */
@@ -135,7 +162,29 @@
     if (lastBox && status.last) { lastBox.textContent = status.last; }
     if (status.next) { plain = "next " + status.next; }
     if (status.now) { skew = Date.now() - Date.parse(status.now); }
-    if (status.next_at) { nextAt = Date.parse(status.next_at) || nextAt; }
+    heardAt = serverNow();
+    if (status.next_at) {
+      /* The server names the next slot, so a slot moving on is the server
+         saying the last one has passed - which beats the ticker noticing it,
+         and does not race the poll that arrives in the same second.
+
+         That race was costing whole updates. A poll landing between the
+         boundary and the tick took the countdown straight on to the next slot
+         and tick() then had nothing to run out, so the tight chain below was
+         never started and the run was found on the ordinary minute - up to
+         forty seconds after it landed, on a page built to notice in three. */
+      var moved = Date.parse(status.next_at) || nextAt;
+      /* A whole second later, not merely later: within one slot every answer
+         names the same instant to the second, but the one the server rendered
+         into the page can sit a few milliseconds off the one it later sends,
+         and a bare `>` read that as a slot going by. Slots are ten minutes
+         apart, so there is nothing here a second could miss. */
+      if (nextAt && moved - nextAt > 1000 && !changed) {
+        overdueAt = overdueAt || serverNow();
+        owedGap = SOON;
+      }
+      nextAt = moved;
+    }
     tick();
   }
 
@@ -200,16 +249,34 @@
         var changed = status.stamp && status.stamp !== stamp;
         stamp = status.stamp || stamp;
         if (changed) { overdueAt = 0; }
-        show(status);
+        show(status, changed);
         if (changed) { refresh(); }
         /* Keep asking while a run is owed, easing off as it goes on: the
            readings usually land within the first few seconds, and a wait that
            is still going after a minute is not one worth hammering. */
         if (overdueAt) {
-          owedGap = Math.min(Math.round(owedGap * 1.6), DUE);
+          /* Tight for as long as a run plausibly takes, and only then easing
+             off. Easing from the first poll was barely worth having: a pass
+             over six players takes twenty-odd seconds, by which point a gap
+             that grows by half each time is already back up at twelve, and
+             the run was found nine seconds late instead of ten. The gaps
+             worth spending are the early ones. */
+          owedGap = serverNow() - overdueAt < EAGER
+            ? SOON : Math.min(Math.round(owedGap * 1.6), DUE);
           waiting = owedGap;
         } else {
+          /* Otherwise sleep until just past the slot, rather than through it.
+             A flat minute meant the poll that found a run was whichever one
+             happened to fall after it, so the same page noticed one update in
+             three seconds and the next in fifty. Capped at QUIET because "3m
+             ago" and the viewer count age whether a run is owed or not, and
+             floored at SOON so a boundary already on top of us is not chased
+             in tiny steps. */
           waiting = QUIET;
+          if (nextAt) {
+            waiting = Math.min(waiting,
+                               Math.max(nextAt - serverNow() + 1000, SOON));
+          }
         }
         schedule(waiting);
       })
@@ -227,6 +294,7 @@
     stop();
     epoch += 1;            // anything still in flight was asked for by nobody
     holding = false;       // a reader is here: whatever backed us off, ask now
+    heardAt = serverNow(); // and nothing is stale until this poll says so
     ticker = setInterval(tick, 1000);
     tick();
     poll();

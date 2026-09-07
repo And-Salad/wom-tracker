@@ -193,11 +193,11 @@ test("past the slot it says so, and starts asking more often", async () => {
                          "a run is owed, so the next look is seconds away");
 });
 
-test("the gap eases out while a run goes on rather than staying tight",
+test("the gap stays tight for as long as a run plausibly takes",
      async () => {
-       /* Three seconds is the right first look and the wrong hundredth: the
-          readings usually land straight away, and a wait still going after a
-          minute is not one worth hammering. */
+       /* A pass over six players takes twenty-odd seconds, so a gap that eased
+          off from the first poll was back up at twelve by the time there was
+          anything to find. The early gaps are the ones worth spending. */
        const it = await live({next: 1000, stamp: "seen",
                               reply: {body: status({stamp: "seen"})}});
        it.advance(2000);
@@ -205,9 +205,61 @@ test("the gap eases out while a run goes on rather than staying tight",
        assert.strictEqual(it.text("stat-next"), "updating…");
 
        it.clear();
-       for (let n = 0; n < 6; n += 1) { await it.live.poll(); }
-       assert.deepStrictEqual(it.delays, [4800, 7680, 12288, 15000, 15000, 15000],
-                              "easing off, and never wider than fifteen seconds");
+       for (let n = 0; n < 4; n += 1) { await it.live.poll(); it.advance(3000); }
+       assert.deepStrictEqual(it.delays, [3000, 3000, 3000, 3000],
+                              "three seconds apart while a run is owed");
+     });
+
+test("a wait that goes on and on is not hammered", async () => {
+  const it = await live({next: 1000, stamp: "seen",
+                         reply: {body: status({stamp: "seen"})}});
+  it.advance(2000);
+  it.live.tick();
+
+  it.clear().advance(50000);           // past the point a run should have landed
+  for (let n = 0; n < 5; n += 1) { await it.live.poll(); }
+  assert.deepStrictEqual(it.delays, [4800, 7680, 12288, 15000, 15000],
+                         "easing off, and never wider than fifteen seconds");
+});
+
+test("it wakes for the slot rather than sleeping through it", async () => {
+  /* A flat minute meant the poll that found a run was whichever one happened
+     to fall after it, so the same page noticed one update in three seconds
+     and the next in fifty. */
+  const it = await live({next: 300000, stamp: "seen"});
+  it.clear().settings.reply = {body: status(
+    {stamp: "seen", next_at: at(8000), now: at(0)})};
+  await it.live.poll();
+  assert.deepStrictEqual(it.delays, [9000],
+                         "the slot is eight seconds away, so look then");
+});
+
+test("a slot a long way off is still only worth a minute", async () => {
+  /* How old the readings are and how many people are here both age whether a
+     run is owed or not, so the gap has a ceiling as well as a floor. */
+  const it = await live({next: 300000, stamp: "seen"});
+  it.clear().settings.reply = {body: status(
+    {stamp: "seen", next_at: at(300000), now: at(0)})};
+  await it.live.poll();
+  assert.deepStrictEqual(it.delays, [60000]);
+});
+
+test("the server's word is what says a slot has passed, not our ticker",
+     async () => {
+       /* A poll landing between the boundary and the tick took the countdown
+          straight on to the next slot, and tick() then had nothing left to run
+          out - so the tight chain never started and the run was found on the
+          ordinary minute instead. */
+       const it = await live({next: 300000, stamp: "seen",
+                              reply: {body: status({stamp: "seen",
+                                                    next_at: at(300000),
+                                                    now: at(0)})}});
+       it.clear().settings.reply = {body: status(
+         {stamp: "seen", next_at: at(900000), now: at(0)})};   // a slot went by
+       await it.live.poll();
+       assert.strictEqual(it.text("stat-next"), "updating…",
+                          "the slot moved on and no run came with it");
+       assert.deepStrictEqual(it.delays, [3000]);
      });
 
 test("a slot coming due does not undo a refusal", async () => {
@@ -238,6 +290,28 @@ test("a run landing ends the wait and settles the gap back down", async () => {
   assert.match(it.text("stat-next"), /^next update in (9:59|10:00)$/);
   assert.deepStrictEqual(it.delays, [60000]);
 });
+
+test("a page that cannot reach the server does not claim it is updating",
+     async () => {
+       /* The report this came from: a header stuck on "updating…" while the
+          site had been updating all along, put right by a reload. A page whose
+          polls fail has a frozen countdown, which runs out and never restarts
+          - and "updating" is a claim about right now that nothing out of touch
+          with the server is in a position to make. */
+       const it = await live({next: 1000});
+       it.clear().settings.offline = true;
+       it.advance(2000);
+       it.live.tick();
+       assert.strictEqual(it.text("stat-next"), "updating…",
+                          "a run really might be landing; we only just heard");
+
+       it.advance(6 * 60000);           // now we have not heard in a long time
+       it.live.tick();
+       assert.strictEqual(it.text("stat-next"), "next Wed 14:20");
+       it.live.tick();
+       assert.strictEqual(it.text("stat-next"), "next Wed 14:20",
+                          "and it stays there rather than flickering back");
+     });
 
 test("nothing counts down forever: with no scheduler the clock comes back",
      async () => {
