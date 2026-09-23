@@ -6,6 +6,8 @@ month" from a snapshot four years earlier.
 """
 
 
+from datetime import datetime, timezone
+
 from conftest import snapshot
 
 from wom import periods
@@ -62,12 +64,16 @@ def test_baseline_picks_the_reading_nearer_the_window_edge(db, player):
     db.save_snapshot(player["id"], snapshot("2026-08-30T00:00:00.000Z",
                                             bosses={"zulrah": 300}))
 
-    month = periods.get("month").start_iso()
+    # A fixed "now", a couple of days past the last reading. Left to the
+    # real clock the month moved on until it opened after the 6th, and then
+    # the 30th was the nearer reading - true, and not what this is about.
+    now = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    month = periods.get("month").start_iso(now)
     baseline = db.baseline_snapshot(player["id"], month)
     assert baseline["captured_at"].startswith("2026-08-06"), (
         "the 2022 reading is nearer in the wrong direction by years")
 
-    year = periods.get("year").start_iso()
+    year = periods.get("year").start_iso(now)
     assert db.baseline_snapshot(player["id"], year)["captured_at"].startswith(
         "2026-08-06"), "still the nearer of the two"
 

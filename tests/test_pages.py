@@ -2,7 +2,7 @@
 
 import os
 
-from conftest import round_ups, seed, snapshot
+from conftest import round_ups, seed, snapshot, this_week
 
 
 def test_public_pages_render(client, app):
@@ -12,7 +12,7 @@ def test_public_pages_render(client, app):
 
 
 def test_chart_data_is_json(client, app):
-    seed(app)
+    seed(app, this_week())
     body = client.get("/api/chart/skill_gains?period=Week").get_json()
     assert body["type"] == "stacked"
     assert body["series"][0]["name"] == "Zezima"
@@ -29,7 +29,7 @@ def test_unticking_everyone_says_so_rather_than_showing_everyone(client, app):
 
 
 def test_a_bare_link_still_shows_everyone(client, app):
-    seed(app)
+    seed(app, this_week())
     body = client.get("/api/chart/skill_gains?period=Week").get_json()
     assert body.get("series"), "a link with no filters is not an empty selection"
 
