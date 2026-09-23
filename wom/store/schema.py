@@ -36,6 +36,13 @@ CREATE TABLE IF NOT EXISTS snapshots (
     UNIQUE (player_id, captured_at)
 );
 
+-- The one snapshot per player still carrying its payload - see save_snapshot.
+-- Partial, so it holds a row per player rather than per reading. Without it,
+-- finding that row meant reading every snapshot the account had on every
+-- insert, which is quadratic across an import.
+CREATE INDEX IF NOT EXISTS idx_snapshots_payload
+    ON snapshots (player_id) WHERE payload<>'';
+
 -- Only what changed. A reading repeats the previous one for 91 of every 100
 -- metrics - a boss sitting at zero was being written again on every update,
 -- forever - so a row is stored only when a value actually moves, and every

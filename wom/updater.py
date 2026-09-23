@@ -59,7 +59,7 @@ def _place_sessions(database, usernames):
 
 
 def update_all(client, database, usernames, trigger="manual", progress=None,
-               starting=None, cancelled=None, achievements=True):
+               starting=None, cancelled=None, achievements=True, say=None):
     """Refresh every username in turn, saving each result as it arrives.
 
     `starting(index, total, username)` fires before each player and
@@ -68,7 +68,8 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
     `cancelled()` is polled to allow an early stop. `achievements=False` skips
     the milestone fetch, which is a request per player for something that
     moves rarely - at a run every ten minutes it is worth doing hourly rather
-    than every time. Returns the results.
+    than every time. `say(text)` hears about progress inside one player, which
+    is only ever a history import. Returns the results.
     """
     usernames = list(usernames)
     total = len(usernames)
@@ -84,7 +85,7 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
                 starting(index, total, username)
             except Exception:
                 log.exception("starting callback failed")
-        result = update_one(client, database, username, achievements)
+        result = update_one(client, database, username, achievements, say)
         results.append(result)
         if progress is not None:
             try:
@@ -111,7 +112,7 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
     return results
 
 
-def update_one(client, database, username, achievements=True):
+def update_one(client, database, username, achievements=True, say=None):
     """Ask the API to refresh one player, then store whatever we get back.
 
     A failed refresh still gets a GET, so a player who was updated moments ago
@@ -146,7 +147,8 @@ def update_one(client, database, username, achievements=True):
 
     imported = 0
     if database.needs_backfill(player_id):
-        imported, backfill_note = backfill_player(client, database, username, player_id)
+        imported, backfill_note = backfill_player(client, database, username,
+                                                  player_id, say=say)
         if backfill_note:
             message = "{}, {}".format(message, backfill_note)
 
@@ -268,12 +270,23 @@ def sync_achievements(client, database, username, player_id):
         return 0
 
 
-def backfill_player(client, database, username, player_id=None, force=False):
+def backfill_player(client, database, username, player_id=None, force=False,
+                    say=None):
     """Import every snapshot Wise Old Man holds for a player.
 
     Runs once per player - on the pass that first stores them - so charts have
     real history from the start instead of building up one point at a time.
     Returns (new_snapshots, note).
+
+    Stored a page at a time as the pages arrive, and each page oldest first.
+    The API pages newest first, and stored in that order no reading had one
+    before it to be compared with, so every metric was written for every
+    snapshot. Within a page each now follows the one before it; only the
+    oldest of each page starts from nothing, which is once per two hundred.
+
+    `say(text)` is told after each page. A friend's history is a page or two;
+    a celebrity's is twenty-five, and from the admin page a silent import of
+    that size could not be told apart from a hung one.
     """
     if player_id is None:
         row = database.player_by_username(username)
@@ -283,27 +296,40 @@ def backfill_player(client, database, username, player_id=None, force=False):
     if not force and not database.needs_backfill(player_id):
         return 0, ""
 
+    imported = seen = 0
     try:
-        snapshots = list(client.iter_snapshots(username))
+        for page, batch in enumerate(client.iter_snapshot_pages(username),
+                                     start=1):
+            try:
+                imported += database.save_snapshots(player_id,
+                                                    list(reversed(batch)))
+            except Exception as exc:
+                log.exception("storing history for %s failed", username)
+                return imported, "history not saved ({})".format(exc)
+            seen += len(batch)
+            log.info("history for %s: page %d, %d snapshots so far",
+                     username, page, seen)
+            if say is not None:
+                try:
+                    say("{}: importing history, {} snapshots so far".format(
+                        username, seen))
+                except Exception:
+                    log.exception("progress callback failed")
     except WomError as exc:
         # History is a nice-to-have: a failure here must not fail the update.
+        # Whatever pages did arrive are kept, and the import is not marked
+        # done, so the next pass tries again and skips what it already has.
         log.warning("history import failed for %s: %s", username, exc)
-        return 0, "history unavailable ({})".format(exc)
-
-    try:
-        imported = database.save_snapshots(player_id, snapshots)
-    except Exception as exc:
-        log.exception("storing history for %s failed", username)
-        return 0, "history not saved ({})".format(exc)
+        return imported, "history unavailable ({})".format(exc)
 
     database.mark_backfilled(player_id)
     log.info("imported %d/%d historic snapshots for %s",
-             imported, len(snapshots), username)
-    if not snapshots:
+             imported, seen, username)
+    if not seen:
         return 0, "no history on record"
     note = "imported {} historic snapshot{}".format(
         imported, "" if imported == 1 else "s")
-    if len(snapshots) >= HISTORY_LIMIT:
+    if seen >= HISTORY_LIMIT:
         # Pages arrive newest first, so the oldest end is what got left behind.
         note += " (capped at {}; older history skipped)".format(HISTORY_LIMIT)
         log.info("history for %s hit the %d snapshot cap", username, HISTORY_LIMIT)
