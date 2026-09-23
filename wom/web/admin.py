@@ -31,7 +31,13 @@ from .. import build, periods, scheduler
 from .. import summaries as core
 from ..api import WomClient
 from ..colors import normalise, player_color, set_player_color
-from ..config import ENV_KEYS, Config, normalise_usernames
+from ..config import (
+    ENV_KEYS,
+    Config,
+    group_only,
+    normalise_usernames,
+    tracked_usernames,
+)
 from ..sessions import MAX_SESSION_HOURS
 from ..summaries import SUMMARY_EFFORTS, SUMMARY_MODELS
 from ..updater import backfill_player, update_all
@@ -183,9 +189,21 @@ def settings():
             "last_ago": fmt_ago(seen["happened_at"]) if seen is not None else "",
             "last_exp": fmt_int(seen["total_exp"], dash="") if seen is not None else "",
         })
+    # Celebrities get a colour and nothing else here: no webhook, because
+    # nobody famous is going to install our plugin for us.
+    famous = []
+    group_size = len(config.get("usernames", []))
+    for index, name in enumerate(config.get("celebrities", [])):
+        row = known.get(name.lower())
+        famous.append({
+            "username": name,
+            "display_name": row["display_name"] if row is not None else name,
+            "color": player_color(config, name, group_size + index),
+            "snapshots": database.snapshot_count(row["id"]) if row is not None else 0,
+        })
     tripwire = current_app.config["LIMITS"].api_tripwire
     return render_template(
-        "admin.html", page="admin", config=config, roster=roster,
+        "admin.html", page="admin", config=config, roster=roster, famous=famous,
         models=SUMMARY_MODELS, efforts=SUMMARY_EFFORTS,
         env_keys=ENV_KEYS, zones=COMMON_ZONES,
         job=current_app.config["JOBS"].status(),
@@ -200,6 +218,9 @@ def save_settings():
     config = Config()
     names = normalise_usernames(request.form.get("usernames", "").splitlines())
     config["usernames"] = names
+    # Somebody moved into the group is out of the celebrities, or they would
+    # be in the competition and excluded from it at once.
+    _keep_celebrities_apart(config)
     config["summaries_enabled"] = bool(request.form.get("summaries_enabled"))
     # Only the models the page offers: anything else is stored happily and
     # then fails on every future API call, visible only in the log.
@@ -255,6 +276,38 @@ def save_settings():
     config.save()
     flash("Settings saved. {} player{} tracked.".format(
         len(names), "" if len(names) == 1 else "s"))
+    return redirect(url_for("admin.settings"))
+
+
+def _keep_celebrities_apart(config, prefer_group=True):
+    """Make sure nobody is on both lists, and say so when somebody was.
+
+    An account in both would be updated twice a run and be at once in the
+    leaderboards and out of them, depending on which list a caller read.
+    The group wins by default: that list is the one with history behind it.
+    """
+    group = {n.lower() for n in config.get("usernames", [])}
+    famous = config.get("celebrities", [])
+    kept = [n for n in famous if n.lower() not in group]
+    if len(kept) == len(famous):
+        return
+    dropped = [n for n in famous if n.lower() in group]
+    config["celebrities"] = kept
+    flash("{} {} in the group, so not a celebrity as well.".format(
+        ", ".join(dropped), "is" if len(dropped) == 1 else "are"))
+
+
+@admin.route("/admin/celebrities", methods=["POST"])
+@requires_login
+def save_celebrities():
+    config = Config()
+    names = normalise_usernames(request.form.get("celebrities", "").splitlines())
+    config["celebrities"] = names
+    _keep_celebrities_apart(config)
+    config.save()
+    count = len(config.get("celebrities", []))
+    flash("Saved. {} celebrit{} followed.".format(
+        count, "y" if count == 1 else "ies"))
     return redirect(url_for("admin.settings"))
 
 
@@ -334,7 +387,7 @@ def dink():
 def prune():
     config = Config()
     database = current_app.config["DATABASE"]
-    removed = database.prune_players(config.get("usernames", []))
+    removed = database.prune_players(tracked_usernames(config))
     flash("Removed {} player{} no longer on the list.".format(
         removed, "" if removed == 1 else "s"))
     return redirect(url_for("admin.settings"))
@@ -508,7 +561,7 @@ def run(action):
         def work(job):
             client = WomClient(config.get("api_key", ""),
                                config.get("user_agent_contact", ""))
-            names = config.get("usernames", [])
+            names = tracked_usernames(config)
             if not names:
                 job.finish("no players are being tracked", failed=True)
                 return
@@ -524,12 +577,12 @@ def run(action):
 
     elif action == "summarise":
         def work(job):
-            owed = core.due_periods(database)
+            owed = core.due_periods(database, config=config)
             if not owed:
                 job.finish("every closed period already has a summary")
                 return
             core.summarise_all(
-                database, config, database.players(), owed,
+                database, config, group_only(database.players(), config), owed,
                 progress=lambda e: job.say(
                     "{}: {}".format(e["player"], e["note"]), keep=True))
             job.finish("summaries finished")
@@ -539,7 +592,7 @@ def run(action):
         def work(job):
             client = WomClient(config.get("api_key", ""),
                                config.get("user_agent_contact", ""))
-            for name in config.get("usernames", []):
+            for name in tracked_usernames(config):
                 job.say("importing history for {}".format(name))
                 count, note = backfill_player(client, database, name, force=True)
                 job.say("{}: {}".format(name, note or "nothing to import"), keep=True)

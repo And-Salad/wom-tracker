@@ -196,12 +196,25 @@
   </div>
 
   <div class="card">
+    <h3>Celebrities</h3>
+    <p class="hint">Well-known accounts to follow alongside the group. They are
+      updated with everyone else and have their own section in the sidebar,
+      unticked until someone ticks them, but they are left out of the recaps,
+      the round-ups and the leaderboards. One name per line.</p>
+    <form method="post" action="/admin/celebrities">
+      <textarea name="celebrities" rows="5" spellcheck="false"
+        >{{ config.get("celebrities", []) | join("\n") }}</textarea>
+      <p><button type="submit">Save celebrities</button></p>
+    </form>
+  </div>
+
+  <div class="card">
     <h3>Colours</h3>
     <p class="hint">What each player is drawn in, everywhere.</p>
     <div class="scroll">
       <table>
         <tr><th>Player</th><th>Colour</th><th class="num">Snapshots</th><th></th></tr>
-        {% for player in roster %}
+        {% for player in roster + famous %}
           <tr>
             <td>{{ player.display_name }}</td>
             <td>

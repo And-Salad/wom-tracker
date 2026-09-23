@@ -43,6 +43,11 @@ def log_path_for(role):
 DEFAULTS = {
     # Player names to keep updated, in display order.
     "usernames": [],
+    # Well-known accounts followed alongside the group rather than as part of
+    # it, in display order. They are updated like anyone else and can be
+    # ticked in the sidebar, but they are not in the competition: no notes,
+    # no place in a round-up, no share of a leaderboard. See group_only().
+    "celebrities": [],
     # The local day history was last thinned on, in the zone configured below.
     # Anything the app writes has to be declared here: save() keeps only the
     # keys it knows, so a key that
@@ -209,3 +214,30 @@ def normalise_usernames(names):
         seen.add(key)
         out.append(name)
     return out
+
+
+def celebrities(config):
+    """The celebrity accounts, as the lowercase usernames rows are keyed by."""
+    return {name.lower() for name in config.get("celebrities", []) or []}
+
+
+def tracked_usernames(config):
+    """Everyone the updater keeps current: the group, then the celebrities.
+
+    One list, because an account that is watched has to be fetched whichever
+    section it sits in - and pruning against the group alone would delete
+    every celebrity's history the first time somebody pressed the button.
+    """
+    return normalise_usernames(list(config.get("usernames", []) or [])
+                               + list(config.get("celebrities", []) or []))
+
+
+def group_only(players, config):
+    """The rows that are in the competition: everyone but the celebrities.
+
+    What the recaps, the round-ups and the leaderboards are about. A famous
+    account's week would win every one of them, and a note about a stranger
+    is not what the notes are for.
+    """
+    famous = celebrities(config)
+    return [p for p in players if p["username"] not in famous]
