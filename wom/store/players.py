@@ -60,6 +60,18 @@ class PlayerStore:
                              (player_id,))
         return row is not None and not row["backfilled_at"]
 
+    def backfill_before(self, player_id):
+        """Where this player's import resumes: before this moment, or now."""
+        row = self.query_one("SELECT backfill_before FROM players WHERE id=?",
+                             (player_id,))
+        return row["backfill_before"] if row is not None else None
+
+    def set_backfill_before(self, player_id, when):
+        conn = self.connect()
+        with conn:
+            conn.execute("UPDATE players SET backfill_before=? WHERE id=?",
+                         (when, player_id))
+
     def mark_backfilled(self, player_id, when=None):
         conn = self.connect()
         with conn:
@@ -84,6 +96,15 @@ class PlayerStore:
 
     def players(self):
         return self.query("SELECT * FROM players ORDER BY display_name COLLATE NOCASE")
+
+    def ids_for(self, usernames):
+        """The stored ids of these accounts; any not stored yet are skipped."""
+        names = [n.lower() for n in usernames]
+        if not names:
+            return []
+        return [row["id"] for row in self.query(
+            "SELECT id FROM players WHERE username IN ({})".format(
+                ",".join("?" * len(names))), names)]
 
     def player_by_username(self, username):
         return self.query_one("SELECT * FROM players WHERE username=?",

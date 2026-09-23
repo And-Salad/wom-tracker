@@ -26,7 +26,13 @@ from wom.runtime import require as require_python
 require_python()
 
 from wom.api import WomClient
-from wom.config import Config, db_path, group_only, tracked_usernames
+from wom.config import (
+    Config,
+    celebrities,
+    db_path,
+    group_only,
+    tracked_usernames,
+)
 from wom.db import Database
 from wom.logs import setup_logging
 from wom.scheduler import stamp_now
@@ -45,7 +51,8 @@ def run_headless_update():
         return 1
     database = Database(db_path())
     client = WomClient(config.get("api_key", ""), config.get("user_agent_contact", ""))
-    results = update_all(client, database, names, trigger="cli")
+    results = update_all(client, database, names, trigger="cli",
+                         thin=celebrities(config))
     for result in results:
         print("{:<14} {}".format(result.username, result.message if result.ok
                                  else "FAILED - " + result.message))
@@ -74,8 +81,10 @@ def run_backfill(names=None):
     database = Database(db_path())
     client = WomClient(config.get("api_key", ""), config.get("user_agent_contact", ""))
     total = 0
+    famous = celebrities(config)
     for name in names:
-        imported, note = backfill_player(client, database, name, force=True)
+        imported, note = backfill_player(client, database, name, force=True,
+                                         thin=name.lower() in famous)
         total += imported
         print("{:<16} {}".format(name, note or "nothing to import"))
     print("{} snapshots imported".format(total))
@@ -86,7 +95,8 @@ def run_compact(keep_days, dry_run):
     """Thin stored history so long-term growth stays flat."""
     database = Database(db_path())
     before = os.path.getsize(db_path())
-    preview = database.compaction_preview(keep_days)
+    thin = database.ids_for(Config().get("celebrities", []))
+    preview = database.compaction_preview(keep_days, thin=thin)
     print("{:,} snapshots stored; {:,} beyond the last {} days are more than"
           " one a day".format(preview["total"], preview["removable"], keep_days))
     if dry_run:
@@ -95,7 +105,7 @@ def run_compact(keep_days, dry_run):
     if not preview["removable"]:
         print("nothing to compact")
         return 0
-    result = database.compact_snapshots(keep_days)
+    result = database.compact_snapshots(keep_days, thin=thin)
     after = os.path.getsize(db_path())
     print("removed {:,} snapshots; database {:.1f} MB -> {:.1f} MB".format(
         result["removed"], before / 1e6, after / 1e6))

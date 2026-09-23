@@ -309,6 +309,28 @@ def _keep_the_digest(conn):
                     table, column))
 
 
+def _reopen_history_imports(conn):
+    """Let every import carry on back past where the old cap stopped it.
+
+    An import used to be one pass of at most five thousand snapshots, and a
+    celebrity reached that in seven weeks of their history. It is now done a
+    few pages a run, resuming from `backfill_before`, until Wise Old Man has
+    nothing older - so every import is reopened, starting from the oldest
+    reading already held. A friend's finishes again on its first request;
+    only an account that was cut short has anywhere left to go.
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(players)")}
+    if not columns:
+        return
+    with conn:
+        if "backfill_before" not in columns:
+            conn.execute("ALTER TABLE players ADD COLUMN backfill_before TEXT")
+        conn.execute(
+            "UPDATE players SET backfilled_at=NULL, backfill_before=("
+            "  SELECT MIN(captured_at) FROM snapshots s"
+            "   WHERE s.player_id=players.id)")
+
+
 # In the order they have to run, and numbered for ever. Append; never
 # renumber, and never remove one - a database that has not seen a step still
 # needs it, however old it is.
@@ -325,6 +347,7 @@ STEPS = (
     (10, _add_group_summary_board),
     (11, _label_metric_origins),
     (12, _keep_the_digest),
+    (13, _reopen_history_imports),
 )
 
 LATEST = max(number for number, _step in STEPS)
