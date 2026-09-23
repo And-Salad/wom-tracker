@@ -16,6 +16,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from .. import theme
 from ..config import db_path
 from ..db import Database
+from ..memo import Memo
 from ..util import is_local_host
 from .admin import PASSWORD_ENV, admin_enabled
 from .admin import admin as admin_blueprint
@@ -52,6 +53,8 @@ def create_app(limits=None):
     app.config["JOBS"] = JobRunner()
     app.config["LIMITS"] = limits or Limits(latch=ConfigLatch())
     app.config["VIEWERS"] = Viewers()
+    # Chart figures shared between requests - see wom/memo.py.
+    app.config["MEMO"] = Memo()
     # Set by web_app.py when it starts the scheduler; None when the dashboard
     # is served without one, in which case there is nothing to collide with.
     app.config.setdefault("SCHEDULER", None)

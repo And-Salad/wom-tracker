@@ -117,6 +117,24 @@ class SnapshotStore:
             (player_id,))
         return row["at"] if row else None
 
+    def data_version(self):
+        """A token that moves whenever a chart's figures could have.
+
+        Readings arrive as snapshots, and are thinned from them; a session is
+        attributed at the end of an update run, which then stamps the run as
+        finished; a plugin's events arrive in their own tables. Each of those
+        moves one of these. It is not a proof - metrics have no cheap "newest"
+        to ask for - which is why wom/memo.py also expires what it keeps.
+        """
+        row = self.query_one(
+            "SELECT (SELECT COUNT(*) FROM snapshots) AS snapshots,"
+            " (SELECT MAX(id) FROM snapshots) AS newest,"
+            " (SELECT MAX(id) FROM runs) AS run,"
+            " (SELECT finished_at FROM runs ORDER BY id DESC LIMIT 1) AS finished,"
+            " (SELECT MAX(id) FROM session_events) AS sessions,"
+            " (SELECT MAX(id) FROM game_events) AS events")
+        return tuple(row)
+
     def snapshot_count(self, player_id):
         row = self.query_one("SELECT COUNT(*) AS n FROM snapshots WHERE player_id=?",
                              (player_id,))

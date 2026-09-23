@@ -37,15 +37,20 @@ def catalog():
     return [spec.as_dict() for spec in specs()]
 
 
-def build(database, config, key, span, players, choice=None):
-    """One chart's data, or an {"empty": message} payload when there is none."""
+def build(database, config, key, span, players, choice=None, memo=None):
+    """One chart's data, or an {"empty": message} payload when there is none.
+
+    `memo` is shared between requests - see wom/memo.py. The Overview asks
+    for seven of these at once and again on every tick, about players whose
+    figures have not changed since the last update.
+    """
     spec = BY_KEY.get(key)
     if spec is None or spec.build is None:
         return None
     if not players:
         return _empty(NOBODY_PICKED)
     ctx = ViewContext(database, config, players, selected=players,
-                      span=span, choice=choice)
+                      span=span, choice=choice, memo=memo)
     try:
         return spec.build(ctx, choice)
     except Exception as exc:                      # one bad chart, not a bad page
@@ -382,17 +387,27 @@ def _coverage(ctx, series):
 
 
 def trend_series(database, players, color_for, kind, metric, field,
-                 since, until=None, bucket=None):
+                 since, until=None, bucket=None, remember=None):
     """One line per player for one metric, oldest point first.
 
     Shared by the Overview's fixed trends and the Data page's chart, which
     plots whichever metric the table is filtered to. Players with nothing to
     plot are left out rather than drawn as an empty legend entry.
+
+    `remember` is ViewContext.remember: one player's history of one metric
+    over one window is the same whoever else is ticked beside them.
     """
+    def history(player):
+        return database.metric_history(player["id"], metric, kind, since=since,
+                                       until=until, bucket=bucket)
+
     series = []
     for player in players:
-        rows = database.metric_history(player["id"], metric, kind, since=since,
-                                       until=until, bucket=bucket)
+        if remember is None:
+            rows = history(player)
+        else:
+            rows = remember(("history", player["id"], kind, metric, since,
+                             until, bucket), lambda p=player: history(p))
         points = []
         for row in rows:
             when = parse_api_time(row["captured_at"])
@@ -425,7 +440,8 @@ def _trend(ctx, kind, metric, field, ylabel, tooltip, empty,
     """
     since = ctx.span.since
     series = trend_series(ctx.db, ctx.selected, ctx.color_for, kind, metric,
-                          field, since, ctx.span.until, bucket=ctx.span.bucket)
+                          field, since, ctx.span.until, bucket=ctx.span.bucket,
+                          remember=ctx.remember)
     if not series:
         return _empty(empty.format(ctx.span.phrase))
     start = parse_api_time(since)

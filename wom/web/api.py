@@ -109,7 +109,8 @@ def chart_data(key):
         return refused
     here = scope()
     payload = web_data.build(database(), here.config, key, here.span,
-                             here.selected, request.args.get("choice"))
+                             here.selected, request.args.get("choice"),
+                             memo=current_app.config.get("MEMO"))
     if payload is None:
         abort(404)
     # The sidebar's date inputs show whatever the period resolved to, so every
@@ -242,10 +243,11 @@ def metric_history():
     span = here.span
 
     context = ViewContext(database(), here.config, here.players,
-                          selected=here.selected, span=span)
+                          selected=here.selected, span=span,
+                          memo=current_app.config.get("MEMO"))
     series = web_data.trend_series(
         database(), here.selected, context.color_for, kind, metric, "value",
-        span.since, span.until, bucket=span.bucket)
+        span.since, span.until, bucket=span.bucket, remember=context.remember)
     if not series:
         return _fresh({"empty": "No readings of {} in {}.".format(
             pretty_metric(metric), span.phrase)})
