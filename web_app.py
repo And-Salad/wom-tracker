@@ -74,6 +74,9 @@ def _thin_history(database, settings):
     settings.save()
     if result.get("removed"):
         log.info("thinned %d old readings", result["removed"])
+    if result.get("repeats"):
+        log.info("dropped %d metric rows that repeated the one before",
+                 result["repeats"])
 
 
 def start_scheduler(app):

@@ -216,3 +216,56 @@ def test_a_celebrity_cut_short_by_the_old_cap_carries_on_from_there(
     assert asked == [everything[-10]["createdAt"]], "resumed, not restarted"
     assert not live.needs_backfill(1)
     assert stored(live) == 6, "all six days, one reading each"
+
+
+def test_repeated_metric_rows_go_and_every_reading_says_the_same(db, player):
+    """Stored newest first, as the old import did, every reading wrote every
+    metric. The repeats go; what each reading says does not change."""
+    readings = [snapshot("2026-01-{:02d}T12:00:00.000Z".format(day),
+                         skills={"attack": (100 + (day // 3) * 10, 40)},
+                         bosses={"zulrah": 5, "vorkath": day // 2})
+                for day in range(1, 10)]
+    for reading in reversed(readings):
+        db.save_snapshot(1, reading)
+    moments = [r["createdAt"] for r in readings]
+
+    def read():
+        return [{(r["kind"], r["metric"]): r["value"]
+                 for r in db.state_at(1, at)} for at in moments]
+
+    before = read()
+    rows = db.query_one("SELECT COUNT(*) AS n FROM metrics")["n"]
+    assert rows == 27, "the old order wrote all three metrics every time"
+
+    assert db.drop_repeated_metrics() == 17
+    assert read() == before
+    # attack moves 3 times in 9 days, vorkath 5, zulrah never: 1+3, 1+4, 1.
+    assert db.query_one("SELECT COUNT(*) AS n FROM metrics")["n"] == 10
+    assert db.drop_repeated_metrics() == 0, "and a second pass finds nothing"
+
+
+def test_a_real_row_after_an_interpolated_one_is_kept(db, player):
+    """Attribution withdraws its rows and writes them again. The real row
+    after one has to survive that, or the reading falls back to an older
+    value when the interpolation goes."""
+    conn = db.connect()
+    with conn:
+        conn.executemany(
+            "INSERT INTO metrics (player_id, kind, metric, captured_at, value,"
+            " rank, level, efficiency, origin)"
+            " VALUES (1,'skill','attack',?,?,1,40,0,?)",
+            [("2026-01-01T00:00:00.000Z", 100, None),
+             ("2026-01-01T01:00:00.000Z", 150, "derived"),
+             ("2026-01-01T02:00:00.000Z", 150, None),
+             ("2026-01-01T03:00:00.000Z", 150, None)])
+    db.drop_repeated_metrics()
+    kept = [r["captured_at"][11:13] for r in db.query(
+        "SELECT captured_at FROM metrics ORDER BY captured_at")]
+    assert kept == ["00", "01", "02"], "only the real repeat of a real row goes"
+
+
+def test_the_nightly_pass_drops_the_repeats_too(db, player):
+    for day in (3, 2, 1):
+        db.save_snapshot(1, snapshot("2026-01-0{}T12:00:00.000Z".format(day),
+                                     bosses={"zulrah": 5}))
+    assert db.compact_snapshots(keep_days=3650)["repeats"] == 2
