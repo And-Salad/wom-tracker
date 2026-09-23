@@ -34,6 +34,7 @@ from ..colors import normalise, player_color, set_player_color
 from ..config import (
     ENV_KEYS,
     Config,
+    celebrities,
     group_only,
     normalise_usernames,
     tracked_usernames,
@@ -570,7 +571,7 @@ def run(action):
                            "{}/{}  {}".format(i, n, name)),
                        progress=lambda i, n, r: job.say(
                            "{}  {}".format(r.username, r.message), keep=True),
-                       say=job.say)
+                       say=job.say, thin=celebrities(config))
             config["last_run"] = scheduler.stamp_now()
             config.save()
             job.finish("update finished")
@@ -593,10 +594,12 @@ def run(action):
         def work(job):
             client = WomClient(config.get("api_key", ""),
                                config.get("user_agent_contact", ""))
+            famous = celebrities(config)
             for name in tracked_usernames(config):
                 job.say("importing history for {}".format(name))
                 count, note = backfill_player(client, database, name, force=True,
-                                              say=job.say)
+                                              say=job.say,
+                                              thin=name.lower() in famous)
                 job.say("{}: {}".format(name, note or "nothing to import"), keep=True)
             job.finish("history import finished")
         started = runner.start("backfill", exclusive(work))

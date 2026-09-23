@@ -23,7 +23,7 @@ from wom.runtime import require as require_python
 
 require_python()
 
-from wom.config import Config, tracked_usernames
+from wom.config import Config, celebrities, tracked_usernames
 from wom.logs import setup_logging
 from wom.scheduler import zone
 from wom.web import create_app
@@ -65,7 +65,11 @@ def _thin_history(database, settings):
     today = datetime.now(timezone.utc).astimezone(zone()).strftime("%Y-%m-%d")
     if settings.get("last_compact") == today:
         return
-    result = database.compact_snapshots(keep_days=COMPACT_KEEP_DAYS)
+    # Celebrities are thinned whatever their readings' origin - see
+    # compact_snapshots for why theirs cannot be kept the way a friend's are.
+    result = database.compact_snapshots(
+        keep_days=COMPACT_KEEP_DAYS,
+        thin=database.ids_for(settings.get("celebrities", [])))
     settings["last_compact"] = today
     settings.save()
     if result.get("removed"):
@@ -90,7 +94,8 @@ def start_scheduler(app):
         # ten minutes that is worth doing on the hour rather than six times an
         # hour, which halves what the run asks of Wise Old Man.
         update_all(client, database, tracked_usernames(settings),
-                   trigger=trigger, achievements=wants_achievements())
+                   trigger=trigger, achievements=wants_achievements(),
+                   thin=celebrities(settings))
         # The summaries a closed window owes ride on the back of an update, so
         # this has to happen here or they never get written at all.
         try:

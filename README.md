@@ -148,7 +148,9 @@ the leaderboards, which always judge every tracked account - see
 Admin page. They are updated along with everyone else and sit in a separate
 section of the sidebar, unticked until somebody ticks them. They are not part
 of the group: they get no recaps, they are left out of the round-ups, and the
-leaderboards judge only the accounts that are left.
+leaderboards judge only the accounts that are left. Their whole history is
+imported, but kept at one reading a day beyond the last 30 days - anybody can
+update a famous account on Wise Old Man, so theirs arrive a hundred a day.
 
 - **Overview** - the standings and the charts: experience gained by skill, by
   player, and over time. Hovering reads off the figures; clicking a legend entry

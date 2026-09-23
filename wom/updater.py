@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from . import scheduler, sessions
-from .api import HISTORY_LIMIT, WomError
+from .api import SNAPSHOT_PAGE_SIZE, WomError
 from .util import parse_api_time
 
 log = logging.getLogger(__name__)
@@ -59,7 +59,8 @@ def _place_sessions(database, usernames):
 
 
 def update_all(client, database, usernames, trigger="manual", progress=None,
-               starting=None, cancelled=None, achievements=True, say=None):
+               starting=None, cancelled=None, achievements=True, say=None,
+               thin=()):
     """Refresh every username in turn, saving each result as it arrives.
 
     `starting(index, total, username)` fires before each player and
@@ -69,9 +70,11 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
     the milestone fetch, which is a request per player for something that
     moves rarely - at a run every ten minutes it is worth doing hourly rather
     than every time. `say(text)` hears about progress inside one player, which
-    is only ever a history import. Returns the results.
+    is only ever a history import. `thin` names the accounts whose imported
+    history is thinned as it lands - the celebrities. Returns the results.
     """
     usernames = list(usernames)
+    thin = {name.lower() for name in thin}
     total = len(usernames)
     run_id = database.start_run(trigger, roster=total)
     results = []
@@ -85,7 +88,8 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
                 starting(index, total, username)
             except Exception:
                 log.exception("starting callback failed")
-        result = update_one(client, database, username, achievements, say)
+        result = update_one(client, database, username, achievements, say,
+                            thin=username.lower() in thin)
         results.append(result)
         if progress is not None:
             try:
@@ -112,7 +116,8 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
     return results
 
 
-def update_one(client, database, username, achievements=True, say=None):
+def update_one(client, database, username, achievements=True, say=None,
+               thin=False):
     """Ask the API to refresh one player, then store whatever we get back.
 
     A failed refresh still gets a GET, so a player who was updated moments ago
@@ -148,7 +153,7 @@ def update_one(client, database, username, achievements=True, say=None):
     imported = 0
     if database.needs_backfill(player_id):
         imported, backfill_note = backfill_player(client, database, username,
-                                                  player_id, say=say)
+                                                  player_id, say=say, thin=thin)
         if backfill_note:
             message = "{}, {}".format(message, backfill_note)
 
@@ -270,13 +275,32 @@ def sync_achievements(client, database, username, player_id):
         return 0
 
 
-def backfill_player(client, database, username, player_id=None, force=False,
-                    say=None):
-    """Import every snapshot Wise Old Man holds for a player.
+# How many pages of history one update pass imports for a friend. Theirs is
+# a page or two, so this is a ceiling rather than a pace: it keeps an account
+# with an unexpectedly long history from holding up everyone else's update,
+# and the import carries on next run. A celebrity is not held to it - see
+# backfill_player.
+BACKFILL_PAGES_PER_PASS = 10
 
-    Runs once per player - on the pass that first stores them - so charts have
-    real history from the start instead of building up one point at a time.
-    Returns (new_snapshots, note).
+
+def backfill_player(client, database, username, player_id=None, force=False,
+                    say=None, thin=False, pages=BACKFILL_PAGES_PER_PASS):
+    """Import the snapshots Wise Old Man holds for a player, a stretch a run.
+
+    Walks back from where the last pass stopped (`backfill_before`) for up to
+    `pages` pages, and marks the player done only when there is nothing older.
+    So charts gain real history over a few runs rather than one point at a
+    time, and no account's history is too long to have all of it.
+
+    `force` starts again from now and does not stop until the end: it is the
+    admin's re-import, asked for on purpose and run as a job of its own.
+
+    Neither does a celebrity's (`thin`). Theirs is the long one - a hundred
+    and fifty pages is eight minutes at the anonymous rate, longer than a
+    slot, so the pass it lands in runs over and the slot after it is skipped.
+    Friends are updated first in every pass, so none of theirs waits on it.
+    That is a one-off, and it was chosen over having their history trickle in
+    ten pages a run for most of a day.
 
     Stored a page at a time as the pages arrive, and each page oldest first.
     The API pages newest first, and stored in that order no reading had one
@@ -284,9 +308,15 @@ def backfill_player(client, database, username, player_id=None, force=False,
     snapshot. Within a page each now follows the one before it; only the
     oldest of each page starts from nothing, which is once per two hundred.
 
-    `say(text)` is told after each page. A friend's history is a page or two;
-    a celebrity's is twenty-five, and from the admin page a silent import of
-    that size could not be told apart from a hung one.
+    `thin` is for celebrities: each page is thinned as it lands, to one
+    reading a day past the recent month, the same as the nightly compaction
+    does to them. Otherwise an import stores thirty thousand readings that
+    compaction then removes one night later - see compact_snapshots.
+
+    `say(text)` is told after each page, because from the admin page a
+    silent import could not be told apart from a hung one.
+
+    Returns (new_snapshots, note).
     """
     if player_id is None:
         row = database.player_by_username(username)
@@ -296,41 +326,58 @@ def backfill_player(client, database, username, player_id=None, force=False,
     if not force and not database.needs_backfill(player_id):
         return 0, ""
 
+    before = None if force else database.backfill_before(player_id)
+    limit = None if force or thin else pages
     imported = seen = 0
+    finished = True
     try:
-        for page, batch in enumerate(client.iter_snapshot_pages(username),
-                                     start=1):
+        for page, batch in enumerate(client.iter_snapshots_before(
+                username, before=before, max_pages=limit), start=1):
             try:
                 imported += database.save_snapshots(player_id,
                                                     list(reversed(batch)))
+                if thin:
+                    # The default window, the one the nightly pass keeps.
+                    database.compact_snapshots(thin=[player_id],
+                                               only=[player_id], vacuum=False)
             except Exception as exc:
                 log.exception("storing history for %s failed", username)
                 return imported, "history not saved ({})".format(exc)
+            oldest = min(s["createdAt"] for s in batch)
+            finished = len(batch) < SNAPSHOT_PAGE_SIZE
+            if before is not None and oldest >= before:
+                # Only the reading the last page ended on, which the API's
+                # inclusive end date hands back: nothing older, so done.
+                finished = True
+                continue
             seen += len(batch)
-            log.info("history for %s: page %d, %d snapshots so far",
-                     username, page, seen)
+            before = oldest
+            # Moved only once the page is safely stored, so a pass that fails
+            # part way resumes from the last page it kept.
+            database.set_backfill_before(player_id, oldest)
+            log.info("history for %s: page %d, %d snapshots, back to %s",
+                     username, page, seen, oldest[:10])
             if say is not None:
                 try:
-                    say("{}: importing history, {} snapshots so far".format(
-                        username, seen))
+                    say("{}: importing history, back to {}".format(
+                        username, oldest[:10]))
                 except Exception:
                     log.exception("progress callback failed")
     except WomError as exc:
         # History is a nice-to-have: a failure here must not fail the update.
         # Whatever pages did arrive are kept, and the import is not marked
-        # done, so the next pass tries again and skips what it already has.
+        # done, so the next pass carries on from the last page it stored.
         log.warning("history import failed for %s: %s", username, exc)
         return imported, "history unavailable ({})".format(exc)
 
-    database.mark_backfilled(player_id)
-    log.info("imported %d/%d historic snapshots for %s",
-             imported, seen, username)
+    if finished:
+        database.mark_backfilled(player_id)
+    log.info("imported %d/%d historic snapshots for %s%s", imported, seen,
+             username, "" if finished else ", more next run")
     if not seen:
         return 0, "no history on record"
     note = "imported {} historic snapshot{}".format(
         imported, "" if imported == 1 else "s")
-    if seen >= HISTORY_LIMIT:
-        # Pages arrive newest first, so the oldest end is what got left behind.
-        note += " (capped at {}; older history skipped)".format(HISTORY_LIMIT)
-        log.info("history for %s hit the %d snapshot cap", username, HISTORY_LIMIT)
+    if not finished:
+        note += ", back to {} so far".format(before[:10])
     return imported, note

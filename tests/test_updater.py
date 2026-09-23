@@ -44,12 +44,26 @@ class FakeClient:
         self.calls.append(("achievements", username))
         return self._achievements
 
-    def iter_snapshot_pages(self, username, **kwargs):
-        # Newest page first, newest first within it, as the API pages them.
+    def iter_snapshots_before(self, username, before=None, max_pages=None):
+        """Pages as the API hands them: newest first, `before` inclusive, and
+        as long as the updater's page size, which a test can shrink."""
+        from wom import updater
+
         self.calls.append(("snapshots", username))
-        ordered = sorted(self.snapshots, key=lambda s: s["createdAt"],
-                         reverse=True)
-        return iter([ordered[i:i + 2] for i in range(0, len(ordered), 2)])
+        size = updater.SNAPSHOT_PAGE_SIZE
+        page = 0
+        while max_pages is None or page < max_pages:
+            held = sorted((s for s in self.snapshots
+                           if before is None or s["createdAt"] <= before),
+                          key=lambda s: s["createdAt"], reverse=True)[:size]
+            page += 1
+            if not held:
+                return
+            yield held
+            oldest = held[-1]["createdAt"]
+            if len(held) < size or (before is not None and oldest >= before):
+                return
+            before = oldest
 
     def get_snapshots(self, username, **kwargs):
         # The window is recorded, not just the call: asking for the right
@@ -392,30 +406,36 @@ def history(count, bosses=None):
             for month in range(1, count + 1)]
 
 
-def test_an_import_skips_what_did_not_move(db):
+def test_an_import_skips_what_did_not_move(db, monkeypatch):
     """Stored newest first, no reading had one before it to be compared
     with, and every metric was written for every snapshot. Now only the
     oldest reading of each page starts from nothing."""
+    from wom import updater
+    monkeypatch.setattr(updater, "SNAPSHOT_PAGE_SIZE", 3)
     client = FakeClient(snapshots=history(6))
     assert update_one(client, db, "zezima").imported == 6
     zulrah = db.query_one("SELECT COUNT(*) AS n FROM metrics"
                           " WHERE metric='zulrah'")["n"]
-    # Three pages of two in the fake: one row for each page's oldest.
+    # Pages of three that overlap by one: one row for each page's oldest.
     assert zulrah == 3, "unchanged readings were written again"
 
 
-def test_an_import_says_how_far_it_has_got(db):
-    """From the admin page a silent twenty-five page import looked hung."""
+def test_an_import_says_how_far_it_has_got(db, monkeypatch):
+    """From the admin page a silent import looked hung. The last request,
+    which only hands back the reading the page before ended on, says nothing:
+    it got no further back."""
+    from wom import updater
+    monkeypatch.setattr(updater, "SNAPSHOT_PAGE_SIZE", 3)
     heard = []
     update_one(FakeClient(snapshots=history(5)), db, "zezima", say=heard.append)
-    assert heard == ["zezima: importing history, {} snapshots so far".format(n)
-                     for n in (2, 4, 5)]
+    assert heard == ["zezima: importing history, back to 2025-03-01",
+                     "zezima: importing history, back to 2025-01-01"]
 
 
 def test_a_history_import_cut_short_keeps_its_pages_and_tries_again(db):
     """A page refused part way used to throw away the pages already read."""
     class CutShort(FakeClient):
-        def iter_snapshot_pages(self, username, **kwargs):
+        def iter_snapshots_before(self, username, **kwargs):
             self.calls.append(("snapshots", username))
             yield history(2)[::-1]
             raise WomError("server error 502", 502)

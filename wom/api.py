@@ -17,10 +17,11 @@ BASE_URL = "https://api.wiseoldman.net/v2"
 # The snapshots endpoint pages; 200 is the largest page it will hand back.
 SNAPSHOT_PAGE_SIZE = 200
 
-# Ceiling on how much history one import will pull. Pages come back newest
-# first, so hitting this drops the oldest snapshots, not the useful recent ones.
+# Ceiling on how much history one call will page through. Pages come back
+# newest first, so hitting this drops the oldest snapshots, not the useful
+# recent ones. An import does not rely on it: it walks back a few pages a run
+# with iter_snapshots_before until there is nothing older.
 SNAPSHOT_MAX_PAGES = 25
-HISTORY_LIMIT = SNAPSHOT_PAGE_SIZE * SNAPSHOT_MAX_PAGES
 
 # Far enough back to cover any history Wise Old Man holds, imported or not.
 HISTORY_START = datetime(2013, 1, 1, tzinfo=timezone.utc)
@@ -180,6 +181,37 @@ class WomClient:
         for batch in self.iter_snapshot_pages(username, start_date, end_date,
                                               max_pages):
             yield from batch
+
+    def iter_snapshots_before(self, username, before=None, max_pages=None):
+        """Yield pages of history walking back from `before`, newest first.
+
+        Paged by date rather than by offset. An offset counts from the newest
+        snapshot, so every reading taken while an import is part way through
+        shifts every page after it - resuming at "page twelve" next run would
+        skip or repeat. "Everything up to the oldest one I have" is the same
+        question whenever it is asked.
+
+        The API's endDate is inclusive, so each page after the first opens
+        with the snapshot the last one ended on. Stored already, it is
+        skipped - but a page that gets no further back than that is the end,
+        or this would ask for the same moment for ever.
+
+        Stops after `max_pages`, or at a short page, which is the end of the
+        history. The caller tells the two apart by the last page's length.
+        """
+        before = before or (datetime.now(timezone.utc) + timedelta(days=1))
+        page = 0
+        while max_pages is None or page < max_pages:
+            batch = self.get_snapshots(username, start_date=HISTORY_START,
+                                       end_date=before, limit=SNAPSHOT_PAGE_SIZE)
+            page += 1
+            if not batch:
+                return
+            oldest = min(s["createdAt"] for s in batch)
+            yield batch
+            if len(batch) < SNAPSHOT_PAGE_SIZE or oldest >= _iso(before):
+                return
+            before = oldest
 
     def iter_snapshot_pages(self, username, start_date=None, end_date=None,
                             max_pages=SNAPSHOT_MAX_PAGES):

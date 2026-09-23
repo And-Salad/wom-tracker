@@ -23,7 +23,13 @@ CREATE TABLE IF NOT EXISTS players (
     updated_at      TEXT,
     last_changed_at TEXT,
     last_fetched_at TEXT,
-    backfilled_at   TEXT                          -- when history was imported
+    backfilled_at   TEXT,                         -- when history was imported
+    -- How far back the import has reached: the next page is asked for from
+    -- before this. Its own column rather than the oldest reading held,
+    -- because a celebrity's old readings are thinned to one a day as they
+    -- land, and the oldest survivor of a busy day is its last - so resuming
+    -- from it re-fetched that same day for ever.
+    backfill_before TEXT
 );
 
 CREATE TABLE IF NOT EXISTS snapshots (
