@@ -177,6 +177,18 @@ class WomClient:
     def iter_snapshots(self, username, start_date=None, end_date=None,
                        max_pages=SNAPSHOT_MAX_PAGES):
         """Yield every snapshot in a range, newest first, paging as needed."""
+        for batch in self.iter_snapshot_pages(username, start_date, end_date,
+                                              max_pages):
+            yield from batch
+
+    def iter_snapshot_pages(self, username, start_date=None, end_date=None,
+                            max_pages=SNAPSHOT_MAX_PAGES):
+        """Yield a range a page at a time, newest page first.
+
+        Pages rather than snapshots so an import can store each one as it
+        arrives. Collected whole first, a celebrity's five thousand full
+        snapshots sat in memory together on a machine with 512MB of it.
+        """
         start_date = start_date or HISTORY_START
         end_date = end_date or datetime.now(timezone.utc) + timedelta(days=1)
         for page in range(max_pages):
@@ -185,7 +197,7 @@ class WomClient:
                 limit=SNAPSHOT_PAGE_SIZE, offset=page * SNAPSHOT_PAGE_SIZE)
             if not batch:
                 return
-            yield from batch
+            yield batch
             if len(batch) < SNAPSHOT_PAGE_SIZE:
                 return
 

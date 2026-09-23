@@ -569,7 +569,8 @@ def run(action):
                        starting=lambda i, n, name: job.say(
                            "{}/{}  {}".format(i, n, name)),
                        progress=lambda i, n, r: job.say(
-                           "{}  {}".format(r.username, r.message), keep=True))
+                           "{}  {}".format(r.username, r.message), keep=True),
+                       say=job.say)
             config["last_run"] = scheduler.stamp_now()
             config.save()
             job.finish("update finished")
@@ -594,7 +595,8 @@ def run(action):
                                config.get("user_agent_contact", ""))
             for name in tracked_usernames(config):
                 job.say("importing history for {}".format(name))
-                count, note = backfill_player(client, database, name, force=True)
+                count, note = backfill_player(client, database, name, force=True,
+                                              say=job.say)
                 job.say("{}: {}".format(name, note or "nothing to import"), keep=True)
             job.finish("history import finished")
         started = runner.start("backfill", exclusive(work))

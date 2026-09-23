@@ -40,16 +40,25 @@ class SnapshotStore:
             # One payload per player: a sample of exactly what the API returns,
             # for the day a field we do not flatten turns out to matter. Every
             # payload was six megabytes of JSON nothing has ever read.
+            #
+            # Only the one still holding a payload. Without `payload<>''` this
+            # rewrote every row the account had, on every insert - nothing at
+            # a reading a run, and quadratic across an import: a celebrity's
+            # five thousand snapshots were twelve million row writes, which
+            # held the write lock long enough to queue every request behind it.
             conn.execute(
-                "UPDATE snapshots SET payload='' WHERE player_id=? AND id<>?",
+                "UPDATE snapshots SET payload='' WHERE player_id=? AND id<>?"
+                " AND payload<>''",
                 (player_id, snapshot_id))
             # Only what moved, and rank moving is not the player moving: a
             # hiscore position drifts because strangers played, and 83% of
             # every row ever written was that drift. Rank is still stored on
             # the rows that are written, so it reads as the rank they held
             # when the metric last actually changed.
-            before = self._state_before(conn, player_id, captured_at)
-            changed = [row for row in _flatten(player_id, captured_at, data)
+            rows = list(_flatten(player_id, captured_at, data))
+            before = self._state_before(conn, player_id, captured_at,
+                                        [(row[1], row[2]) for row in rows])
+            changed = [row for row in rows
                        if before.get((row[1], row[2])) != (row[4], row[6], row[7])]
             conn.executemany(
                 "INSERT OR REPLACE INTO metrics (player_id, kind, metric,"
@@ -58,20 +67,35 @@ class SnapshotStore:
         return snapshot_id
 
     @staticmethod
-    def _state_before(conn, player_id, when):
-        """{(kind, metric): (value, rank, level, efficiency)} at or before `when`.
+    def _state_before(conn, player_id, when, keys):
+        """{(kind, metric): (value, level, efficiency)} at or before `when`.
 
-        A snapshot can arrive out of order - Wise Old Man's history is imported
-        oldest first, and a backfill can land beside readings already stored -
-        so this asks what was true just before this reading rather than
-        assuming the newest row is the one to compare against.
+        A snapshot can arrive out of order - a backfill can land beside
+        readings already stored - so this asks what was true just before this
+        reading rather than assuming the newest row is the one to compare
+        against.
+
+        Only for the metrics in `keys`, which are the ones the caller is about
+        to compare. Asked for everything, the query had no way to use the
+        key: captured_at is its last column, so "before this moment" scanned
+        every row the account held, on every insert. That is nothing at one
+        reading a run and quadratic across an import - five thousand snapshots
+        for a celebrity spent most of their time here. Named metrics are one
+        seek each.
         """
+        keys = list(dict.fromkeys(keys))
+        if not keys:
+            return {}
         rows = conn.execute(
-            "SELECT kind, metric, value, level, efficiency FROM metrics m"
-            " WHERE player_id=? AND captured_at<? AND captured_at = ("
-            "   SELECT MAX(captured_at) FROM metrics x WHERE x.player_id=m.player_id"
-            "     AND x.kind=m.kind AND x.metric=m.metric AND x.captured_at<?)",
-            (player_id, when, when)).fetchall()
+            "WITH wanted(kind, metric) AS (VALUES {})"
+            " SELECT m.kind, m.metric, m.value, m.level, m.efficiency"
+            " FROM wanted w JOIN metrics m ON m.player_id=? AND m.kind=w.kind"
+            "   AND m.metric=w.metric AND m.captured_at = ("
+            "     SELECT MAX(captured_at) FROM metrics x WHERE x.player_id=?"
+            "       AND x.kind=w.kind AND x.metric=w.metric AND x.captured_at<?)"
+            .format(",".join(["(?,?)"] * len(keys))),
+            [part for key in keys for part in key]
+            + [player_id, player_id, when]).fetchall()
         return {(r["kind"], r["metric"]):
                 (r["value"], r["level"], r["efficiency"]) for r in rows}
 

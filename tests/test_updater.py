@@ -44,9 +44,12 @@ class FakeClient:
         self.calls.append(("achievements", username))
         return self._achievements
 
-    def iter_snapshots(self, username, **kwargs):
+    def iter_snapshot_pages(self, username, **kwargs):
+        # Newest page first, newest first within it, as the API pages them.
         self.calls.append(("snapshots", username))
-        return iter(self.snapshots)
+        ordered = sorted(self.snapshots, key=lambda s: s["createdAt"],
+                         reverse=True)
+        return iter([ordered[i:i + 2] for i in range(0, len(ordered), 2)])
 
     def get_snapshots(self, username, **kwargs):
         # The window is recorded, not just the call: asking for the right
@@ -380,3 +383,72 @@ def test_the_window_never_starts_in_the_future(db):
         (now + timedelta(minutes=25)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         skills={"attack": (500, 40)}))
     assert _recent_since(db, 1, now) <= now, "asked for a window not yet lived"
+
+
+def history(count, bosses=None):
+    """`count` monthly readings that never move, oldest first."""
+    return [snapshot("2025-{:02d}-01T00:00:00.000Z".format(month),
+                     skills={"attack": (10, 1)}, bosses=bosses or {"zulrah": 5})
+            for month in range(1, count + 1)]
+
+
+def test_an_import_skips_what_did_not_move(db):
+    """Stored newest first, no reading had one before it to be compared
+    with, and every metric was written for every snapshot. Now only the
+    oldest reading of each page starts from nothing."""
+    client = FakeClient(snapshots=history(6))
+    assert update_one(client, db, "zezima").imported == 6
+    zulrah = db.query_one("SELECT COUNT(*) AS n FROM metrics"
+                          " WHERE metric='zulrah'")["n"]
+    # Three pages of two in the fake: one row for each page's oldest.
+    assert zulrah == 3, "unchanged readings were written again"
+
+
+def test_an_import_says_how_far_it_has_got(db):
+    """From the admin page a silent twenty-five page import looked hung."""
+    heard = []
+    update_one(FakeClient(snapshots=history(5)), db, "zezima", say=heard.append)
+    assert heard == ["zezima: importing history, {} snapshots so far".format(n)
+                     for n in (2, 4, 5)]
+
+
+def test_a_history_import_cut_short_keeps_its_pages_and_tries_again(db):
+    """A page refused part way used to throw away the pages already read."""
+    class CutShort(FakeClient):
+        def iter_snapshot_pages(self, username, **kwargs):
+            self.calls.append(("snapshots", username))
+            yield history(2)[::-1]
+            raise WomError("server error 502", 502)
+
+    result = update_one(CutShort(), db, "zezima")
+    assert result.ok and "history unavailable" in result.message
+    assert result.imported == 2
+    assert db.needs_backfill(1), "not marked done, so the next pass resumes"
+
+
+def test_storing_a_reading_does_not_read_the_whole_account(db, player):
+    """Both lookups a save makes used to scan every row the account held,
+    which made an import quadratic: a celebrity's history wedged the site."""
+    conn = db.connect()
+    plans = [
+        conn.execute("EXPLAIN QUERY PLAN UPDATE snapshots SET payload=''"
+                     " WHERE player_id=1 AND id<>2 AND payload<>''").fetchall(),
+    ]
+    from wom.store.snapshots import SnapshotStore
+
+    captured = []
+    real = conn.execute
+
+    class Spy:
+        def execute(self, sql, params=()):
+            captured.append((sql, params))
+            return real(sql, params)
+
+    SnapshotStore._state_before(Spy(), 1, "2026-01-01T00:00:00.000Z",
+                                [("skill", "attack"), ("boss", "zulrah")])
+    sql, params = captured[0]
+    plans.append(conn.execute("EXPLAIN QUERY PLAN " + sql, params).fetchall())
+    details = [row["detail"] for plan in plans for row in plan]
+    assert any("idx_snapshots_payload" in d for d in details), details
+    assert not any(d.startswith("SCAN m") or d.startswith("SCAN metrics")
+                   for d in details), details
