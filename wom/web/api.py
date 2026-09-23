@@ -249,7 +249,7 @@ def metric_history():
         database(), here.selected, context.color_for, kind, metric, "value",
         span.since, span.until, bucket=span.bucket, remember=context.remember)
     if not series:
-        return _fresh({"empty": "No readings of {} in {}.".format(
+        return _fresh({"empty": "No readings of {} {}.".format(
             pretty_metric(metric), span.phrase)})
     return _fresh({
         "type": "trend",
