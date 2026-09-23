@@ -339,7 +339,8 @@ def backfill_player(client, database, username, player_id=None, force=False,
                 if thin:
                     # The default window, the one the nightly pass keeps.
                     database.compact_snapshots(thin=[player_id],
-                                               only=[player_id], vacuum=False)
+                                               only=[player_id], vacuum=False,
+                                               repeats=False)
             except Exception as exc:
                 log.exception("storing history for %s failed", username)
                 return imported, "history not saved ({})".format(exc)

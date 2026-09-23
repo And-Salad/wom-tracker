@@ -44,7 +44,60 @@ class MaintenanceStore:
         return {"total": total, "removable": doomed, "cutoff": cutoff,
                 "keep_days": keep_days}
 
-    def compact_snapshots(self, keep_days=30, thin=(), only=(), vacuum=True):
+    def drop_repeated_metrics(self, only=()):
+        """Remove metric rows that only say again what the row before said.
+
+        The table is changes only - a row where a value moved - but an import
+        that stored a page newest first compared each reading with nothing,
+        and wrote every metric of every one. On the live database that was
+        318,850 of 356,849 rows, most of them the first celebrity's, and
+        inside the month compaction never thins. No reading changes when they
+        go: each carries the last row at or before it forward, and that row
+        says the same. Rank is not compared, as it is not when a row is first
+        written - a position drifting because strangers played is not the
+        player moving.
+
+        One metric at a time, each its own short transaction. Done as one
+        statement it is a second and a half on a desktop and minutes on the
+        live machine, all of it holding the write lock - which is how an
+        import once queued every request on the site behind it. Asking
+        nothing costs little once the repeats are gone, so it runs nightly
+        and keeps the table what it says it is.
+
+        Only rows Wise Old Man gave us, and only after another of those. A
+        session's interpolated rows are withdrawn and rewritten when
+        attribution recomputes, so a real row that merely repeated one of
+        them has to stay: with the interpolation gone, it is the row that
+        says what was true.
+
+        Returns how many rows went.
+        """
+        scoped, only_args = _players_clause("player_id", only)
+        keys = self.query("SELECT DISTINCT player_id, kind, metric FROM metrics"
+                          " WHERE 1=1" + scoped, only_args)
+        conn = self.connect()
+        removed = 0
+        for key in keys:
+            with conn:
+                removed += conn.execute("""
+                    DELETE FROM metrics
+                    WHERE player_id=? AND kind=? AND metric=? AND captured_at IN (
+                        SELECT captured_at FROM (
+                            SELECT captured_at, origin, value, level, efficiency,
+                                   LAG(origin) OVER w AS po, LAG(value) OVER w AS pv,
+                                   LAG(level) OVER w AS pl,
+                                   LAG(efficiency) OVER w AS pe,
+                                   ROW_NUMBER() OVER w AS rn
+                            FROM metrics
+                            WHERE player_id=? AND kind=? AND metric=?
+                            WINDOW w AS (ORDER BY captured_at))
+                        WHERE rn > 1 AND origin IS NULL AND po IS NULL
+                          AND value IS pv AND level IS pl AND efficiency IS pe)
+                    """, tuple(key) * 2).rowcount
+        return removed
+
+    def compact_snapshots(self, keep_days=30, thin=(), only=(), vacuum=True,
+                          repeats=True):
         """Thin old history to one snapshot per player per day.
 
         Four-plus readings a day is the right resolution for recent gains, and
@@ -76,6 +129,8 @@ class MaintenanceStore:
         `only` confines a pass to some players - an import thins what it has
         just stored - and `vacuum=False` skips rewriting the file, which is
         the whole database's worth of work for one account's pages.
+        `repeats=False` skips drop_repeated_metrics, which an import has no
+        use for: it stores pages oldest first and so writes no repeats.
 
         Metrics are thinned with them, to the last change of each metric on
         each day. That has to happen together: a change deleted while the
@@ -86,6 +141,7 @@ class MaintenanceStore:
         Returns the preview dict with the actual count removed.
         """
         summary = self.compaction_preview(keep_days, thin, only)
+        summary["repeats"] = self.drop_repeated_metrics(only) if repeats else 0
         cutoff = summary["cutoff"]
         where, args = self._doomed_snapshots(cutoff, thin, only)
         scoped, only_args = _players_clause("player_id", only)
