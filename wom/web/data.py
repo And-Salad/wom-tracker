@@ -154,7 +154,7 @@ def _group_totals(ctx, _choice):
         tile["rows"] = sorted(rows, key=lambda row: -row["value"])
 
     if not any(tile["total"] for tile in tiles):
-        return _empty("Nobody gained anything in {}.".format(ctx.span.phrase))
+        return _empty("Nobody gained anything {}.".format(ctx.span.phrase))
     return {"type": "totals", "tiles": tiles,
             "coverage": _coverage(ctx, [{"username": p["username"],
                                          "name": p["display_name"],
@@ -209,7 +209,7 @@ def _standings(ctx, _choice):
                          name=player["display_name"],
                          color=ctx.color_for(player)))
     if not any(r["xp"] or r["kills"] for r in rows):
-        return _empty("Nobody gained anything in {}.".format(ctx.span.phrase))
+        return _empty("Nobody gained anything {}.".format(ctx.span.phrase))
     rows.sort(key=lambda r: -r["xp"])
     return {"type": "standings", "rows": rows,
             "coverage": _coverage(ctx, rows)}
@@ -219,7 +219,7 @@ def _standings(ctx, _choice):
 def _skill_gains(ctx, _choice):
     return _stacked(ctx, "skill", SKILL_ORDER, "Experience gained",
                     "experience gained",
-                    "No experience gained by the included players in {}.")
+                    "No experience gained by the included players {}.")
 
 
 @chart("xp_trend")
@@ -241,7 +241,7 @@ def _xp_trend(ctx, _choice):
         ctx, kind="skill", metric="overall", field="value",
         ylabel="XP gained",
         tooltip={"style": "count", "unit": "XP"},
-        empty="No experience gained by the included players in {}.")
+        empty="No experience gained by the included players {}.")
     if "series" in payload:
         found = {player["username"]: player for player in ctx.selected}
         payload["series"] = [_from_zero(ctx, found[s["username"]], s)
@@ -290,7 +290,7 @@ def _boss_gains(ctx, _choice):
         for metric, value in per_player.items():
             totals[metric] = totals.get(metric, 0.0) + value
     ranked = [m for m, _v in sorted(totals.items(), key=lambda kv: -kv[1])][:TOP_BOSSES]
-    empty = "No boss kills by the included players in {}."
+    empty = "No boss kills by the included players {}."
     if not ranked:
         return _empty(empty.format(ctx.span.phrase))
     return _stacked(ctx, "boss", ranked, "Kills gained", "kills gained", empty,
@@ -308,7 +308,7 @@ def _level_trend(ctx, choice):
         tooltip={"style": "level"},
         gained_ylabel="Levels gained",
         gained_tooltip={"style": "count", "unit": "levels"},
-        empty="No {} history for the included players in {{}}.".format(
+        empty="No {} history for the included players {{}}.".format(
             choice.lower()))
 
 
@@ -326,7 +326,7 @@ def _log_and_clues(ctx, choice):
                       else "{} gained".format(choice),
         gained_tooltip={"style": "count",
                         "unit": "slots" if log_slots else "completed"},
-        empty="No {} history for the included players in {{}}.".format(
+        empty="No {} history for the included players {{}}.".format(
             choice.lower()))
 
 

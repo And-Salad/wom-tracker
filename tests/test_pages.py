@@ -520,3 +520,23 @@ def test_a_page_that_cannot_refetch_is_offered_a_reload_rather_than_given_one(
 
     sidebar = client.get("/static/sidebar.js").get_data(as_text=True)
     assert "if (reloads || !listeners.length) { return false; }" in sidebar
+
+
+def test_an_empty_window_is_named_in_a_sentence_that_reads(client, app):
+    """It said "in today", which is what anybody opening the site just after
+    midnight was shown on every card."""
+    from wom.web.timespan import Timespan
+
+    assert Timespan("x", None, "Today").phrase == "so far today"
+    assert Timespan("x", None, "Week", key="week").phrase == "in the last week"
+    assert Timespan("x", None, "All time").phrase == "in the whole history"
+    custom = Timespan("x", "y", "1 Jun - 14 Aug", from_date="2026-06-01",
+                      to_date="2026-08-14")
+    assert custom.phrase == "between 01 Jun 2026 and 14 Aug 2026"
+    one_day = Timespan("x", "y", "1 Jun", from_date="2026-06-01",
+                       to_date="2026-06-01")
+    assert one_day.phrase == "on 01 Jun 2026"
+
+    seed(app)
+    body = client.get("/api/chart/group_totals?period=Today").get_json()
+    assert body["empty"] == "Nobody gained anything so far today."
