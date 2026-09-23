@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from flask import request
 
 from .. import periods
+from ..scheduler import previous_slot
 from ..util import api_stamp, parse_api_time
 from .dates import BadRequest, day_bound, local_day, viewer_offset
 
@@ -126,7 +127,11 @@ def current_timespan(database=None, players=None):
                         to_date=local_day(_now(), offset))
 
     period = _rolling(asked.title())
-    opened = period.start_iso()
+    # From the last update slot, not from this second. The readings only move
+    # when an update lands, so the figures are the same either way - but a
+    # start that moved every request made every request a different question,
+    # and nothing about one could be remembered for the next. See wom/memo.py.
+    opened = period.start_iso(previous_slot().astimezone(timezone.utc))
     return Timespan(opened, None, period.label, key=period.key,
                     bucket=period.bucket,
                     from_date=local_day(opened, offset),

@@ -168,9 +168,14 @@
      they moved the address bar and changed nothing on screen. */
   var reloads = form.dataset.reload === "1";
 
+  /* Changing several ticks in a row should cost one round of requests, not
+     one per tick, so let the clicks settle first. It was 90ms, which is
+     quicker than anybody clicks down a list: ticking four names set off four
+     rounds of seven charts, and on one shared CPU the last round - the only
+     one drawn - queued behind the three nobody would see. */
+  var SETTLE = 350;
+
   function announce() {
-    // Changing several ticks in a row should cost one round of requests, not
-    // one per tick, so let the clicks settle first.
     clearTimeout(queued);
     queued = setTimeout(function () {
       var q = query();
@@ -183,7 +188,7 @@
       history.replaceState(null, "", window.location.pathname + "?" + q);
       followNav(q);
       listeners.forEach(function (fn) { fn(q); });
-    }, 90);
+    }, SETTLE);
   }
 
   /* Every tab reads the same sidebar, so moving between them has to carry it.

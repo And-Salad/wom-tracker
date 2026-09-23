@@ -11,7 +11,7 @@ class ViewContext:
     """Everything a chart or table function is given to render itself."""
 
     def __init__(self, database, config, players=None, selected=None,
-                 span=None, choice=None):
+                 span=None, choice=None, memo=None):
         self.db = database
         self.config = config
         self.players = players or []    # every tracked player, display order
@@ -26,6 +26,21 @@ class ViewContext:
         # can cache freely without any risk of going stale.
         self._bounds = {}
         self._gains = {}
+        # Across requests, when the caller has one to share - see wom/memo.py.
+        self.memo = memo
+        self._version = None
+
+    def remember(self, key, compute):
+        """`compute()`, or what it returned last time for this `key`.
+
+        Only a figure that depends on nothing but its key and the data may be
+        remembered: never a colour, a label or anything from the request.
+        """
+        if self.memo is None:
+            return compute()
+        if self._version is None:
+            self._version = self.db.data_version()
+        return self.memo.get(self._version, key, compute)
 
     def gains(self, player, kind="skill"):
         """{metric: gained} for this player over the period, computed once.
@@ -37,8 +52,12 @@ class ViewContext:
         player_id = player if isinstance(player, int) else player["id"]
         key = (player_id, kind)
         if key not in self._gains:
-            self._gains[key] = self.db.metric_gains(
-                player_id, self.span.since, kind, bounds=self.bounds_for(player_id))
+            # Copied out, so a caller that adds to its answer cannot change
+            # what the next request is handed.
+            self._gains[key] = dict(self.remember(
+                ("gains", player_id, kind, self.span.since, self.span.until),
+                lambda: self.db.metric_gains(player_id, self.span.since, kind,
+                                             bounds=self.bounds_for(player_id))))
         return self._gains[key]
 
     def bounds_for(self, player):
