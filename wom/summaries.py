@@ -17,7 +17,7 @@ import re
 from datetime import datetime, timezone
 
 from . import gameplay, periods, winners
-from .config import data_dir
+from .config import data_dir, group_only
 from .icons import SKILL_ORDER
 from .scheduler import zone
 from .util import fmt_datetime, fmt_hours, fmt_int, parse_api_time, pretty_metric
@@ -882,7 +882,7 @@ def summarise_player(database, config, player, window, force=False):
         usage["input_tokens"], usage["output_tokens"])
 
 
-def due_periods(database, now=None):
+def due_periods(database, now=None, config=None):
     """Which summaries today owes, on the calendar the schedule runs on.
 
     The first update after midnight covers the day just gone. Mondays add the
@@ -900,15 +900,18 @@ def due_periods(database, now=None):
     # A period is owed when its newest complete window has not been written
     # yet. That is what catches up a machine asleep on the day itself: the
     # Monday window stays unwritten until something writes it.
+    # Only the group is owed anything. A celebrity never gets a note, so
+    # counting one here would call every window unwritten for ever.
+    roster = [p["id"] for p in group_only(database.players(), config or {})]
     owed = []
     for period in periods.SUMMARY_PERIODS:
         window = periods.latest_window(period, now)
-        if _missing(database, period, window.key):
+        if _missing(database, period, window.key, roster):
             owed.append(period)
     return owed
 
 
-def _missing(database, period, window_key):
+def _missing(database, period, window_key, roster):
     """True when this window still needs writing - player notes or the group one.
 
     Every tracked account has to have one, not merely somebody. Asked whether
@@ -922,7 +925,6 @@ def _missing(database, period, window_key):
     their unchanged digest without reaching the API, so a window reopened for
     one player is one call, not a roster's worth.
     """
-    roster = [p["id"] for p in database.players()]
     if not roster:
         return False            # nobody to write about; nothing is owed
     written = database.query_one(
@@ -953,10 +955,10 @@ def maybe_write_summaries(database, config, now=None):
     if not config.get("summaries_enabled"):
         return 0
 
-    keys = due_periods(database, now)
+    keys = due_periods(database, now, config)
     if not keys:
         return 0
-    players = database.players()
+    players = group_only(database.players(), config)
     if not players:
         return 0
 
@@ -1052,7 +1054,9 @@ def summarise_all(database, config, players, period_keys=None, force=False,
     # a single stored recap per window, so writing one from a partial
     # selection would file a two-player comparison as the verdict for everyone.
 
-    roster = database.players()
+    # The group, which is the whole roster less the celebrities: a famous
+    # account would win every round-up it was allowed into.
+    roster = group_only(database.players(), config)
     for key in [k for k in keys if k in periods.GROUP_PERIODS]:
         window = periods.latest_window(key, now)
         for board in winners.BOARDS:

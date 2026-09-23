@@ -9,6 +9,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from .. import gameplay, periods, theme, winners
+from ..config import Config, group_only
 from ..icons import icon_kind_for
 from ..util import (
     fmt_ago,
@@ -54,9 +55,13 @@ def group_verdicts(database, rows, board="maxing"):
     Every day in range is settled in one pass. Asked window by window this
     walked a month of readings per row, which across a year of daily recaps
     is the same work three hundred times over.
+
+    Every tracked account less the celebrities, which is also what the
+    leaderboards and the round-ups judge across - a chip naming a famous
+    account would be a verdict nothing else on the site agrees with.
     """
 
-    players = database.players()
+    players = group_only(database.players(), Config())
     days = [row["window_key"] for row in rows if row["period"] == "day"]
     months = sorted({row["window_key"] for row in rows if row["period"] == "month"})
     local = winners.zone()

@@ -26,7 +26,7 @@ from wom.runtime import require as require_python
 require_python()
 
 from wom.api import WomClient
-from wom.config import Config, db_path
+from wom.config import Config, db_path, group_only, tracked_usernames
 from wom.db import Database
 from wom.logs import setup_logging
 from wom.scheduler import stamp_now
@@ -39,7 +39,7 @@ log = logging.getLogger("wom")
 
 def run_headless_update():
     config = Config()
-    names = config.get("usernames", [])
+    names = tracked_usernames(config)
     if not names:
         print("No usernames configured. Open the app and add some under Options.")
         return 1
@@ -67,7 +67,7 @@ def run_headless_update():
 def run_backfill(names=None):
     """Re-import stored history for every player, ignoring the once-only flag."""
     config = Config()
-    names = names or config.get("usernames", [])
+    names = names or tracked_usernames(config)
     if not names:
         print("No usernames configured. Open the app and add some under Options.")
         return 1
@@ -128,18 +128,22 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
         return 0
 
     database = Database(db_path())
-    players = database.players()
+    # Celebrities are followed, not written about - see config.group_only.
+    players = group_only(database.players(), config)
     if only_player:
         wanted = only_player.lower()
         players = [p for p in players if p["username"] == wanted]
         if not players:
-            print("no tracked player called {!r}".format(only_player))
+            print("no tracked player called {!r}{}".format(
+                only_player, " - celebrities get no recaps"
+                if wanted in {n.lower() for n in config.get("celebrities", [])}
+                else ""))
             return 1
     if not players:
         print("no players stored yet - run an update first")
         return 1
     if due_only:
-        keys = summaries.due_periods(database)
+        keys = summaries.due_periods(database, config=config)
         if not keys:
             print("nothing due yet - every window that has closed is written")
             return 0
@@ -166,7 +170,8 @@ def run_summaries(period_keys, only_player, force, dry_run, show_prompt,
             system = summaries.load_prompt(config, key, kind="group")
             for board in winners.BOARDS:
                 digest = summaries.build_group_digest(
-                    database, config, database.players(), window, board=board)
+                    database, config, group_only(database.players(), config),
+                    window, board=board)
                 try:
                     tokens, cost = summaries.estimate(config, system, digest,
                                                       kind="group")
@@ -246,7 +251,7 @@ def main(argv=None):
     setup_logging(args.verbose, role="cli")
 
     if args.list:
-        for name in Config().get("usernames", []):
+        for name in tracked_usernames(Config()):
             print(name)
         return 0
     if args.summarize or args.show_prompt:

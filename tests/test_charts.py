@@ -1,7 +1,7 @@
 """The chart builders, and the figures the cards and standings show."""
 
 import pytest
-from conftest import seed, snapshot
+from conftest import seed, snapshot, this_week
 
 
 def test_every_described_chart_has_a_builder():
@@ -17,10 +17,11 @@ def test_every_described_chart_has_a_builder():
 def test_the_group_tiles_total_what_the_per_player_split_adds_up_to(client, app):
     """Each tile is a headline with its own breakdown behind it, and a
     headline that does not equal its parts is worse than no headline."""
-    database = seed(app)
+    week = this_week()
+    database = seed(app, week)
     database.save_player_details({"id": 2, "username": "other",
                                   "displayName": "Other", "type": "regular"})
-    for day, xp in (("2026-08-25", 500), ("2026-08-31", 2500)):
+    for day, xp in zip(week, (500, 2500), strict=True):
         database.save_snapshot(2, snapshot(day + "T12:00:00.000Z",
                                            skills={"attack": (xp, 30)},
                                            bosses={"zulrah": xp // 100}))
@@ -48,8 +49,8 @@ def test_experience_toward_99_is_capped_the_way_the_leaderboard_caps_it(client, 
                                   "displayName": "Zezima", "type": "regular"})
     # Opens a hair under 99 and finishes well past it: only the experience
     # below the cap counts, and the rest is what the leaderboard ignores.
-    for day, xp in (("2026-08-25", NINETY_NINE - 1000),
-                    ("2026-08-31", NINETY_NINE + 5000)):
+    for day, xp in zip(this_week(), (NINETY_NINE - 1000, NINETY_NINE + 5000),
+                       strict=True):
         database.save_snapshot(1, snapshot(day + "T12:00:00.000Z",
                                            skills={"attack": (xp, 99)}))
 
@@ -192,7 +193,7 @@ def test_the_newest_round_up_is_readable_without_clicking(client, app):
 
 
 def test_standings_answer_who_won(client, app):
-    seed(app)
+    seed(app, this_week())
     rows = client.get("/api/chart/standings?period=Week").get_json()["rows"]
     assert rows and "xp" in rows[0] and "kills" in rows[0] and "levels" in rows[0]
     assert rows == sorted(rows, key=lambda r: -r["xp"]), "the leader comes first"
@@ -219,10 +220,11 @@ def test_the_standings_row_carries_what_the_group_tiles_do(client, app):
     reader goes from a tile to the account that carried it without changing
     card. Both come from _player_totals, so they cannot answer differently
     about the same account over the same window."""
-    database = seed(app)
+    week = this_week()
+    database = seed(app, week)
     database.save_player_details({"id": 2, "username": "other",
                                   "displayName": "Other", "type": "regular"})
-    for day, n in (("2026-08-25", 500), ("2026-08-31", 2500)):
+    for day, n in zip(week, (500, 2500), strict=True):
         database.save_snapshot(2, snapshot(
             day + "T12:00:00.000Z", skills={"attack": (n, 30)},
             bosses={"zulrah": n // 100},
@@ -246,11 +248,12 @@ def test_the_standings_row_carries_what_the_group_tiles_do(client, app):
 def test_the_standings_are_still_sorted_by_experience_gained(client, app):
     """Six more columns must not move what the table ranks on: XP gained is
     the first column because it is the one the order means."""
-    database = seed(app)
+    week = this_week()
+    database = seed(app, week)
     database.save_player_details({"id": 2, "username": "other",
                                   "displayName": "Other", "type": "regular"})
     # Fewer kills, far more experience - so the two orders disagree.
-    for day, xp in (("2026-08-25", 1_000_000), ("2026-08-31", 9_000_000)):
+    for day, xp in zip(week, (1_000_000, 9_000_000), strict=True):
         database.save_snapshot(2, snapshot(day + "T12:00:00.000Z",
                                            skills={"attack": (xp, 80)},
                                            bosses={"zulrah": 1}))

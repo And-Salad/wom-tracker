@@ -10,7 +10,7 @@ import logging
 import threading
 from datetime import datetime, timedelta, timezone, tzinfo
 
-from .config import Config
+from .config import Config, tracked_usernames
 
 log = logging.getLogger(__name__)
 
@@ -181,7 +181,7 @@ class SlotScheduler:
 
     def due(self, now=None):
         now = now or datetime.now(timezone.utc)
-        if not self.config.get("usernames"):
+        if not tracked_usernames(self.config):
             return False  # nothing to update yet
         last = parse_last_run(self.config.get("last_run", ""))
         if last is None:

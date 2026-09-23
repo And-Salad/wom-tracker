@@ -23,7 +23,7 @@ from wom.runtime import require as require_python
 
 require_python()
 
-from wom.config import Config
+from wom.config import Config, tracked_usernames
 from wom.logs import setup_logging
 from wom.scheduler import zone
 from wom.web import create_app
@@ -89,7 +89,7 @@ def start_scheduler(app):
         # Milestones move rarely and cost a request per player. At a run every
         # ten minutes that is worth doing on the hour rather than six times an
         # hour, which halves what the run asks of Wise Old Man.
-        update_all(client, database, settings.get("usernames", []),
+        update_all(client, database, tracked_usernames(settings),
                    trigger=trigger, achievements=wants_achievements())
         # The summaries a closed window owes ride on the back of an update, so
         # this has to happen here or they never get written at all.

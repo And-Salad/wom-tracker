@@ -27,7 +27,7 @@
   var toBox = document.getElementById("to");
   var unlock = document.getElementById("unlock");
   var offsetBox = document.getElementById("tzoffset");
-  var allNone = document.getElementById("all-none");
+  var toggles = [].slice.call(form.querySelectorAll("[data-toggles]"));
   var boxes = [].slice.call(form.querySelectorAll("input[name=player]"));
 
   var listeners = [];
@@ -230,22 +230,35 @@
   });
 
   /* One button, two jobs, and it says which one it will do. Six accounts is
-     enough that "just this one" means five clicks of unticking otherwise. */
-  function syncAllNone() {
-    if (!allNone) { return; }
-    var on = boxes.filter(function (box) { return box.checked; }).length;
-    allNone.textContent = on === boxes.length ? "None" : "All";
+     enough that "just this one" means five clicks of unticking otherwise.
+
+     One per section. The celebrities have their own, so "All" on the group
+     means the group - ticking every famous account along with it would draw
+     their weeks over everybody's own, which is why they start unticked. */
+  function sectionOf(toggle) {
+    var section = toggle.getAttribute("data-toggles");
+    return boxes.filter(function (box) {
+      return (box.getAttribute("data-section") || "group") === section;
+    });
   }
 
-  if (allNone) {
-    allNone.addEventListener("click", function () {
-      var wanted = allNone.textContent === "All";
-      boxes.forEach(function (box) { box.checked = wanted; });
+  function syncAllNone() {
+    toggles.forEach(function (toggle) {
+      var mine = sectionOf(toggle);
+      var on = mine.filter(function (box) { return box.checked; }).length;
+      toggle.textContent = mine.length && on === mine.length ? "None" : "All";
+    });
+  }
+
+  toggles.forEach(function (toggle) {
+    toggle.addEventListener("click", function () {
+      var wanted = toggle.textContent === "All";
+      sectionOf(toggle).forEach(function (box) { box.checked = wanted; });
       syncAllNone();
       announce();
     });
-    syncAllNone();
-  }
+  });
+  syncAllNone();
 
   /* The page behind a restored sidebar was rendered from the bare URL, so it
      is showing something the controls no longer say. A page that refetches is

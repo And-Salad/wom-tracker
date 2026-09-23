@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from flask import current_app, request
 
 from ..colors import player_color
-from ..config import Config
+from ..config import Config, celebrities, group_only
 from ..scheduler import next_slot, parse_last_run
 from ..util import fmt_ago
 from .timespan import current_timespan, labels
@@ -27,10 +27,16 @@ def settings():
 
 
 def roster(config):
-    """Every tracked player, in the order the settings list them."""
+    """Every tracked player, in the order the settings list them.
+
+    The group first and the celebrities after it, so the sidebar's two
+    sections are each in their own list's order and the palette hands the
+    group the same colours it had before anybody famous was added.
+    """
     stored = {row["username"]: row for row in database().players()}
     ordered = []
-    for name in config.get("usernames", []):
+    for name in (list(config.get("usernames", []))
+                 + list(config.get("celebrities", []))):
         row = stored.pop(name.lower(), None)
         if row is not None:
             ordered.append(row)
@@ -38,10 +44,13 @@ def roster(config):
     return ordered
 
 
-def chosen(players):
+def chosen(players, famous=()):
     """The players this request asks for.
 
-    A bare URL with no ?player= means everyone, so a shared link works. The
+    A bare URL with no ?player= means the whole group, so a shared link works.
+    Not the celebrities: they are there to be compared against when someone
+    asks, and a first visit that drew a streamer's week over everybody's own
+    would bury the thing the site is for. The
     `picked` marker says the ticks are a real choice, and then an empty list
     means nobody - the sidebar sends it on every request it builds.
 
@@ -52,11 +61,12 @@ def chosen(players):
     """
     wanted = request.args.getlist("player")
     marked = bool(request.args.get("picked"))
+    group = [p for p in players if p["username"] not in famous]
     if not wanted:
-        return [] if marked else players
+        return [] if marked else group
     wanted = {name.lower() for name in wanted}
     picked = [p for p in players if p["username"] in wanted]
-    return picked if marked else (picked or players)
+    return picked if marked else (picked or group)
 
 
 def colors(config, players):
@@ -118,7 +128,10 @@ class Scope:
     def __init__(self):
         self.config = settings()
         self.players = roster(self.config)          # everyone, display order
-        self.selected = chosen(self.players)        # the ticked ones
+        self.famous = celebrities(self.config)      # lowercase usernames
+        # Who is in the competition: what the leaderboards judge across.
+        self.group = group_only(self.players, self.config)
+        self.selected = chosen(self.players, self.famous)   # the ticked ones
         self.palette = colors(self.config, self.players)
 
     @property
@@ -147,6 +160,7 @@ def shell(scope):
     circular import that was never there.
     """
     return {"players": scope["players"],
+            "celebrities": scope["celebrities"],
             "selected": {p["username"] for p in scope["selected"]},
             "colors": scope["palette"],
             "span": scope["span"].as_dict(),
@@ -159,6 +173,8 @@ def page_context():
     return {
         "config": found.config,
         "players": found.players,
+        "group": found.group,
+        "celebrities": found.famous,
         "selected": found.selected,
         "palette": found.palette,
         "span": found.span,

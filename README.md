@@ -144,6 +144,12 @@ drives all of them, plus **Admin** behind the password. The one exception is
 the leaderboards, which always judge every tracked account - see
 [docs/leaderboards.md](docs/leaderboards.md).
 
+**Celebrities** are well-known accounts added from their own section on the
+Admin page. They are updated along with everyone else and sit in a separate
+section of the sidebar, unticked until somebody ticks them. They are not part
+of the group: they get no recaps, they are left out of the round-ups, and the
+leaderboards judge only the accounts that are left.
+
 - **Overview** - the standings and the charts: experience gained by skill, by
   player, and over time. Hovering reads off the figures; clicking a legend entry
   hides that player.

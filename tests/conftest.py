@@ -8,6 +8,7 @@ see the `data_dir` fixture below for why that used not to be possible.
 
 import os
 import tempfile
+from datetime import datetime, timedelta, timezone
 
 # A floor, not the isolation: WOM_DATA_DIR is set again per test. This is here
 # so that anything constructed at import time - a stray module-level Config,
@@ -212,11 +213,34 @@ def round_ups(db, boards=("maxing", "grinding"), keys=("day", "week", "month")):
     return db
 
 
-def seed(app):
+# The days seed() reads on by default. Fixed, because a good many tests
+# name them - a custom range from the 24th, an export filtered to the 28th -
+# and those have to keep meaning the same readings whenever the suite runs.
+SEED_DAYS = ("2026-08-25", "2026-08-31")
+
+
+def this_week():
+    """Two days inside the rolling Week, whenever the suite runs.
+
+    Week is "the last seven days from now", so anything that asks for it
+    about fixed dates is a test with an expiry date. These asked about
+    August and passed until the first of September's week had gone by, and
+    then all failed at once with nothing in the code having changed.
+
+    Six days back and yesterday, at noon: at least half a day inside either
+    edge of the window, so neither drifts out while the suite is running.
+    """
+    today = datetime.now(timezone.utc).date()
+    return ((today - timedelta(days=6)).isoformat(),
+            (today - timedelta(days=1)).isoformat())
+
+
+def seed(app, days=SEED_DAYS):
+    """One account, read twice: `days` names the two days it was read on."""
     database = app.config["DATABASE"]
     database.save_player_details({"id": 1, "username": "zezima",
                                   "displayName": "Zezima", "type": "regular"})
-    for day, xp in (("2026-08-25", 1000), ("2026-08-31", 5000)):
+    for day, xp in zip(days, (1000, 5000), strict=True):
         database.save_snapshot(1, snapshot(day + "T12:00:00.000Z",
                                            skills={"attack": (xp, 40)},
                                            bosses={"zulrah": xp // 100}))

@@ -53,17 +53,30 @@
   <div class="rail">
   <form class="side" method="get" id="filters"
         data-reload="{{ '1' if reloads else '0' }}">
-    <div class="side-head">
-      <h2>Players</h2>
-      <button type="button" id="all-none" class="link">All</button>
-    </div>
-    {% for player in players %}
-      <label>
-        <input type="checkbox" name="player" value="{{ player['username'] }}"
-               {{ 'checked' if player['username'] in selected }}>
-        <span class="swatch" style="--dot: {{ colors[player['username']] }}"></span>
-        {{ player['display_name'] }}
-      </label>
+    {# Two sections, one control: both are the same `player` ticks, and the
+       celebrities are only set apart because they are not in the group. #}
+    {% set famous = celebrities or [] %}
+    {% for section, heading, toggle in (('group', 'Players', 'all-none'),
+                                        ('famous', 'Celebrities', 'all-none-famous')) %}
+      {% set members = players | rejectattr('username', 'in', famous) | list
+                       if section == 'group'
+                       else players | selectattr('username', 'in', famous) | list %}
+      {% if section == 'group' or members %}
+        <div class="side-head{{ ' stack-above' if section == 'famous' }}">
+          <h2>{{ heading }}</h2>
+          <button type="button" id="{{ toggle }}" class="link"
+                  data-toggles="{{ section }}">All</button>
+        </div>
+        {% for player in members %}
+          <label>
+            <input type="checkbox" name="player" value="{{ player['username'] }}"
+                   data-section="{{ section }}"
+                   {{ 'checked' if player['username'] in selected }}>
+            <span class="swatch" style="--dot: {{ colors[player['username']] }}"></span>
+            {{ player['display_name'] }}
+          </label>
+        {% endfor %}
+      {% endif %}
     {% endfor %}
     <input type="hidden" name="picked" value="1">
 

@@ -88,7 +88,9 @@ def leaderboards():
     and thinning it is what the ticks are for.
     """
     scope = page_context()
-    everyone = scope["players"]
+    # The group, not the roster: a celebrity is there to be looked at, and
+    # would otherwise take most days on both boards.
+    everyone = scope["group"]
     # One walk over the readings for the whole page. Both boards judge
     # the same two months from the same rows, so the second one is a
     # different sort of an answer already in hand.

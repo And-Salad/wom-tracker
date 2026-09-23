@@ -1,10 +1,10 @@
 """The table and the history plot on the Data page."""
-from conftest import seed, snapshot
+from conftest import seed, snapshot, this_week
 
 
 def test_the_table_carries_every_metric_with_its_movement(client, app):
     """The page answers what the export used to be the only way to ask."""
-    seed(app)
+    seed(app, this_week())
     body = client.get("/api/table?period=Week").get_json()
     rows = {(r["metric"], r["kind"]): r for r in body["rows"]}
     assert rows[("attack", "skill")]["value"] == 5000
@@ -21,7 +21,7 @@ def test_the_table_honours_the_player_ticks(client, app):
 
 def test_the_table_carries_the_colour_the_charts_use(client, app):
     """The swatch beside a name has to be the one that name is drawn in."""
-    seed(app)
+    seed(app, this_week())
     row = client.get("/api/table?period=Week").get_json()["rows"][0]
     standing = client.get("/api/chart/standings?period=Week").get_json()["rows"][0]
     assert row["color"] == standing["color"]
@@ -82,7 +82,7 @@ def test_the_table_filters_are_distinct_and_kind_is_always_one(client, app):
 
 
 def test_history_plots_one_line_per_player_for_one_metric(client, app):
-    seed(app)
+    seed(app, this_week())
     body = client.get("/api/history?period=Week&kind=skill&metric=attack").get_json()
     assert body["type"] == "trend"
     assert [s["name"] for s in body["series"]] == ["Zezima"]
