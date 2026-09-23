@@ -57,9 +57,13 @@ async function live(options) {
 
   // Ours, so a countdown can be watched running out. Everything in live.js
   // reads the time through Date.now().
+  //
+  // Frozen, and moved only by advance(). It was the real clock plus an
+  // offset, so a millisecond ticking between two reads inside one poll made
+  // a wake eight seconds out come back as 8999 - once in a while, which is
+  // how it failed a deploy and passed on the rerun.
   let moved = 0;
-  const real = win.Date.now;
-  win.Date.now = function () { return real() + moved; };
+  win.Date.now = function () { return FROZEN + moved; };
 
   // Recorded, not run: nothing in this file schedules itself during a test.
   const delays = [];
@@ -108,8 +112,13 @@ function settle() {
   return new Promise(function (resolve) { setTimeout(resolve, 0); });
 }
 
+/* The instant every page in this file believes it is, before advance(). One
+   for the whole file, so a time a test writes with at() and the page's own
+   reading of now can never drift apart while the test runs. */
+const FROZEN = Date.now();
+
 function at(offsetMs) {
-  return new Date(Date.now() + offsetMs).toISOString();
+  return new Date(FROZEN + offsetMs).toISOString();
 }
 
 // -- what a poll does ------------------------------------------------------
