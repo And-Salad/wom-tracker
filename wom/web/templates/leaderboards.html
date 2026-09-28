@@ -25,7 +25,12 @@
   </div>
 
   {% for board in boards %}
+  {% set day = board.today %}
+  {# Which day everything below the calendar is about. The page's, not the
+     chart's: the table, the race and the chart are all rendered for it, so
+     none of them can go on describing today while another shows a date. #}
   <section class="board-page" data-board="{{ board.key }}"
+           {% if picked %}data-day="{{ picked }}"{% endif %}
            {{ '' if board.key == chosen else 'hidden' }}>
   <div class="card">
     <h3>{{ board.label }} Leaderboard</h3>
@@ -34,8 +39,13 @@
     <p class="hint rules" title="{{ board.calendar.rule }}">Last month and this one,
       each day in the colour of whoever won it and each month in the colour of
       whoever took it. Today shows who is ahead, dashed until it is over, and
-      days before every account was tracked are blank.</p>
+      days before every account was tracked are blank. Click a day to see the
+      page as it stood that day.</p>
 
+    {# The month's race beside the two months it is run over. A wrapping row
+       rather than a fixed two columns: where there is not room for both, the
+       table drops beneath the squares instead of pushing the page sideways. #}
+    <div class="calendar-row">
     <div class="months">
       {% for month in board.calendar.months %}
         <div class="month">
@@ -47,34 +57,90 @@
               <span class="dow">{{ name }}</span>
             {% endfor %}
             {% for _ in range(month.lead) %}<span class="pad"></span>{% endfor %}
-            {# role="img" with the whole answer as its name: the square is not
-               something to activate, and its colour is not something every
-               reader can use. The mark beside the date is the same answer
-               again for a reader who has no hover to ask with - a phone. #}
-            {% for day in month.days %}
-              <span class="day{{ ' won' if day.color }}{{ ' live' if day.live }}{{ ' ahead' if day.ahead }}"
-                    {% if day.color %}style="--day: {{ day.color }}"{% endif %}
-                    role="img" aria-label="{{ day.label }}"
-                    title="{{ day.date }} - {{ day.note }}"
-                    ><span class="num" aria-hidden="true">{{ day.day }}</span
-                    >{% if day.mark %}<span class="mark" aria-hidden="true">{{ day.mark }}</span>{% endif %}</span>
+            {# A day that has happened is a link to the page as it stood that
+               day - a link rather than a script, so it can be shared, opened
+               in a tab and gone back from. One that has not is only a picture
+               of "not yet". The mark is the answer again for a reader with no
+               hover to ask with - a phone. aria-current is the day the page is
+               showing, which is today's square when nothing was picked. #}
+            {% for cell in month.days %}
+              {% if cell.ahead %}
+              <span class="day ahead" role="img" aria-label="{{ cell.label }}"
+                    title="{{ cell.date }} - {{ cell.note }}"
+                    ><span class="num" aria-hidden="true">{{ cell.day }}</span></span>
+              {% else %}
+              {% set today_cell = cell.key == board.calendar.today %}
+              <a class="day{{ ' won' if cell.color }}{{ ' live' if cell.live }}"
+                 href="{{ url_for('pages.leaderboards', board=board.key, day=None if today_cell else cell.key) }}"
+                 {% if cell.color %}style="--day: {{ cell.color }}"{% endif %}
+                 {% if cell.key == (picked or board.calendar.today) %}aria-current="date"{% endif %}
+                 aria-label="{{ cell.label }}"
+                 title="{{ cell.date }} - {{ cell.note }}"
+                 ><span class="num" aria-hidden="true">{{ cell.day }}</span
+                 >{% if cell.mark %}<span class="mark" aria-hidden="true">{{ cell.mark }}</span>{% endif %}</a>
+              {% endif %}
             {% endfor %}
           </div>
         </div>
       {% endfor %}
     </div>
+
+    {% set race = board.race %}
+    <div class="month-race">
+      <h4>{{ race.label }}</h4>
+      <p class="hint">Average points a day over the {{ race.counted }}
+        day{{ '' if race.counted == 1 else 's' }} that counted, which is what
+        the month is awarded on{% if not race.awarded %} &mdash; once it has
+        {{ race.minimum }}{% endif %}.</p>
+      <table>
+        <thead>
+        <tr>
+          <th></th>
+          <th>Player</th>
+          <th class="num" title="Average points a day. First place on a counted day is worth a point for every account, each place below it one fewer, and a day you gained nothing on is worth none">Pts/day</th>
+          <th class="num" title="Days of {{ race.month }} taken, up to the day shown. A day is not one until it is over">Days</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in race.rows %}
+          <tr class="{{ 'moved' if row.points }}">
+            <td class="rank">{{ row.place }}</td>
+            <td class="name"><span class="swatch" style="--dot: {{ row.color }}"></span>{{ row.name }}</td>
+            <td class="num">{{ row.points or '-' }}</td>
+            <td class="num {{ '' if row.wins else 'dim' }}">{{ row.wins or '-' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    </div>
   </div>
 
-  {# The grid above is finished days; this is the one still running. Its own
-     card rather than a panel beside the months: the two are answering
-     different questions, and squeezed side by side the table had to wrap its
+  {# The grid above is finished days; this is the one the page is about -
+     the day still running, or the one picked. Its own card rather than a
+     panel beside the months: squeezed side by side the table had to wrap its
      own headings to fit a column it never had room for. #}
   <div class="card standing">
-    <h3>Today so far</h3>
-    <p class="hint">Where everyone stands since midnight, by the same measure
-      the squares are coloured by &mdash; but not a verdict: today has not been
-      polled to its end and cannot qualify yet. Click a row for the skills
-      behind it.</p>
+    <div class="card-head">
+      <div>
+      {% if picked %}
+        <h3>Standings {{ day.label }}</h3>
+        <p class="hint">Where everyone finished that day, measured the way its
+          square was judged. {{ day.verdict or '' }} The wins are
+          {{ day.month_name }}'s up to and including it. Click a row for the
+          skills behind it.</p>
+      {% else %}
+        <h3>Today so far</h3>
+        <p class="hint">Where everyone stands since midnight, by the same measure
+          the squares are coloured by &mdash; but not a verdict: today has not been
+          polled to its end and cannot qualify yet. Click a row for the skills
+          behind it.</p>
+      {% endif %}
+      </div>
+      {% if picked %}
+        <a class="link back-to-today" href="{{ url_for('pages.leaderboards', board=board.key) }}">Back to today</a>
+      {% endif %}
+    </div>
     <div class="scroll">
       <table class="today">
         <thead>
@@ -82,22 +148,22 @@
           <th></th>
           <th>Player</th>
           <th class="num" title="{{ board.measure_hint }}">{{ board.measure }}</th>
-          <th class="num" title="{{ board.second_hint }}">{{ board.second }}</th>
+          <th class="num" title="{{ board.second_hint }}">{{ board.second }}<span class="when">{{ day.short }}</span></th>
           {# The month sits under the measure rather than beside it: on one
              line it is most of the column, and the figures below are four
              characters wide. #}
           {% if board.split_wins %}
-            <th class="num" title="Days of {{ board.today.month }} taken by reaching a 99">99 Wins<span class="when">{{ board.today.month }}</span></th>
-            <th class="num" title="Days of {{ board.today.month }} taken on experience, nobody having reached a 99. Today is not one until it is over">XP Wins<span class="when">{{ board.today.month }}</span></th>
+            <th class="num" title="Days of {{ day.month }} taken by reaching a 99">99 Wins<span class="when">{{ day.month }}</span></th>
+            <th class="num" title="Days of {{ day.month }} taken on experience, nobody having reached a 99. A day is not one until it is over">XP Wins<span class="when">{{ day.month }}</span></th>
           {% else %}
             {# One column, because on this board a 99 never wins a day and a
                column that can only ever read nothing is worse than no column. #}
-            <th class="num" title="Days of {{ board.today.month }} taken. Today is not one until it is over">Wins<span class="when">{{ board.today.month }}</span></th>
+            <th class="num" title="Days of {{ day.month }} taken. A day is not one until it is over">Wins<span class="when">{{ day.month }}</span></th>
           {% endif %}
         </tr>
         </thead>
         <tbody>
-        {% for row in board.today.rows %}
+        {% for row in day.rows %}
           {# The row is the control, as on Players: one list of accounts, not
              a table with an accordion repeating it. #}
           <tr class="today-row {{ 'moved' if row.moved }}"
@@ -133,10 +199,16 @@
   <div class="card chart board-trend">
     <div class="card-head">
       <div>
-        <h3>{{ board.chart_title }}</h3>
+        <h3>{{ board.chart_title }} {{ day.label }}</h3>
+        {% if picked %}
+        <p class="hint">Each line is one account's total through the day,
+          midnight to midnight, at every reading of it - measured between the
+          same two readings as the table above and the day's square.</p>
+        {% else %}
         <p class="hint">Each line is one account's total since midnight, at
           every reading of the day. The axis is the whole day, so the lines
           reach the right-hand edge only when it is over.</p>
+        {% endif %}
       </div>
     </div>
     <div class="plot loading"></div>

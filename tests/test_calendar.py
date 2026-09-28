@@ -420,7 +420,7 @@ def test_today_follows_the_grid_in_a_card_of_its_own(app, client):
     calendar_seed(app)
     body = client.get("/leaderboards").get_data(as_text=True)
     assert body.index('class="months"') < body.index("Today so far")
-    assert body.index("Today so far") < body.index("Experience toward 99 today")
+    assert body.index("Today so far") < body.index("board-trend")
     # Its own card, not a panel inside the calendar's.
     assert 'class="card standing"' in body
 
@@ -637,3 +637,29 @@ def test_a_day_the_calendar_leaves_blank_is_not_won_in_the_round_up(
     line = _digest_winner(database, config, "maxing",
                           datetime(2026, 8, 21, 12, tzinfo=timezone.utc))
     assert line == "Winner: nobody - the tracker was not watching that day"
+
+
+def test_a_calendar_mark_is_never_more_than_two_letters():
+    """Two names sharing a long start used to be marked with all of it -
+    GIRLBOSSG and GIRLBOSSP, in a square thirty pixels wide."""
+    from wom.web.views import player_marks
+
+    def group(*names):
+        return [{"username": name.lower().replace(" ", "_"),
+                 "display_name": name} for name in names]
+
+    marks = player_marks(group("And Salad", "GirlBossPop", "M S S 25",
+                               "NogginWhack", "addy script", "girlbossgirl",
+                               "runninr"))
+    assert marks == {"and_salad": "AN", "girlbosspop": "GP",
+                     "m_s_s_25": "M", "nogginwhack": "N", "addy_script": "AD",
+                     "girlbossgirl": "GG", "runninr": "R"}
+
+    # However the names collide - the same name twice, one the start of
+    # another, three sharing their letters - every mark is short and its own.
+    for names in (("Zez", "Zez", "Zezima"), ("Abz", "Abq", "Azq")):
+        marks = player_marks([{"username": "{}{}".format(name, i),
+                               "display_name": name}
+                              for i, name in enumerate(names)])
+        assert len(set(marks.values())) == len(names), marks
+        assert all(len(mark) <= 2 for mark in marks.values()), marks

@@ -7,6 +7,11 @@
  *   - expanding standings rows, fetched when a row is first opened
  *   - the day's trend, drawn when its board is first looked at
  *
+ * Which day both are about is the page's: a calendar square is a link to
+ * ?day=, the server renders the table, the race and the titles for it, and
+ * this passes the same day on to the two things it fetches - so nothing on
+ * the page can be describing a different day from the rest.
+ *
  * A row is the control, the same as on Players - there is one list of
  * accounts per board here, not a table and an accordion repeating each other.
  *
@@ -65,9 +70,11 @@
       host.appendChild(el("p", "hint", data.note));
       return;
     }
-    /* Named for what this board counts. One script serves both, and on
-       Grinding "toward 99" describes a rule it does not have. */
-    var head = (board === "grinding" ? "Gained today: " : "Toward 99 today: ") +
+    /* Named for what this board counts, and for the day the server says it
+       answered for. One script serves both boards, and on Grinding "toward
+       99" describes a rule it does not have. */
+    var head = (board === "grinding" ? "Gained " : "Toward 99 ") +
+      (data.label || "today") + ": " +
       full.format(Math.round(data.total)) + " XP";
     if (data.nines) {
       head += " · " + data.nines + " ninety-nine" + (data.nines === 1 ? "" : "s");
@@ -85,7 +92,13 @@
     host.appendChild(scroll);
   }
 
-  function wire(row, board) {
+  /* "&day=..." for the day the page is showing, or nothing for today. */
+  function dayQuery(section, first) {
+    var day = section.getAttribute("data-day");
+    return day ? (first ? "?" : "&") + "day=" + encodeURIComponent(day) : "";
+  }
+
+  function wire(row, board, section) {
     var detailRow = row.nextElementSibling;
     var host = detailRow.querySelector(".detail-body");
     var loaded = false;
@@ -96,7 +109,8 @@
       if (loaded) { return; }
       host.textContent = "";
       host.appendChild(el("p", "hint", "Loading…"));
-      fetch("/api/" + board + "/player/" + encodeURIComponent(row.dataset.username))
+      fetch("/api/" + board + "/player/" +
+            encodeURIComponent(row.dataset.username) + dayQuery(section, true))
         .then(function (r) { return r.json(); })
         .then(function (data) {
           loaded = true;
@@ -146,7 +160,7 @@
     Array.prototype.forEach.call(sections, function (section) {
       var name = section.getAttribute("data-board");
       section.querySelectorAll("tr.today-row").forEach(function (row) {
-        wire(row, name);
+        wire(row, name, section);
       });
       boards.push({name: name, section: section, chart: null, stale: true});
     });
@@ -164,11 +178,12 @@
         var card = entry.section.querySelector(".board-trend");
         if (!card) { return; }
         entry.chart = new window.WOM.Chart(card);
-        /* Always the day in progress, never the sidebar's period - so this
-           asks its own endpoint rather than pretending to be a catalogue
-           entry. */
+        /* Always one calendar day - the page's - and never the sidebar's
+           period, so this asks its own endpoint rather than pretending to be
+           a catalogue entry. */
         entry.chart.endpoint = function () {
-          return "/api/" + entry.name + "/trend?" + window.Sidebar.query();
+          return "/api/" + entry.name + "/trend?" + window.Sidebar.query() +
+            dayQuery(entry.section, false);
         };
       }
       entry.stale = false;

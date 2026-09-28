@@ -540,29 +540,64 @@ def metric_table(database, players, since, until, palette):
 
 
 def player_marks(players):
-    """{username: a short letter for that account}, unique across the group.
+    """{username: a short mark for that account}, unique across the group.
 
     The calendar says who took a day in one thing only - the colour of the
     square - which leaves it unreadable to anyone who cannot separate two
     players' colours, and unreadable to everybody on a phone, where there is
-    no hover to ask. So each square carries a letter as well.
+    no hover to ask. So each square carries a mark as well.
 
-    The shortest prefix that is nobody else's, so it is one character in a
-    group whose names start differently and two where they do not, rather
-    than a first initial that quietly means two people.
+    One letter where nobody else's name starts with it, and two where somebody
+    does: the initial, and the letter where the name first parts from every
+    name sharing it. Never more than two. It used to be the shortest prefix
+    nobody else had, which is fine until two names share a long one -
+    girlbossgirl and GirlBossPop were GIRLBOSSG and GIRLBOSSP, nine letters in
+    a thirty-pixel square, where every other account had one or two.
     """
-    names = sorted((p["display_name"] or p["username"]) for p in players)
+    names = {p["username"]: p["display_name"] or p["username"] for p in players}
     marks = {}
-    for player in players:
-        name = player["display_name"] or player["username"]
-        others = [other for other in names if other != name]
-        size = 1
-        while size < len(name) and any(
-                other[:size].casefold() == name[:size].casefold()
-                for other in others):
-            size += 1
-        marks[player["username"]] = name[:size].upper()
+    taken = set()
+    # Settled in a fixed order so the same group always gets the same marks,
+    # and a second name that lands on a mark already given takes its next.
+    for username in sorted(names, key=lambda u: (names[u].casefold(), u)):
+        name = names[username].strip() or username
+        folded = name.casefold()
+        rivals = [other.strip().casefold() for key, other in names.items()
+                  if key != username
+                  and other.strip().casefold()[:1] == folded[:1]]
+        for mark in _mark_choices(name, rivals):
+            if mark.casefold() not in taken:
+                break
+        taken.add(mark.casefold())
+        marks[username] = mark.upper()
     return marks
+
+
+def _mark_choices(name, rivals):
+    """Candidate marks for one name, best first."""
+    if not rivals:
+        yield name[0]
+        return
+    # Where this name first differs from the rival it shares most with.
+    parts = max(_shared(name.casefold(), rival) for rival in rivals)
+    rest = [c for c in name[parts:] if c.strip()]
+    early = [c for c in name[1:parts] if c.strip()]
+    for letter in rest + early:
+        yield name[0] + letter
+    # A name the same as another, or all of it the start of one: nothing in
+    # it tells the two apart, so a number does.
+    for number in range(2, 100):
+        yield name[0] + str(number)
+
+
+def _shared(a, b):
+    """How many leading characters two names have in common."""
+    count = 0
+    for x, y in zip(a, b, strict=False):
+        if x != y:
+            break
+        count += 1
+    return count
 
 
 def winner_calendar(database, players, palette, when=None,
@@ -604,7 +639,69 @@ def winner_calendar(database, players, palette, when=None,
         })
     # No legend: the sidebar beside this lists every player against the same
     # swatch, and each square names its winner on hover.
-    return {"months": months, "rule": winner_rule(board)}
+    # Which square is today's, for the chart's "which day am I drawing" ring:
+    # by date rather than by the dashed .live, which only a day somebody is
+    # leading gets.
+    return {"months": months, "rule": winner_rule(board),
+            "today": winners.today_key(when)}
+
+
+def month_race(database, players, palette, when=None, board="maxing",
+               readings=None):
+    """A month as a race: who leads it, and on what - as of one day.
+
+    The squares say who took each day; this says what those days add up to,
+    which is the question the month's own colour will answer at the end of
+    it. The order is the one month_winner uses - average points a day over
+    the days that counted, ties to the same name - so the top row is whoever
+    the month would go to if it ended then.
+
+    `when` is the day the page is showing. Today, it is the month so far. A
+    day picked off the calendar gets its own month counted up to and
+    including it, so the race beside a day's figures is the race as it stood
+    that evening, not as it stands now.
+
+    Asked with no floor, because a race that is a week old still has a
+    leader. Whether the month has enough days behind it to be awarded yet is
+    said beside the table rather than by leaving it empty.
+    """
+    walk = readings if readings is not None else winners.Readings(
+        database, players)
+    start, end = winners.month_range(when)
+    today = winners.today_key(when) == winners.today_key()
+    # Today's month to its end, which is the span the calendar has already
+    # walked; the day in progress is left out by the rule either way.
+    through = end if today else winners.today_range(when)[1]
+    points = winners.month_points(database, players, start, through,
+                                  board=board, readings=walk)
+    counted = winners.counted_days(database, players, start, through, board,
+                                   readings=walk)
+    won = winners.daily_winners(database, players, start, through, board=board,
+                                readings=walk)
+    # Finished days only, the same as the tally in the day's table: leading
+    # at four in the afternoon is not a day taken.
+    wins = {}
+    for found in won.values():
+        if found["winner"] and not found["live"]:
+            wins[found["winner"]] = wins.get(found["winner"], 0) + 1
+    order = sorted(players, key=lambda p: (points.get(p["username"], 0.0),
+                                           p["username"]), reverse=True)
+    rows = []
+    for place, player in enumerate(order, start=1):
+        scored = points.get(player["username"], 0.0)
+        rows.append({"place": place, "username": player["username"],
+                     "name": player["display_name"],
+                     "color": palette.get(player["username"], theme.MUTED),
+                     "points": "{:.2f}".format(scored) if scored else None,
+                     "wins": wins.get(player["username"], 0)})
+    day = winners.today_range(when)[0]
+    return {"label": "{} so far".format(start.strftime("%B")) if today
+            else "{} through {} {}".format(start.strftime("%B"), day.day,
+                                           day.strftime("%b")),
+            "month": start.strftime("%B"),
+            "rows": rows, "counted": counted,
+            "minimum": winners.MIN_MONTH_DAYS,
+            "awarded": counted >= winners.MIN_MONTH_DAYS}
 
 
 # How a day is decided, which is the only part the two boards disagree on.
@@ -685,7 +782,9 @@ def _day_cell(day, won, by_name, palette, marks):
     and the winner in full rather than leaving both to the tooltip.
     """
     date = day.strftime("%d %b %Y")
-    found = won.get(day.strftime("%Y-%m-%d"))
+    # What a click on the square asks the chart for.
+    key = day.strftime("%Y-%m-%d")
+    found = won.get(key)
     ahead = day > datetime.now(day.tzinfo)
     if ahead:
         return {"day": day.day, "date": date, "winner": None, "mark": None,
@@ -694,6 +793,7 @@ def _day_cell(day, won, by_name, palette, marks):
     if found is None or found["winner"] is None:
         note = (found or {}).get("reason") or "nothing recorded"
         return {"day": day.day, "date": date, "winner": None, "mark": None,
+                "key": key,
                 "color": None, "ahead": False, "live": False, "note": note,
                 "label": date + " - " + note}
     name = by_name.get(found["winner"], found["winner"])
@@ -701,7 +801,7 @@ def _day_cell(day, won, by_name, palette, marks):
         note = name + " - leading so far, the day is not over"
     else:
         note = name + " - took the day"
-    return {"day": day.day, "date": date, "winner": name,
+    return {"day": day.day, "date": date, "winner": name, "key": key,
             "mark": marks.get(found["winner"]),
             "color": palette.get(found["winner"]), "ahead": False,
             "live": found["live"], "note": note,

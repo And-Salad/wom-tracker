@@ -10,7 +10,8 @@ they cannot disagree with the squares beside them:
 
     standings()   where everyone stands since midnight, and this month's wins
     breakdown()   one account's day, per skill, for an opened row
-    trend()       the same experience as a line, midnight to midnight
+    trend()       the same experience as a line, midnight to midnight -
+                  for today, or for any finished day picked off the calendar
 
 "Toward 99" throughout means experience counted only up to level 99 in each
 skill. Past it a skill stops levelling, so it is the measure that lets an
@@ -24,16 +25,19 @@ from ..util import fmt_int, parse_api_time, pretty_metric
 
 def standings(database, players, palette, when=None, board=winners.MAXING,
               readings=None):
-    """Where everyone stands in the day now in progress, and this month.
+    """Where everyone stands on one day, and in its month up to it.
 
-    Deliberately not a verdict - today has not been polled to its end and
-    cannot qualify yet - so it shows the running figures and lets the squares
-    do the awarding.
+    Today unless `when` falls in another day - a square picked off the
+    calendar. Today's figures are deliberately not a verdict: it has not been
+    polled to its end and cannot qualify yet. A finished day's are the ones
+    its square was judged on, and `verdict` says what that square says.
 
     It counts the month's wins the same way the squares are coloured, from
     the same daily verdicts. Asked differently, the two halves of one card
     disagreed: a square in somebody's colour, and a tally beside it
-    crediting the day to somebody else.
+    crediting the day to somebody else. For a finished day they are counted
+    up to and including it, so the page reads as it did that evening rather
+    than mixing that day's figures with a tally from weeks later.
     """
     walk = readings if readings is not None else winners.Readings(
         database, players)
@@ -41,10 +45,15 @@ def standings(database, players, palette, when=None, board=winners.MAXING,
     days = walk.days(start, end)
     won = winners.daily_winners(database, players, start, end, board=board,
                                 readings=walk)
-    by_nine, by_xp = _month_wins(days, won)
+    chosen = winners.today_key(when)
+    by_nine, by_xp = _month_wins(
+        days, {day: found for day, found in won.items() if day <= chosen})
 
-    start_of_day = winners.today_range(when)[0]
-    scores = days.get(winners.today_key(when), {}).get("scores", {})
+    start_of_day, end_of_day = winners.today_range(when)
+    label = day_label(when)
+    # Levels are read at the day's close, which for today is "now".
+    closes = None if label == "today" else end_of_day
+    scores = days.get(chosen, {}).get("scores", {})
     nothing = {"nines": 0, "raw": 0.0, "capped": 0.0}
     rows = []
     for player in players:
@@ -58,7 +67,7 @@ def standings(database, players, palette, when=None, board=winners.MAXING,
             # from experience: the level a skill is at is a column we already
             # keep, and deriving it again would be a second answer to a
             # question the reading has already answered.
-            "levels": _levels_today(database, player, start_of_day),
+            "levels": _levels_today(database, player, start_of_day, closes),
             "capped": fmt_int(round(shown["capped"])),
             # What this board judges on, ready to print. Maxing counts
             # experience only up to ninety-nine; Grinding counts all of it.
@@ -71,14 +80,40 @@ def standings(database, players, palette, when=None, board=winners.MAXING,
             # the day's standings rather than as a second opinion.
             "rank": winners.key(shown, board),
         })
-    rows.sort(key=lambda row: (row["rank"], row["name"]), reverse=True)
+    # Ties go the way the square breaks them - by username, not by the name
+    # shown - or a dead heat would head the table with the account the
+    # square did not give the day to.
+    rows.sort(key=lambda row: (row["rank"], row["username"]), reverse=True)
     for place, row in enumerate(rows, start=1):
         row["place"] = place
-    return {"rows": rows, "month": start.strftime("%B %Y")}
+    return {"rows": rows, "month": start.strftime("%B %Y"),
+            "month_name": start.strftime("%B"), "label": label,
+            # Under a column heading, where "on Sun 30 Aug" is too long.
+            "short": "Today" if label == "today" else "{} {}".format(
+                start_of_day.day, start_of_day.strftime("%b")),
+            "day": chosen, "verdict": _verdict(won.get(chosen), players)}
 
 
-def _levels_today(database, player, opens):
+def _verdict(found, players):
+    """What the square for a finished day says, in words; None for today.
+
+    The table under a picked day is that day's figures, and a square can be
+    blank for reasons the figures do not show - nobody was polled, or not
+    everybody was tracked yet. Saying so beside them is what stops a table
+    with a clear leader reading as a day that leader won.
+    """
+    if found is None or found["live"]:
+        return None
+    if found["winner"]:
+        names = {p["username"]: p["display_name"] for p in players}
+        return "Taken by {}.".format(names.get(found["winner"], found["winner"]))
+    return "Not awarded: {}.".format(found["reason"] or "no result")
+
+
+def _levels_today(database, player, opens, closes=None):
     """Total levels gained since midnight, or 0 if we cannot say.
+
+    Up to `closes` for a finished day, and up to now for today.
 
     Read at the two edges the same way the Overview reads a window, and a
     missing edge means no answer rather than a guess - treated as zero the
@@ -86,7 +121,8 @@ def _levels_today(database, player, opens):
     "+2,100 levels" for a quiet morning.
     """
     was = database.overall_at(player["id"], _stamp(opens))
-    now = database.overall_at(player["id"])
+    now = database.overall_at(player["id"],
+                              _stamp(closes) if closes is not None else None)
     if not (was and was["level"] and now and now["level"]):
         return 0
     return max(0, now["level"] - was["level"])
@@ -117,6 +153,7 @@ def breakdown(database, player, when=None, board=winners.MAXING):
     so the parts add up to the total rather than approximating it.
     """
     opens, closes = winners.today_range(when)
+    label = day_label(when)
     # winners.day_span, not a baseline of our own: the row above this
     # breakdown is measured by that rule, and a breakdown that opens the day
     # somewhere else explains a figure it disagrees with.
@@ -125,7 +162,10 @@ def breakdown(database, player, when=None, board=winners.MAXING):
     after = latest[1] if latest else None
     if before is None or after is None:
         return {"rows": [], "total": 0, "beyond": 0, "nines": 0,
-                "note": "Nothing has been read for this account today."}
+                "label": label,
+                "note": "Nothing was read for this account {}.".format(label)
+                if label != "today"
+                else "Nothing has been read for this account today."}
 
     grinding = board == winners.GRINDING
     moved = winners.measure_by_skill(before, after)
@@ -149,7 +189,26 @@ def breakdown(database, player, when=None, board=winners.MAXING):
     beyond = sum(row["beyond"] for row in rows)
     nines = sum(1 for row in rows if row["reached_99"])
     return {"rows": rows, "total": total, "beyond": beyond, "nines": nines,
-            "note": None if rows else "No skill has moved since midnight."}
+            "label": label,
+            "note": None if rows else
+            "No skill has moved since midnight." if label == "today"
+            else "No skill moved {}.".format(label)}
+
+
+def day_label(when=None):
+    """How a chart names the day it is drawing: "today", or "on Sat 20 Sep".
+
+    Said by the server rather than put together in the browser, because which
+    day is today is a question about the configured zone, not about the
+    clock of whoever is reading.
+    """
+    opens = winners.today_range(when)[0]
+    if opens.strftime("%Y-%m-%d") == winners.today_key():
+        return "today"
+    # No year: the calendar it is picked from holds two months. The day is
+    # written as a number rather than with %d, which pads it with a zero.
+    return "on {} {} {}".format(opens.strftime("%a"), opens.day,
+                                opens.strftime("%b"))
 
 
 def trend(database, players, color_for, when=None, board=winners.MAXING):
@@ -160,8 +219,13 @@ def trend(database, players, color_for, when=None, board=winners.MAXING):
     spikes does not. Each point is that account's total since midnight at the
     moment it was read, which is the same number the standings show for the
     last of them - the table is this chart's right-hand end.
+
+    `when` picks the day: any moment in it, today if left out. A finished day
+    is drawn the same way from the same readings its square was judged on,
+    so the line that ends highest is the square's colour.
     """
     opens, closes = winners.today_range(when)
+    label = day_label(when)
     series = []
     for player in players:
         states = winners.skill_states(database, player["id"],
@@ -201,11 +265,21 @@ def trend(database, players, color_for, when=None, board=winners.MAXING):
                        "color": color_for(player),
                        "points": points})
     if not series:
-        return {"empty": "Nobody included has been read yet today."}
+        return {"empty": "Nobody included has been read yet today."
+                if label == "today"
+                else "Nobody included was read {}.".format(label),
+                "day": opens.strftime("%Y-%m-%d"), "label": label}
+    # Named for what this board counts: Grinding's axis read "toward 99" for
+    # as long as both boards shared this function, and it has no such rule.
+    unit = "XP gained" if board == winners.GRINDING else "XP toward 99"
     return {
         "type": "trend",
-        "ylabel": "XP toward 99",
-        "tooltip": {"style": "count", "unit": "XP toward 99"},
+        # Which day this is, and what to call it - the card's title and
+        # caption follow it, and the calendar marks the square it belongs to.
+        "day": opens.strftime("%Y-%m-%d"),
+        "label": label,
+        "ylabel": unit,
+        "tooltip": {"style": "count", "unit": unit},
         # Midnight to midnight, so the axis is the day rather than however
         # much of it has happened.
         "since": int(opens.timestamp() * 1000),

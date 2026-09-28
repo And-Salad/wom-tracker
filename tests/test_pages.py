@@ -375,7 +375,7 @@ def test_the_day_breakdown_is_labelled_for_the_board_it_is_on(client):
     """One script serves both leaderboards, so a label naming one rule is
     wrong on the other half the time."""
     script = client.get("/static/board.js").get_data(as_text=True)
-    assert "Gained today: " in script and "Toward 99 today: " in script
+    assert '"Gained "' in script and '"Toward 99 "' in script
     assert 'board === "grinding"' in script
 
 

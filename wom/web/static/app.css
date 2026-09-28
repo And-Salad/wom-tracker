@@ -638,6 +638,48 @@
     background: none; border: 1px dashed var(--line); color: var(--muted);
     text-shadow: none;
   }
+  /* The days that have happened are links to the page as it stood that
+     day, so the link look is taken off to leave the square. */
+  .grid-days a.day { text-decoration: none; cursor: pointer; }
+  .grid-days a.day:hover { filter: brightness(1.15); }
+  /* The day the page is showing. A ring outside the square rather than a
+     change to it, because the square's colour is the day's answer and must
+     not be what moves. */
+  .grid-days a.day[aria-current="date"] {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  /* The way back from a picked day, where the table's heading is. */
+  a.link.back-to-today {
+    margin-left: auto; color: var(--accent); font-size: var(--text-xs);
+    text-transform: uppercase; letter-spacing: .04em; font-weight: 600;
+    text-decoration: none; white-space: nowrap;
+  }
+  a.link.back-to-today:hover { text-decoration: underline; }
+
+  /* The calendar and the month's race side by side, wrapping rather than
+     squeezing: the months are a fixed width of squares, and the table
+     drops beneath them when there is not room for both. */
+  .calendar-row {
+    display: flex; flex-wrap: wrap; align-items: flex-start;
+    gap: var(--space-3) 36px;
+  }
+  .calendar-row .months { flex: 0 0 auto; }
+  .month-race {
+    flex: 1 1 260px; min-width: 0; max-width: 420px;
+    margin-top: var(--space-3);
+  }
+  .month-race h4 { margin: 0 0 4px; font-size: var(--text-md); }
+  .month-race .hint { margin: 0 0 var(--space-2); }
+  .month-race table { font-size: var(--text-sm); width: 100%; }
+  .month-race td { padding: 4px var(--space-2); }
+  .month-race td.name { white-space: nowrap; }
+  .month-race td.num { font-variant-numeric: tabular-nums; }
+  .month-race td.rank {
+    color: var(--muted); width: 18px; padding-right: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .month-race tr:not(.moved) td { color: var(--muted); }
+  .month-race tbody tr:first-child.moved td.rank { color: var(--accent); }
 
   @media (max-width: 820px) {
     /* The day columns go fractional, so the two months shrink to share the
@@ -647,6 +689,8 @@
     .months { gap: 18px; }
     .grid-days { grid-template-columns: repeat(7, 1fr); }
     .grid-days .day, .grid-days .pad { height: 34px; }
+    /* Below the squares at this width, so it takes the whole row. */
+    .month-race { max-width: none; }
     /* The squares are larger here, so the mark can be too - and this
        is the width where it is doing the most work, there being no
        hover on a phone to ask the square who won. */
