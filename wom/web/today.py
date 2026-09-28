@@ -10,7 +10,8 @@ they cannot disagree with the squares beside them:
 
     standings()   where everyone stands since midnight, and this month's wins
     breakdown()   one account's day, per skill, for an opened row
-    trend()       the same experience as a line, midnight to midnight
+    trend()       the same experience as a line, midnight to midnight -
+                  for today, or for any finished day picked off the calendar
 
 "Toward 99" throughout means experience counted only up to level 99 in each
 skill. Past it a skill stops levelling, so it is the measure that lets an
@@ -152,6 +153,22 @@ def breakdown(database, player, when=None, board=winners.MAXING):
             "note": None if rows else "No skill has moved since midnight."}
 
 
+def day_label(when=None):
+    """How a chart names the day it is drawing: "today", or "on Sat 20 Sep".
+
+    Said by the server rather than put together in the browser, because which
+    day is today is a question about the configured zone, not about the
+    clock of whoever is reading.
+    """
+    opens = winners.today_range(when)[0]
+    if opens.strftime("%Y-%m-%d") == winners.today_key():
+        return "today"
+    # No year: the calendar it is picked from holds two months. The day is
+    # written as a number rather than with %d, which pads it with a zero.
+    return "on {} {} {}".format(opens.strftime("%a"), opens.day,
+                                opens.strftime("%b"))
+
+
 def trend(database, players, color_for, when=None, board=winners.MAXING):
     """Experience toward 99 since midnight, as one line per account.
 
@@ -160,8 +177,13 @@ def trend(database, players, color_for, when=None, board=winners.MAXING):
     spikes does not. Each point is that account's total since midnight at the
     moment it was read, which is the same number the standings show for the
     last of them - the table is this chart's right-hand end.
+
+    `when` picks the day: any moment in it, today if left out. A finished day
+    is drawn the same way from the same readings its square was judged on,
+    so the line that ends highest is the square's colour.
     """
     opens, closes = winners.today_range(when)
+    label = day_label(when)
     series = []
     for player in players:
         states = winners.skill_states(database, player["id"],
@@ -201,11 +223,21 @@ def trend(database, players, color_for, when=None, board=winners.MAXING):
                        "color": color_for(player),
                        "points": points})
     if not series:
-        return {"empty": "Nobody included has been read yet today."}
+        return {"empty": "Nobody included has been read yet today."
+                if label == "today"
+                else "Nobody included was read {}.".format(label),
+                "day": opens.strftime("%Y-%m-%d"), "label": label}
+    # Named for what this board counts: Grinding's axis read "toward 99" for
+    # as long as both boards shared this function, and it has no such rule.
+    unit = "XP gained" if board == winners.GRINDING else "XP toward 99"
     return {
         "type": "trend",
-        "ylabel": "XP toward 99",
-        "tooltip": {"style": "count", "unit": "XP toward 99"},
+        # Which day this is, and what to call it - the card's title and
+        # caption follow it, and the calendar marks the square it belongs to.
+        "day": opens.strftime("%Y-%m-%d"),
+        "label": label,
+        "ylabel": unit,
+        "tooltip": {"style": "count", "unit": unit},
         # Midnight to midnight, so the axis is the day rather than however
         # much of it has happened.
         "since": int(opens.timestamp() * 1000),

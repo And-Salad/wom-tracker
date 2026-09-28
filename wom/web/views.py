@@ -587,12 +587,16 @@ def winner_calendar(database, players, palette, when=None,
     marks = player_marks(players)
 
     months = []
+    standings = None
     for back in (1, 0):
         start, end = winners.month_range(when, back=back)
         won = winners.daily_winners(database, players, start, end, board=board,
                                     readings=walk)
         took = winners.month_winner(database, players, start, end, board=board,
                                     readings=walk)
+        if back == 0:
+            standings = _month_standings(database, players, palette, start,
+                                         end, won, board, walk)
         months.append({
             "label": start.strftime("%B %Y"),
             "color": palette.get(took, theme.MUTED),
@@ -604,7 +608,50 @@ def winner_calendar(database, players, palette, when=None,
         })
     # No legend: the sidebar beside this lists every player against the same
     # swatch, and each square names its winner on hover.
-    return {"months": months, "rule": winner_rule(board)}
+    # Which square is today's, for the chart's "which day am I drawing" ring:
+    # by date rather than by the dashed .live, which only a day somebody is
+    # leading gets.
+    return {"months": months, "rule": winner_rule(board),
+            "standings": standings, "today": winners.today_key(when)}
+
+
+def _month_standings(database, players, palette, start, end, won, board,
+                     walk):
+    """The month in progress as a race: who leads it, and on what.
+
+    The squares say who took each day; this says what those days add up to,
+    which is the question the month's own colour will answer at the end of
+    it. The order is the one month_winner uses - average points a day over
+    the days that counted, ties to the same name - so the top row is whoever
+    the month would go to if it ended now.
+
+    Asked with no floor, because a race that is a week old still has a
+    leader. Whether the month has enough days behind it to be awarded yet is
+    said beside the table rather than by leaving it empty.
+    """
+    points = winners.month_points(database, players, start, end, board=board,
+                                  readings=walk)
+    counted = winners.counted_days(database, players, start, end, board,
+                                   readings=walk)
+    # Finished days only, the same as the tally in the table below: leading
+    # at four in the afternoon is not a day taken.
+    wins = {}
+    for found in won.values():
+        if found["winner"] and not found["live"]:
+            wins[found["winner"]] = wins.get(found["winner"], 0) + 1
+    order = sorted(players, key=lambda p: (points.get(p["username"], 0.0),
+                                           p["username"]), reverse=True)
+    rows = []
+    for place, player in enumerate(order, start=1):
+        scored = points.get(player["username"], 0.0)
+        rows.append({"place": place, "username": player["username"],
+                     "name": player["display_name"],
+                     "color": palette.get(player["username"], theme.MUTED),
+                     "points": "{:.2f}".format(scored) if scored else None,
+                     "wins": wins.get(player["username"], 0)})
+    return {"label": start.strftime("%B"), "rows": rows, "counted": counted,
+            "minimum": winners.MIN_MONTH_DAYS,
+            "awarded": counted >= winners.MIN_MONTH_DAYS}
 
 
 # How a day is decided, which is the only part the two boards disagree on.
@@ -685,7 +732,9 @@ def _day_cell(day, won, by_name, palette, marks):
     and the winner in full rather than leaving both to the tooltip.
     """
     date = day.strftime("%d %b %Y")
-    found = won.get(day.strftime("%Y-%m-%d"))
+    # What a click on the square asks the chart for.
+    key = day.strftime("%Y-%m-%d")
+    found = won.get(key)
     ahead = day > datetime.now(day.tzinfo)
     if ahead:
         return {"day": day.day, "date": date, "winner": None, "mark": None,
@@ -694,6 +743,7 @@ def _day_cell(day, won, by_name, palette, marks):
     if found is None or found["winner"] is None:
         note = (found or {}).get("reason") or "nothing recorded"
         return {"day": day.day, "date": date, "winner": None, "mark": None,
+                "key": key,
                 "color": None, "ahead": False, "live": False, "note": note,
                 "label": date + " - " + note}
     name = by_name.get(found["winner"], found["winner"])
@@ -701,7 +751,7 @@ def _day_cell(day, won, by_name, palette, marks):
         note = name + " - leading so far, the day is not over"
     else:
         note = name + " - took the day"
-    return {"day": day.day, "date": date, "winner": name,
+    return {"day": day.day, "date": date, "winner": name, "key": key,
             "mark": marks.get(found["winner"]),
             "color": palette.get(found["winner"]), "ahead": False,
             "live": found["live"], "note": note,

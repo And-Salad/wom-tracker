@@ -37,7 +37,7 @@ BOARDS = {
         "measure": "XP toward 99",
         "measure_hint": "Experience toward a 99 since midnight, which decides"
                         " the day where nobody reached one",
-        "chart_title": "Experience toward 99 today",
+        "chart_title": "Experience toward 99",
         "second": "99s Today", "second_hint": "Ninety-nines reached today",
         "split_wins": True,
     },
@@ -46,7 +46,7 @@ BOARDS = {
         "measure": "XP Gained",
         "measure_hint": "All experience gained since midnight, which is what"
                         " the day is judged on",
-        "chart_title": "Experience gained today",
+        "chart_title": "Experience gained",
         # A ninety-nine is not what this board is about, and the column would
         # read nothing on most days. Levels are what somebody grinding sees
         # move.

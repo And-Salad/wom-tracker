@@ -420,7 +420,7 @@ def test_today_follows_the_grid_in_a_card_of_its_own(app, client):
     calendar_seed(app)
     body = client.get("/leaderboards").get_data(as_text=True)
     assert body.index('class="months"') < body.index("Today so far")
-    assert body.index("Today so far") < body.index("Experience toward 99 today")
+    assert body.index("Today so far") < body.index("board-trend")
     # Its own card, not a panel inside the calendar's.
     assert 'class="card standing"' in body
 

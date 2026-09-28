@@ -47,6 +47,21 @@ def today_key(when=None):
     return now.strftime("%Y-%m-%d")
 
 
+def day_moment(day):
+    """Noon, local time, on the day a "YYYY-MM-DD" names - or None.
+
+    Anything that takes `when` answers about the local day it falls in, so a
+    date from a URL becomes one by way of its middle: midnight itself is the
+    boundary, and a moment exactly on it is the one place a clock change could
+    tip it into the day before.
+    """
+    try:
+        parsed = datetime.strptime(day or "", "%Y-%m-%d")
+    except ValueError:
+        return None
+    return parsed.replace(hour=12, tzinfo=zone())
+
+
 def today_range(when=None):
     """[midnight, next midnight) of the local day in progress.
 

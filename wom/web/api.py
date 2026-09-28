@@ -167,11 +167,23 @@ def board_trend(board):
     """Experience toward 99 since midnight, one line per included account.
 
     Its own endpoint rather than a catalogue chart: the Overview's charts all
-    answer over the sidebar's period, and this one is always the day in
-    progress. Handing it a period it then ignores would be the confusing part.
+    answer over the sidebar's period, and this one is always one calendar
+    day. Handing it a period it then ignores would be the confusing part.
+
+    The day in progress unless ?day=YYYY-MM-DD names another, which is what a
+    click on a calendar square asks for. A day that has not happened yet is
+    refused rather than drawn as an empty chart: there is nothing it could
+    say that "not yet" does not.
     """
     if board not in winners.BOARDS:
         abort(404)
+    when = None
+    if request.args.get("day"):
+        when = winners.day_moment(request.args["day"])
+        if when is None:
+            abort(400)
+        if when.strftime("%Y-%m-%d") > winners.today_key():
+            abort(404)
     refused = guard()
     if refused is not None:
         return refused
@@ -181,7 +193,7 @@ def board_trend(board):
     context = ViewContext(database(), here.config, here.players,
                           selected=here.selected, span=here.span)
     return _fresh(today.trend(database(), here.selected, context.color_for,
-                              board=board))
+                              when=when, board=board))
 
 
 @api.route("/api/milestones")

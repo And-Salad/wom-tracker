@@ -34,8 +34,13 @@
     <p class="hint rules" title="{{ board.calendar.rule }}">Last month and this one,
       each day in the colour of whoever won it and each month in the colour of
       whoever took it. Today shows who is ahead, dashed until it is over, and
-      days before every account was tracked are blank.</p>
+      days before every account was tracked are blank. Click a day to chart
+      it below.</p>
 
+    {# The month's race beside the two months it is run over. A wrapping row
+       rather than a fixed two columns: where there is not room for both, the
+       table drops beneath the squares instead of pushing the page sideways. #}
+    <div class="calendar-row">
     <div class="months">
       {% for month in board.calendar.months %}
         <div class="month">
@@ -52,16 +57,57 @@
                reader can use. The mark beside the date is the same answer
                again for a reader who has no hover to ask with - a phone. #}
             {% for day in month.days %}
-              <span class="day{{ ' won' if day.color }}{{ ' live' if day.live }}{{ ' ahead' if day.ahead }}"
+              {# A day that has happened is a button: it charts that day below.
+                 One that has not is still only a picture of "not yet". #}
+              {% if day.ahead %}
+              <span class="day ahead" role="img" aria-label="{{ day.label }}"
+                    title="{{ day.date }} - {{ day.note }}"
+                    ><span class="num" aria-hidden="true">{{ day.day }}</span></span>
+              {% else %}
+              <button type="button"
+                    class="day{{ ' won' if day.color }}{{ ' live' if day.live }}"
                     {% if day.color %}style="--day: {{ day.color }}"{% endif %}
-                    role="img" aria-label="{{ day.label }}"
+                    data-day="{{ day.key }}" aria-pressed="{{ 'true' if day.key == board.calendar.today else 'false' }}"
+                    {% if day.key == board.calendar.today %}data-today{% endif %}
+                    aria-label="{{ day.label }}. Chart this day"
                     title="{{ day.date }} - {{ day.note }}"
                     ><span class="num" aria-hidden="true">{{ day.day }}</span
-                    >{% if day.mark %}<span class="mark" aria-hidden="true">{{ day.mark }}</span>{% endif %}</span>
+                    >{% if day.mark %}<span class="mark" aria-hidden="true">{{ day.mark }}</span>{% endif %}</button>
+              {% endif %}
             {% endfor %}
           </div>
         </div>
       {% endfor %}
+    </div>
+
+    {% set race = board.calendar.standings %}
+    <div class="month-race">
+      <h4>{{ race.label }} so far</h4>
+      <p class="hint">Average points a day over the {{ race.counted }}
+        day{{ '' if race.counted == 1 else 's' }} that counted, which is what
+        the month is awarded on{% if not race.awarded %} &mdash; once it has
+        {{ race.minimum }}{% endif %}.</p>
+      <table>
+        <thead>
+        <tr>
+          <th></th>
+          <th>Player</th>
+          <th class="num" title="Average points a day. First place on a counted day is worth a point for every account, each place below it one fewer, and a day you gained nothing on is worth none">Pts/day</th>
+          <th class="num" title="Days of {{ race.label }} taken. Today is not one until it is over">Days</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in race.rows %}
+          <tr class="{{ 'moved' if row.points }}">
+            <td class="rank">{{ row.place }}</td>
+            <td class="name"><span class="swatch" style="--dot: {{ row.color }}"></span>{{ row.name }}</td>
+            <td class="num">{{ row.points or '-' }}</td>
+            <td class="num {{ '' if row.wins else 'dim' }}">{{ row.wins or '-' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
     </div>
   </div>
 
@@ -133,11 +179,18 @@
   <div class="card chart board-trend">
     <div class="card-head">
       <div>
-        <h3>{{ board.chart_title }}</h3>
-        <p class="hint">Each line is one account's total since midnight, at
-          every reading of the day. The axis is the whole day, so the lines
-          reach the right-hand edge only when it is over.</p>
+        {# The day in the title is filled in by board.js from what the chart
+           answered for; "today" is what the page opens on. #}
+        <h3><span class="subject">{{ board.chart_title }}</span>
+          <span class="when">today</span></h3>
+        <p class="hint" data-for="today">Each line is one account's total since
+          midnight, at every reading of the day. The axis is the whole day, so
+          the lines reach the right-hand edge only when it is over.</p>
+        <p class="hint" data-for="past" hidden>Each line is one account's total
+          through the day, midnight to midnight, at every reading of it - the
+          line that finishes highest is the colour of that day's square.</p>
       </div>
+      <button type="button" class="link back-to-today" hidden>Back to today</button>
     </div>
     <div class="plot loading"></div>
   </div>

@@ -1,5 +1,5 @@
 """The two leaderboards, and what each of them counts."""
-from conftest import section, seed
+from conftest import calendar_seed, section, seed, snapshot
 
 
 def test_grinding_judges_on_all_experience_and_maxing_only_up_to_99():
@@ -319,3 +319,73 @@ def test_both_boards_still_answer_when_each_is_asked_alone(client, app):
     for board in ("maxing", "grinding"):
         alone = client.get("/leaderboards?board=" + board).get_data(as_text=True)
         assert figures(alone, board) == figures(together, board), board
+
+
+def test_the_trend_can_be_asked_for_a_finished_day(app, client):
+    """A click on a calendar square charts that day, named for it."""
+    from datetime import datetime, timezone
+
+    from wom import winners
+    from wom.web import today
+    database = calendar_seed(app)
+    players = database.players()
+    when = winners.day_moment("2026-08-30")
+    drawn = today.trend(database, players, lambda p: "#fff", when=when)
+    assert drawn["day"] == "2026-08-30"
+    assert drawn["label"] == "on Sun 30 Aug"
+    # The same day, measured the same way, as the square it was picked from.
+    won = winners.daily_winners(
+        database, players, *winners.month_range(
+            datetime(2026, 8, 15, tzinfo=timezone.utc)))["2026-08-30"]
+    highest = max(drawn["series"], key=lambda s: s["points"][-1][1])
+    assert highest["username"] == won["winner"]
+
+    assert today.trend(database, players, lambda p: "#fff")["label"] == "today" \
+        or "empty" in today.trend(database, players, lambda p: "#fff")
+
+
+def test_a_day_that_has_not_happened_or_is_not_a_date_is_refused(app, client):
+    seed(app)
+    assert client.get("/api/maxing/trend?day=yesterday").status_code == 400
+    assert client.get("/api/maxing/trend?day=2099-01-01").status_code == 404
+    assert client.get("/api/maxing/trend?day=2026-08-30").status_code == 200
+
+
+def test_the_grinding_trend_is_not_labelled_toward_99(db, player):
+    """The axis used to say "toward 99" on both boards."""
+    from wom import winners
+    from wom.web import today
+    db.save_snapshot(1, snapshot("2026-08-30T02:00:00.000Z",
+                                 skills={"attack": (1000, 10)}))
+    db.save_snapshot(1, snapshot("2026-08-30T20:00:00.000Z",
+                                 skills={"attack": (5000, 20)}))
+    when = winners.day_moment("2026-08-30")
+    drawn = today.trend(db, [db.players()[0]], lambda p: "#fff", when=when,
+                        board=winners.GRINDING)
+    assert drawn["ylabel"] == "XP gained"
+
+
+def test_the_month_so_far_sits_beside_the_calendar_in_the_months_order(
+        app, client):
+    """Ordered the way the month will be awarded, so the top row is whoever
+    would take it if it ended now."""
+    from datetime import datetime, timezone
+
+    from wom import winners
+    from wom.web import views
+    database = calendar_seed(app)
+    players = database.players()
+    when = datetime(2026, 8, 31, 12, tzinfo=timezone.utc)
+    calendar = views.winner_calendar(database, players, {}, when=when)
+    race = calendar["standings"]
+    start, end = winners.month_range(when)
+    points = winners.month_points(database, players, start, end)
+    assert [row["username"] for row in race["rows"]] == sorted(
+        (p["username"] for p in players),
+        key=lambda u: (points.get(u, 0.0), u), reverse=True)
+    assert race["counted"] == winners.counted_days(database, players, start, end)
+
+    page = client.get("/leaderboards").get_data(as_text=True)
+    assert 'class="month-race"' in page
+    assert page.index('class="months"') < page.index('class="month-race"')
+    assert "data-day=" in page and "data-today" in page

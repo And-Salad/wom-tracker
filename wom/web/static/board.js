@@ -6,6 +6,7 @@
  *
  *   - expanding standings rows, fetched when a row is first opened
  *   - the day's trend, drawn when its board is first looked at
+ *   - a click on a calendar square, which redraws that trend for its day
  *
  * A row is the control, the same as on Players - there is one list of
  * accounts per board here, not a table and an accordion repeating each other.
@@ -125,6 +126,62 @@
     });
   }
 
+  /* The card names the day it is drawing, from the day the server answered
+     for rather than the one that was clicked: two quick clicks can land out
+     of order, and the chart only draws the newest reply, so this follows
+     whatever the chart is actually showing. */
+  function retitle(entry, chart) {
+    var card = entry.section.querySelector(".board-trend");
+    var drawn = chart.draw;
+    chart.draw = function () {
+      var data = this.data || {};
+      if (data.label) {
+        var past = data.label !== "today";
+        card.querySelector("h3 .when").textContent = data.label;
+        card.querySelectorAll(".hint[data-for]").forEach(function (hint) {
+          hint.hidden = hint.getAttribute("data-for") !== (past ? "past" : "today");
+        });
+        card.querySelector(".back-to-today").hidden = !past;
+        mark(entry, data.day);
+      }
+      return drawn.apply(this, arguments);
+    };
+  }
+
+  /* Which square is pressed: the day being charted, or today's own square
+     when it is today being charted. */
+  function mark(entry, day) {
+    entry.section.querySelectorAll("button.day[data-day]").forEach(function (square) {
+      var on = day ? square.getAttribute("data-day") === day
+                   : square.hasAttribute("data-today");
+      square.setAttribute("aria-pressed", String(on));
+    });
+  }
+
+  function wireDays(entry, draw) {
+    function pick(day) {
+      entry.day = day;
+      mark(entry, day);
+      entry.stale = true;
+      draw(entry);
+    }
+    entry.section.querySelectorAll("button.day[data-day]").forEach(function (square) {
+      square.addEventListener("click", function () {
+        /* Today's square, or the day already showing, goes back to today:
+           a second click on a pressed button is how it is let go of. */
+        var chosen = square.getAttribute("data-day");
+        var back = square.hasAttribute("data-today") || chosen === entry.day;
+        pick(back ? null : chosen);
+        var card = entry.section.querySelector(".board-trend");
+        if (card && card.scrollIntoView && !back) {
+          card.scrollIntoView({behavior: "smooth", block: "nearest"});
+        }
+      });
+    });
+    var button = entry.section.querySelector(".back-to-today");
+    if (button) { button.addEventListener("click", function () { pick(null); }); }
+  }
+
   /* Which board was being read, kept between visits. Stored as the one chosen
      rather than the ones not: there are two and both are always offered, so a
      name that stops existing simply fails to match and the server's choice
@@ -148,7 +205,12 @@
       section.querySelectorAll("tr.today-row").forEach(function (row) {
         wire(row, name);
       });
-      boards.push({name: name, section: section, chart: null, stale: true});
+      /* Which day the chart is drawing: null is today, which is what the
+         page opens on and what it goes back to. */
+      var entry = {name: name, section: section, chart: null, stale: true,
+                   day: null};
+      boards.push(entry);
+      wireDays(entry, draw);
     });
 
     /* Nothing is drawn until the page has settled on which board is shown
@@ -168,8 +230,10 @@
            asks its own endpoint rather than pretending to be a catalogue
            entry. */
         entry.chart.endpoint = function () {
-          return "/api/" + entry.name + "/trend?" + window.Sidebar.query();
+          return "/api/" + entry.name + "/trend?" + window.Sidebar.query() +
+            (entry.day ? "&day=" + encodeURIComponent(entry.day) : "");
         };
+        retitle(entry, entry.chart);
       }
       entry.stale = false;
       entry.chart.load(window.Sidebar.query());
