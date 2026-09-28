@@ -540,29 +540,64 @@ def metric_table(database, players, since, until, palette):
 
 
 def player_marks(players):
-    """{username: a short letter for that account}, unique across the group.
+    """{username: a short mark for that account}, unique across the group.
 
     The calendar says who took a day in one thing only - the colour of the
     square - which leaves it unreadable to anyone who cannot separate two
     players' colours, and unreadable to everybody on a phone, where there is
-    no hover to ask. So each square carries a letter as well.
+    no hover to ask. So each square carries a mark as well.
 
-    The shortest prefix that is nobody else's, so it is one character in a
-    group whose names start differently and two where they do not, rather
-    than a first initial that quietly means two people.
+    One letter where nobody else's name starts with it, and two where somebody
+    does: the initial, and the letter where the name first parts from every
+    name sharing it. Never more than two. It used to be the shortest prefix
+    nobody else had, which is fine until two names share a long one -
+    girlbossgirl and GirlBossPop were GIRLBOSSG and GIRLBOSSP, nine letters in
+    a thirty-pixel square, where every other account had one or two.
     """
-    names = sorted((p["display_name"] or p["username"]) for p in players)
+    names = {p["username"]: p["display_name"] or p["username"] for p in players}
     marks = {}
-    for player in players:
-        name = player["display_name"] or player["username"]
-        others = [other for other in names if other != name]
-        size = 1
-        while size < len(name) and any(
-                other[:size].casefold() == name[:size].casefold()
-                for other in others):
-            size += 1
-        marks[player["username"]] = name[:size].upper()
+    taken = set()
+    # Settled in a fixed order so the same group always gets the same marks,
+    # and a second name that lands on a mark already given takes its next.
+    for username in sorted(names, key=lambda u: (names[u].casefold(), u)):
+        name = names[username].strip() or username
+        folded = name.casefold()
+        rivals = [other.strip().casefold() for key, other in names.items()
+                  if key != username
+                  and other.strip().casefold()[:1] == folded[:1]]
+        for mark in _mark_choices(name, rivals):
+            if mark.casefold() not in taken:
+                break
+        taken.add(mark.casefold())
+        marks[username] = mark.upper()
     return marks
+
+
+def _mark_choices(name, rivals):
+    """Candidate marks for one name, best first."""
+    if not rivals:
+        yield name[0]
+        return
+    # Where this name first differs from the rival it shares most with.
+    parts = max(_shared(name.casefold(), rival) for rival in rivals)
+    rest = [c for c in name[parts:] if c.strip()]
+    early = [c for c in name[1:parts] if c.strip()]
+    for letter in rest + early:
+        yield name[0] + letter
+    # A name the same as another, or all of it the start of one: nothing in
+    # it tells the two apart, so a number does.
+    for number in range(2, 100):
+        yield name[0] + str(number)
+
+
+def _shared(a, b):
+    """How many leading characters two names have in common."""
+    count = 0
+    for x, y in zip(a, b, strict=False):
+        if x != y:
+            break
+        count += 1
+    return count
 
 
 def winner_calendar(database, players, palette, when=None,
