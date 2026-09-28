@@ -485,7 +485,12 @@ def gains_by_day(database, players, start, end, readings=None):
             day["measured"].append(player["username"])
             if short:
                 day["short"].append(player["username"])
-            if moved(shown):
+            # Kept if it moved on either board, and left to each board to
+            # judge. This used to be moved(shown) with Maxing's default, once,
+            # for both - so an account whose whole day was past 99 was gone
+            # before Grinding, the board it wins outright, was ever asked, and
+            # the calendar handed its day to somebody the round-up did not.
+            if any(moved(shown, board) for board in BOARDS):
                 day["scores"][player["username"]] = shown
     return out
 
@@ -549,7 +554,11 @@ def placings(found, of, board=MAXING):
     five accounts played counts for more than taking one two did. Accounts
     that gained nothing score nothing.
     """
-    ranked = sorted(found["scores"].items(),
+    # The scores hold anybody who moved on either board, so this board's own
+    # test is applied here: past 99 is a day's work on Grinding and nothing
+    # at all on Maxing, and nothing earns no placing.
+    ranked = sorted(((username, shown) for username, shown
+                     in found["scores"].items() if moved(shown, board)),
                     key=lambda pair: (key(pair[1], board), pair[0]), reverse=True)
     return {username: of - place for place, (username, _) in enumerate(ranked)}
 

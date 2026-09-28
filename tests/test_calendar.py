@@ -358,10 +358,10 @@ def test_a_ninety_nine_takes_the_day_off_a_bigger_number(app):
 
     found = winners.gains_by_day(database, players, start, end)["2026-08-20"]
     assert found["scores"]["climber"]["nines"] == 1
-    # Ten million, all of it past 99, is not a score at all - and it must be
-    # judged the same way here as in the standings, or the calendar crowns
-    # somebody the round-up beside it calls an empty day.
-    assert "maxed" not in found["scores"]
+    # Ten million, all of it past 99, is not a score at all on Maxing - and it
+    # must be judged the same way here as in the standings, or the calendar
+    # crowns somebody the round-up beside it calls an empty day.
+    assert "maxed" not in winners.placings(found, 2, winners.MAXING)
     assert "maxed" in found["measured"], "tracked, and scored nothing"
 
 
@@ -544,3 +544,96 @@ def test_wins_are_split_by_how_the_day_was_taken(app):
                       when=datetime(2026, 8, 15))["rows"]}
     assert rows["Climber"]["nine_wins"] == 1 and rows["Climber"]["xp_wins"] == 0
     assert rows["Grinder"]["nine_wins"] == 0 and rows["Grinder"]["xp_wins"] == 1
+
+
+def _digest_winner(database, config, board, when):
+    """What a day's round-up is told won it, read off its digest."""
+    from wom import periods, summaries
+    window = periods.latest_window("day", when)
+    digest = summaries.build_group_digest(database, config, database.players(),
+                                          window, board)
+    return next(line for line in digest.splitlines()
+                if line.startswith("Winner:"))
+
+
+def test_a_day_past_99_wins_grinding_on_the_calendar_and_in_the_round_up(
+        app, config):
+    """Grinding counts every point, so a maxed account's ten million beats a
+    hundred thousand below 99. The calendar used to drop it before Grinding
+    was asked, and gave the day to the account the round-up placed second."""
+    from datetime import datetime, timezone
+
+    from wom import winners
+    database = app.config["DATABASE"]
+    for pid, name in ((1, "Climber"), (2, "Maxed")):
+        database.save_player_details({"id": pid, "username": name.lower(),
+                                      "displayName": name, "type": "regular"})
+    edge = winners.NINETY_NINE
+    database.save_snapshot(1, snapshot("2026-08-19T23:00:00.000Z",
+                                       skills={"attack": (1000000, 70)}))
+    database.save_snapshot(1, snapshot("2026-08-20T23:00:00.000Z",
+                                       skills={"attack": (1100000, 71)}))
+    database.save_snapshot(2, snapshot("2026-08-19T23:00:00.000Z",
+                                       skills={"attack": (edge * 2, 99)}))
+    database.save_snapshot(2, snapshot("2026-08-20T23:00:00.000Z",
+                                       skills={"attack": (edge * 2 + 10000000, 99)}))
+    record_runs(database, 2, ["2026-08-20"])
+    players = database.players()
+    start, end = winners.month_range(
+        datetime(2026, 8, 25, tzinfo=timezone.utc), back=0)
+    when = datetime(2026, 8, 21, 12, tzinfo=timezone.utc)
+
+    grinding = winners.daily_winners(database, players, start, end,
+                                     board=winners.GRINDING)["2026-08-20"]
+    assert grinding["winner"] == "maxed"
+    assert _digest_winner(database, config, "grinding", when) == "Winner: Maxed"
+
+    # And Maxing still gives it to the account that was actually levelling.
+    maxing = winners.daily_winners(database, players, start, end)["2026-08-20"]
+    assert maxing["winner"] == "climber"
+    assert _digest_winner(database, config, "maxing", when) == "Winner: Climber"
+
+    # A month's points are placings on the same days, so they follow too.
+    found = winners.gains_by_day(database, players, start, end)["2026-08-20"]
+    assert winners.placings(found, 2, winners.GRINDING) == {"maxed": 2,
+                                                            "climber": 1}
+    assert winners.placings(found, 2, winners.MAXING) == {"climber": 2}
+
+
+def test_a_maxing_day_spent_past_99_is_empty_in_the_round_up_too(app, config):
+    from datetime import datetime, timezone
+
+    from wom import winners
+    database = app.config["DATABASE"]
+    database.save_player_details({"id": 1, "username": "maxed",
+                                  "displayName": "Maxed", "type": "regular"})
+    edge = winners.NINETY_NINE
+    database.save_snapshot(1, snapshot("2026-08-19T23:00:00.000Z",
+                                       skills={"attack": (edge * 2, 99)}))
+    database.save_snapshot(1, snapshot("2026-08-20T23:00:00.000Z",
+                                       skills={"attack": (edge * 3, 99)}))
+    record_runs(database, 1, ["2026-08-20"])
+    line = _digest_winner(database, config, "maxing",
+                          datetime(2026, 8, 21, 12, tzinfo=timezone.utc))
+    assert line == "Winner: nobody - nobody gained anything"
+
+
+def test_a_day_the_calendar_leaves_blank_is_not_won_in_the_round_up(
+        app, config):
+    """Nobody polled the group that day, so the square is blank - and the
+    round-up used to hand the day to whoever topped the figures anyway."""
+    from datetime import datetime, timezone
+
+    database = app.config["DATABASE"]
+    for pid, name in ((1, "Climber"), (2, "Other")):
+        database.save_player_details({"id": pid, "username": name.lower(),
+                                      "displayName": name, "type": "regular"})
+    database.save_snapshot(1, snapshot("2026-08-19T23:00:00.000Z",
+                                       skills={"attack": (1000000, 70)}))
+    database.save_snapshot(1, snapshot("2026-08-20T23:00:00.000Z",
+                                       skills={"attack": (1100000, 71)}))
+    database.save_snapshot(2, snapshot("2026-08-19T23:00:00.000Z",
+                                       skills={"attack": (1000000, 70)}))
+    line = _digest_winner(database, config, "maxing",
+                          datetime(2026, 8, 21, 12, tzinfo=timezone.utc))
+    assert line == "Winner: nobody - the tracker was not watching that day"
