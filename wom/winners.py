@@ -62,6 +62,26 @@ def day_moment(day):
     return parsed.replace(hour=12, tzinfo=zone())
 
 
+def picked_day(text):
+    """The moment a ?day= in a URL names, or None for today.
+
+    Everything on the Leaderboards page answers about one day, and this is
+    where the page and its endpoints agree which. Left out, or naming today,
+    it is None - today is "now", not noon, and the day in progress is read
+    to its latest reading rather than to its middle. Not a date raises
+    ValueError; a day that has not happened raises LookupError.
+    """
+    if not text:
+        return None
+    when = day_moment(text)
+    if when is None:
+        raise ValueError(text)
+    key = when.strftime("%Y-%m-%d")
+    if key > today_key():
+        raise LookupError(text)
+    return None if key == today_key() else when
+
+
 def today_range(when=None):
     """[midnight, next midnight) of the local day in progress.
 

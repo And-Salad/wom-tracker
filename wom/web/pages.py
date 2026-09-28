@@ -35,22 +35,22 @@ BOARDS = {
     winners.MAXING: {
         "key": winners.MAXING, "label": "Maxing",
         "measure": "XP toward 99",
-        "measure_hint": "Experience toward a 99 since midnight, which decides"
+        "measure_hint": "Experience toward a 99 from midnight, which decides"
                         " the day where nobody reached one",
         "chart_title": "Experience toward 99",
-        "second": "99s Today", "second_hint": "Ninety-nines reached today",
+        "second": "99s", "second_hint": "Ninety-nines reached that day",
         "split_wins": True,
     },
     winners.GRINDING: {
         "key": winners.GRINDING, "label": "Grinding",
         "measure": "XP Gained",
-        "measure_hint": "All experience gained since midnight, which is what"
+        "measure_hint": "All experience gained from midnight, which is what"
                         " the day is judged on",
         "chart_title": "Experience gained",
         # A ninety-nine is not what this board is about, and the column would
         # read nothing on most days. Levels are what somebody grinding sees
         # move.
-        "second": "Levels Today", "second_hint": "Levels gained since midnight",
+        "second": "Levels", "second_hint": "Levels gained that day",
         # A ninety-nine never takes a day here, so the split that Maxing's
         # table makes would be a column that can only ever read nothing.
         "split_wins": False,
@@ -86,6 +86,12 @@ def leaderboards():
 
     The chart below them does follow the ticks - it is a line per account,
     and thinning it is what the ticks are for.
+
+    ?day= picks the day everything below the calendar is about: the day's
+    table, the month's race as it stood that evening, and the chart. It is
+    the page's, not the chart's, so all three are rendered for one day by
+    the server rather than one of them being redrawn in the browser while
+    the other two went on describing today.
     """
     scope = page_context()
     # The group, not the roster: a celebrity is there to be looked at, and
@@ -98,16 +104,25 @@ def leaderboards():
     chosen = request.args.get("board")
     if chosen not in BOARDS:
         chosen = winners.MAXING
+    try:
+        when = winners.picked_day(request.args.get("day"))
+    except (ValueError, LookupError):
+        abort(404)
     shown = [
         dict(board,
              calendar=views.winner_calendar(database(), everyone,
                                             scope["palette"], board=board["key"],
                                             readings=walk),
+             race=views.month_race(database(), everyone, scope["palette"],
+                                   when=when, board=board["key"],
+                                   readings=walk),
              today=today.standings(database(), everyone, scope["palette"],
-                                   board=board["key"], readings=walk))
+                                   when=when, board=board["key"],
+                                   readings=walk))
         for board in BOARDS.values()
     ]
     return render_template("leaderboards.html", boards=shown, chosen=chosen,
+                           picked=winners.today_key(when) if when else None,
                            **shell(scope))
 
 

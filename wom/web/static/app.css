@@ -638,23 +638,23 @@
     background: none; border: 1px dashed var(--line); color: var(--muted);
     text-shadow: none;
   }
-  /* The days that have happened are buttons - a click charts that day - so
-     the browser's own button look is taken off to leave the square. */
-  .grid-days button.day {
-    border: 0; padding: 0; margin: 0; font: inherit; font-size: 11px;
-    cursor: pointer;
-  }
-  .grid-days button.day.won { border: 1px solid rgba(255, 255, 255, .28); }
-  .grid-days button.day.live {
-    border: 1px dashed rgba(255, 255, 255, .75);
-  }
-  .grid-days button.day:hover { filter: brightness(1.15); }
-  /* The day the chart below is drawing. A ring outside the square rather
-     than a change to it, because the square's colour is the day's answer
-     and must not be what moves. */
-  .grid-days button.day[aria-pressed="true"] {
+  /* The days that have happened are links to the page as it stood that
+     day, so the link look is taken off to leave the square. */
+  .grid-days a.day { text-decoration: none; cursor: pointer; }
+  .grid-days a.day:hover { filter: brightness(1.15); }
+  /* The day the page is showing. A ring outside the square rather than a
+     change to it, because the square's colour is the day's answer and must
+     not be what moves. */
+  .grid-days a.day[aria-current="date"] {
     outline: 2px solid var(--accent); outline-offset: 2px;
   }
+  /* The way back from a picked day, where the table's heading is. */
+  a.link.back-to-today {
+    margin-left: auto; color: var(--accent); font-size: var(--text-xs);
+    text-transform: uppercase; letter-spacing: .04em; font-weight: 600;
+    text-decoration: none; white-space: nowrap;
+  }
+  a.link.back-to-today:hover { text-decoration: underline; }
 
   /* The calendar and the month's race side by side, wrapping rather than
      squeezing: the months are a fixed width of squares, and the table

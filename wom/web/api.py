@@ -142,9 +142,23 @@ def player_rows():
                    "span": here.span.as_dict()})
 
 
+def _picked_day():
+    """The ?day= a leaderboard request names, or None for today."""
+    try:
+        return winners.picked_day(request.args.get("day"))
+    except ValueError:
+        abort(400)
+    except LookupError:
+        abort(404)
+
+
 @api.route("/api/<board>/player/<username>")
 def board_player(board, username):
-    """One account's day so far, skill by skill, for an opened row.
+    """One account's day, skill by skill, for an opened row.
+
+    Today's so far, or the ?day= the page is showing - the row it opens under
+    is that day's, and a breakdown of a different day would explain a figure
+    it is not beside.
 
     The skills and nothing else. An account's written recaps are read on the
     Recaps page, where every window it has is in one tree - here they would
@@ -153,13 +167,14 @@ def board_player(board, username):
     """
     if board not in winners.BOARDS:
         abort(404)
+    when = _picked_day()
     refused = guard()
     if refused is not None:
         return refused
     player = database().player_by_username(username)
     if player is None:
         abort(404)
-    return _fresh(today.breakdown(database(), player, board=board))
+    return _fresh(today.breakdown(database(), player, when=when, board=board))
 
 
 @api.route("/api/<board>/trend")
@@ -177,13 +192,7 @@ def board_trend(board):
     """
     if board not in winners.BOARDS:
         abort(404)
-    when = None
-    if request.args.get("day"):
-        when = winners.day_moment(request.args["day"])
-        if when is None:
-            abort(400)
-        if when.strftime("%Y-%m-%d") > winners.today_key():
-            abort(404)
+    when = _picked_day()
     refused = guard()
     if refused is not None:
         return refused

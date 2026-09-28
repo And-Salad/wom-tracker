@@ -6,7 +6,11 @@
  *
  *   - expanding standings rows, fetched when a row is first opened
  *   - the day's trend, drawn when its board is first looked at
- *   - a click on a calendar square, which redraws that trend for its day
+ *
+ * Which day both are about is the page's: a calendar square is a link to
+ * ?day=, the server renders the table, the race and the titles for it, and
+ * this passes the same day on to the two things it fetches - so nothing on
+ * the page can be describing a different day from the rest.
  *
  * A row is the control, the same as on Players - there is one list of
  * accounts per board here, not a table and an accordion repeating each other.
@@ -66,9 +70,11 @@
       host.appendChild(el("p", "hint", data.note));
       return;
     }
-    /* Named for what this board counts. One script serves both, and on
-       Grinding "toward 99" describes a rule it does not have. */
-    var head = (board === "grinding" ? "Gained today: " : "Toward 99 today: ") +
+    /* Named for what this board counts, and for the day the server says it
+       answered for. One script serves both boards, and on Grinding "toward
+       99" describes a rule it does not have. */
+    var head = (board === "grinding" ? "Gained " : "Toward 99 ") +
+      (data.label || "today") + ": " +
       full.format(Math.round(data.total)) + " XP";
     if (data.nines) {
       head += " · " + data.nines + " ninety-nine" + (data.nines === 1 ? "" : "s");
@@ -86,7 +92,13 @@
     host.appendChild(scroll);
   }
 
-  function wire(row, board) {
+  /* "&day=..." for the day the page is showing, or nothing for today. */
+  function dayQuery(section, first) {
+    var day = section.getAttribute("data-day");
+    return day ? (first ? "?" : "&") + "day=" + encodeURIComponent(day) : "";
+  }
+
+  function wire(row, board, section) {
     var detailRow = row.nextElementSibling;
     var host = detailRow.querySelector(".detail-body");
     var loaded = false;
@@ -97,7 +109,8 @@
       if (loaded) { return; }
       host.textContent = "";
       host.appendChild(el("p", "hint", "Loading…"));
-      fetch("/api/" + board + "/player/" + encodeURIComponent(row.dataset.username))
+      fetch("/api/" + board + "/player/" +
+            encodeURIComponent(row.dataset.username) + dayQuery(section, true))
         .then(function (r) { return r.json(); })
         .then(function (data) {
           loaded = true;
@@ -126,62 +139,6 @@
     });
   }
 
-  /* The card names the day it is drawing, from the day the server answered
-     for rather than the one that was clicked: two quick clicks can land out
-     of order, and the chart only draws the newest reply, so this follows
-     whatever the chart is actually showing. */
-  function retitle(entry, chart) {
-    var card = entry.section.querySelector(".board-trend");
-    var drawn = chart.draw;
-    chart.draw = function () {
-      var data = this.data || {};
-      if (data.label) {
-        var past = data.label !== "today";
-        card.querySelector("h3 .when").textContent = data.label;
-        card.querySelectorAll(".hint[data-for]").forEach(function (hint) {
-          hint.hidden = hint.getAttribute("data-for") !== (past ? "past" : "today");
-        });
-        card.querySelector(".back-to-today").hidden = !past;
-        mark(entry, data.day);
-      }
-      return drawn.apply(this, arguments);
-    };
-  }
-
-  /* Which square is pressed: the day being charted, or today's own square
-     when it is today being charted. */
-  function mark(entry, day) {
-    entry.section.querySelectorAll("button.day[data-day]").forEach(function (square) {
-      var on = day ? square.getAttribute("data-day") === day
-                   : square.hasAttribute("data-today");
-      square.setAttribute("aria-pressed", String(on));
-    });
-  }
-
-  function wireDays(entry, draw) {
-    function pick(day) {
-      entry.day = day;
-      mark(entry, day);
-      entry.stale = true;
-      draw(entry);
-    }
-    entry.section.querySelectorAll("button.day[data-day]").forEach(function (square) {
-      square.addEventListener("click", function () {
-        /* Today's square, or the day already showing, goes back to today:
-           a second click on a pressed button is how it is let go of. */
-        var chosen = square.getAttribute("data-day");
-        var back = square.hasAttribute("data-today") || chosen === entry.day;
-        pick(back ? null : chosen);
-        var card = entry.section.querySelector(".board-trend");
-        if (card && card.scrollIntoView && !back) {
-          card.scrollIntoView({behavior: "smooth", block: "nearest"});
-        }
-      });
-    });
-    var button = entry.section.querySelector(".back-to-today");
-    if (button) { button.addEventListener("click", function () { pick(null); }); }
-  }
-
   /* Which board was being read, kept between visits. Stored as the one chosen
      rather than the ones not: there are two and both are always offered, so a
      name that stops existing simply fails to match and the server's choice
@@ -203,14 +160,9 @@
     Array.prototype.forEach.call(sections, function (section) {
       var name = section.getAttribute("data-board");
       section.querySelectorAll("tr.today-row").forEach(function (row) {
-        wire(row, name);
+        wire(row, name, section);
       });
-      /* Which day the chart is drawing: null is today, which is what the
-         page opens on and what it goes back to. */
-      var entry = {name: name, section: section, chart: null, stale: true,
-                   day: null};
-      boards.push(entry);
-      wireDays(entry, draw);
+      boards.push({name: name, section: section, chart: null, stale: true});
     });
 
     /* Nothing is drawn until the page has settled on which board is shown
@@ -226,14 +178,13 @@
         var card = entry.section.querySelector(".board-trend");
         if (!card) { return; }
         entry.chart = new window.WOM.Chart(card);
-        /* Always the day in progress, never the sidebar's period - so this
-           asks its own endpoint rather than pretending to be a catalogue
-           entry. */
+        /* Always one calendar day - the page's - and never the sidebar's
+           period, so this asks its own endpoint rather than pretending to be
+           a catalogue entry. */
         entry.chart.endpoint = function () {
           return "/api/" + entry.name + "/trend?" + window.Sidebar.query() +
-            (entry.day ? "&day=" + encodeURIComponent(entry.day) : "");
+            dayQuery(entry.section, false);
         };
-        retitle(entry, entry.chart);
       }
       entry.stale = false;
       entry.chart.load(window.Sidebar.query());

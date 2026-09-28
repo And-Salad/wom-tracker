@@ -622,16 +622,12 @@ def winner_calendar(database, players, palette, when=None,
     marks = player_marks(players)
 
     months = []
-    standings = None
     for back in (1, 0):
         start, end = winners.month_range(when, back=back)
         won = winners.daily_winners(database, players, start, end, board=board,
                                     readings=walk)
         took = winners.month_winner(database, players, start, end, board=board,
                                     readings=walk)
-        if back == 0:
-            standings = _month_standings(database, players, palette, start,
-                                         end, won, board, walk)
         months.append({
             "label": start.strftime("%B %Y"),
             "color": palette.get(took, theme.MUTED),
@@ -647,28 +643,42 @@ def winner_calendar(database, players, palette, when=None,
     # by date rather than by the dashed .live, which only a day somebody is
     # leading gets.
     return {"months": months, "rule": winner_rule(board),
-            "standings": standings, "today": winners.today_key(when)}
+            "today": winners.today_key(when)}
 
 
-def _month_standings(database, players, palette, start, end, won, board,
-                     walk):
-    """The month in progress as a race: who leads it, and on what.
+def month_race(database, players, palette, when=None, board="maxing",
+               readings=None):
+    """A month as a race: who leads it, and on what - as of one day.
 
     The squares say who took each day; this says what those days add up to,
     which is the question the month's own colour will answer at the end of
     it. The order is the one month_winner uses - average points a day over
     the days that counted, ties to the same name - so the top row is whoever
-    the month would go to if it ended now.
+    the month would go to if it ended then.
+
+    `when` is the day the page is showing. Today, it is the month so far. A
+    day picked off the calendar gets its own month counted up to and
+    including it, so the race beside a day's figures is the race as it stood
+    that evening, not as it stands now.
 
     Asked with no floor, because a race that is a week old still has a
     leader. Whether the month has enough days behind it to be awarded yet is
     said beside the table rather than by leaving it empty.
     """
-    points = winners.month_points(database, players, start, end, board=board,
-                                  readings=walk)
-    counted = winners.counted_days(database, players, start, end, board,
+    walk = readings if readings is not None else winners.Readings(
+        database, players)
+    start, end = winners.month_range(when)
+    today = winners.today_key(when) == winners.today_key()
+    # Today's month to its end, which is the span the calendar has already
+    # walked; the day in progress is left out by the rule either way.
+    through = end if today else winners.today_range(when)[1]
+    points = winners.month_points(database, players, start, through,
+                                  board=board, readings=walk)
+    counted = winners.counted_days(database, players, start, through, board,
                                    readings=walk)
-    # Finished days only, the same as the tally in the table below: leading
+    won = winners.daily_winners(database, players, start, through, board=board,
+                                readings=walk)
+    # Finished days only, the same as the tally in the day's table: leading
     # at four in the afternoon is not a day taken.
     wins = {}
     for found in won.values():
@@ -684,7 +694,12 @@ def _month_standings(database, players, palette, start, end, won, board,
                      "color": palette.get(player["username"], theme.MUTED),
                      "points": "{:.2f}".format(scored) if scored else None,
                      "wins": wins.get(player["username"], 0)})
-    return {"label": start.strftime("%B"), "rows": rows, "counted": counted,
+    day = winners.today_range(when)[0]
+    return {"label": "{} so far".format(start.strftime("%B")) if today
+            else "{} through {} {}".format(start.strftime("%B"), day.day,
+                                           day.strftime("%b")),
+            "month": start.strftime("%B"),
+            "rows": rows, "counted": counted,
             "minimum": winners.MIN_MONTH_DAYS,
             "awarded": counted >= winners.MIN_MONTH_DAYS}
 

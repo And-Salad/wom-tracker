@@ -365,27 +365,91 @@ def test_the_grinding_trend_is_not_labelled_toward_99(db, player):
     assert drawn["ylabel"] == "XP gained"
 
 
-def test_the_month_so_far_sits_beside_the_calendar_in_the_months_order(
+def test_the_month_race_sits_beside_the_calendar_in_the_months_order(
         app, client):
     """Ordered the way the month will be awarded, so the top row is whoever
-    would take it if it ended now."""
-    from datetime import datetime, timezone
-
+    would take it if it ended on the day shown."""
     from wom import winners
     from wom.web import views
     database = calendar_seed(app)
     players = database.players()
-    when = datetime(2026, 8, 31, 12, tzinfo=timezone.utc)
-    calendar = views.winner_calendar(database, players, {}, when=when)
-    race = calendar["standings"]
+    when = winners.day_moment("2026-08-31")
+    race = views.month_race(database, players, {}, when=when)
     start, end = winners.month_range(when)
     points = winners.month_points(database, players, start, end)
     assert [row["username"] for row in race["rows"]] == sorted(
         (p["username"] for p in players),
         key=lambda u: (points.get(u, 0.0), u), reverse=True)
     assert race["counted"] == winners.counted_days(database, players, start, end)
+    assert race["label"] == "August through 31 Aug"
 
     page = client.get("/leaderboards").get_data(as_text=True)
     assert 'class="month-race"' in page
     assert page.index('class="months"') < page.index('class="month-race"')
-    assert "data-day=" in page and "data-today" in page
+    assert "so far</h4>" in page
+
+
+def test_a_picked_day_s_race_stops_at_that_day(app):
+    """The race beside a picked day is the race as it stood that evening:
+    days after it have not happened yet, as far as that page is concerned."""
+    from wom import winners
+    from wom.web import views
+    database = calendar_seed(app)
+    players = database.players()
+    early = views.month_race(database, players, {},
+                             when=winners.day_moment("2026-08-29"))
+    late = views.month_race(database, players, {},
+                            when=winners.day_moment("2026-08-31"))
+    assert early["counted"] < late["counted"]
+    assert sum(r["wins"] for r in early["rows"]) <= sum(
+        r["wins"] for r in late["rows"])
+
+
+def test_everything_below_the_calendar_follows_a_picked_day(app, client):
+    """A square is a link to the page as it stood that day, and the table,
+    the race and the chart all say which day that is - none of them left
+    describing today beside the others."""
+    import re
+
+    seed(app)
+    page = client.get("/leaderboards?board=maxing&day=2026-08-30").get_data(
+        as_text=True)
+    maxing = section(page, "maxing")
+    assert "Standings on Sun 30 Aug" in maxing
+    assert "Today so far" not in maxing
+    assert "Experience toward 99 on Sun 30 Aug" in maxing
+    assert "toward 99 today" not in maxing.lower()
+    assert "August through 30 Aug" in maxing
+    assert 'data-day="2026-08-30"' in maxing, "the scripts' fetches ask for it"
+    assert 'aria-current="date"' in maxing
+    current = re.search(r'<a class="day[^>]*aria-current="date"', maxing)
+    assert current and "day=2026-08-30" in current.group(0)
+    assert "Back to today" in maxing
+    # The other board is rendered for the same day, ready for the toggle.
+    assert "Experience gained on Sun 30 Aug" in section(page, "grinding")
+
+
+def test_today_is_the_page_with_no_day_in_it(app, client):
+    from wom import winners
+
+    seed(app)
+    page = client.get("/leaderboards").get_data(as_text=True)
+    assert "Today so far" in page and "Back to today" not in page
+    assert "Experience toward 99 today" in page
+    # Today's own square links to the bare page rather than to ?day=today,
+    # so there is one address for "today" and it never goes stale overnight.
+    same = client.get("/leaderboards?day=" + winners.today_key())
+    assert "Today so far" in same.get_data(as_text=True)
+
+
+def test_a_page_for_a_day_that_is_not_one_is_not_found(app, client):
+    seed(app)
+    assert client.get("/leaderboards?day=nonsense").status_code == 404
+    assert client.get("/leaderboards?day=2099-01-01").status_code == 404
+
+
+def test_an_opened_row_explains_the_day_the_page_is_showing(app, client):
+    seed(app)
+    body = client.get("/api/maxing/player/zezima?day=2026-08-30").get_json()
+    assert body["label"] == "on Sun 30 Aug"
+    assert client.get("/api/maxing/player/zezima?day=soon").status_code == 400
