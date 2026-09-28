@@ -50,14 +50,25 @@ class Timespan:
 
     @property
     def phrase(self):
-        """How a sentence refers to this window: "in {}"."""
+        """How a sentence ends when it names this window: "Nobody gained
+        anything {}."
+
+        The preposition is part of the answer. It was left to the sentence,
+        which wrote "in {}" around every window - and read "in today", on
+        the one period anybody opens just after midnight to find empty.
+        """
         if self.key:
-            return "the last {}".format(self.label.lower())
+            return "in the last {}".format(self.label.lower())
         if self.label == ALL_TIME:
-            return "the whole history"
+            return "in the whole history"
         if self.label == TODAY:
-            return "today"
-        return self.label
+            return "so far today"
+        if self.from_date and self.to_date and self.from_date != self.to_date:
+            return "between {} and {}".format(_pretty(self.from_date),
+                                              _pretty(self.to_date))
+        if self.from_date:
+            return "on {}".format(_pretty(self.from_date))
+        return "in {}".format(self.label)
 
     @property
     def choice(self):
