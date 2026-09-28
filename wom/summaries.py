@@ -497,13 +497,20 @@ def _shortlist(ranked, stirred=()):
     return shown, note
 
 
-def _ranking_lines(ranked, board="maxing", shown=None, note=()):
+def _ranking_lines(ranked, board="maxing", shown=None, note=(), called=None,
+                   names=None):
     """The order the group's own rule puts them in, for the digest.
 
     Worked out here rather than left to the model, so the round-up and the
     calendar square beside it cannot name different winners. `shown` is the
     slice of that order actually written out; the winner and whether the
     month counts still come from the whole of it.
+
+    `called` is the calendar's own verdict on a day, from daily_winners, and
+    where it is given the winner is simply copied from it. Working the day
+    out again here missed the calendar's other tests - a day not everybody
+    was tracked through, or one the tracker never polled, is blank on the
+    calendar, and the round-up for it was handing it to the top row anyway.
     """
 
     averaged = ranked and ranked[0]["points"] is not None
@@ -531,15 +538,22 @@ def _ranking_lines(ranked, board="maxing", shown=None, note=()):
     # Decided the same way the calendar decides it, or a month with no day
     # the whole group was tracked through would still be handed to somebody.
     top = ranked[0] if ranked else None
-    if top is None or voided:
+    empty = ("nobody - too little of the month was watched for it to count"
+             if voided else "nobody - the period was empty")
+    if called is not None:
+        winner = ((names or {}).get(called["winner"], called["winner"])
+                  if called["winner"] else None)
+        if called["reason"]:
+            empty = "nobody - {}".format(called["reason"])
+    elif top is None or voided:
         winner = None
     elif averaged:
         winner = top["name"] if top["points"] else None
     else:
-        winner = top["name"] if (top["nines"] or top["raw"]) else None
+        # The board's own test, not "any experience": a Maxing day spent
+        # entirely past 99 has raw experience and no score, and is empty.
+        winner = top["name"] if winners.moved(top, board) else None
     lines.append("")
-    empty = ("nobody - too little of the month was watched for it to count"
-             if voided else "nobody - the period was empty")
     lines.append("Winner: {}".format(winner or empty))
     lines.append("")
     return lines
@@ -587,7 +601,13 @@ def build_group_digest(database, config, players, window, board="maxing"):
              "Period: {} ({})".format(window.label, _period_noun(window.period)),
              "Players compared: {} of {} tracked".format(len(compared),
                                                          len(players)), ""]
-    lines.extend(_ranking_lines(ranked, board, shown=shown, note=note))
+    called = None
+    if window.period == "day":
+        called = winners.daily_winners(database, players, window.start,
+                                       window.end, board=board).get(window.key)
+    lines.extend(_ranking_lines(
+        ranked, board, shown=shown, note=note, called=called,
+        names={p["username"]: p["display_name"] for p in players}))
     if window.period == "week":
         lines.extend(_week_context(database, players, window, board))
 
