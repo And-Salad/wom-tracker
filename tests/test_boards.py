@@ -453,3 +453,35 @@ def test_an_opened_row_explains_the_day_the_page_is_showing(app, client):
     body = client.get("/api/maxing/player/zezima?day=2026-08-30").get_json()
     assert body["label"] == "on Sun 30 Aug"
     assert client.get("/api/maxing/player/zezima?day=soon").status_code == 400
+
+
+def test_a_square_picked_off_the_calendar_does_not_move_it(app, client):
+    """Picked from the squares, the day is already shown - so the months
+    stay where they were rather than sliding under the click."""
+    from wom import winners
+
+    seed(app)
+    start, _end = winners.month_range(back=1)
+    picked = start.replace(day=15).strftime("%Y-%m-%d")
+    page = client.get("/leaderboards?board=maxing&day=" + picked).get_data(
+        as_text=True)
+    maxing = section(page, "maxing")
+    for back in (1, 0):
+        label = winners.month_range(back=back)[0].strftime("%B %Y")
+        assert label in maxing, label
+    assert 'aria-current="date"' in maxing
+
+
+def test_an_old_link_brings_its_own_month(app, client):
+    """?day= is a link, and a link outlives the month it was made in. The
+    calendar used to move on without it, leaving the page describing a day
+    it had no square for."""
+    seed(app)
+    page = client.get("/leaderboards?board=maxing&day=2025-03-14").get_data(
+        as_text=True)
+    maxing = section(page, "maxing")
+    import re
+
+    assert "March 2025" in maxing and "February 2025" in maxing
+    current = re.search(r'<a class="day[^>]*aria-current="date"', maxing)
+    assert current and "day=2025-03-14" in current.group(0)
