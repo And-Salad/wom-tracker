@@ -87,7 +87,7 @@ def test_every_tab_but_the_calendar_ones_carries_the_window_controls(client, app
 
 
 def test_updated_is_when_they_last_moved_not_when_we_last_asked(client, app):
-    """We poll every ten minutes, so Wise Old Man's `updatedAt` says "now"
+    """We read everyone every hour, so `updated_at` says "now"
     for an account nobody has logged into in a month."""
     from wom.util import fmt_ago
     database = seed(app)
@@ -295,7 +295,7 @@ def test_the_help_page_answers_the_questions_it_is_for(client):
     page = client.get("/help").get_data(as_text=True)
     assert page.count("<h4") >= 5, "one heading per question it answers"
     for phrase in ("Custom Metadata Handler",      # how to set Dink up
-                   "ten minutes",                  # how polling works
+                   "Once an hour",                 # how reading works
                    "log out",                      # why numbers arrive late
                    "You do not need it",           # the WOM plugin
                    "Maxing", "Grinding",           # both competitions exist

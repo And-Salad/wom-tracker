@@ -124,9 +124,9 @@ class SnapshotStore:
 
         A row is only written when something changed, so the newest reading a
         player holds is the last time they played. `players.updated_at` is a
-        different question - it is when Wise Old Man last refreshed them,
-        which we cause every ten minutes, so it reads "9m ago" forever
-        whether or not the account has been logged into all week.
+        different question - it is when we last read them, which happens
+        every hour, so it reads "9m ago" forever whether or not the account
+        has been logged into all week.
         """
         row = self.query_one(
             "SELECT MAX(captured_at) AS at FROM metrics WHERE player_id=?",

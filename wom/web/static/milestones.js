@@ -154,7 +154,7 @@
     // server rendered: with script there is a button under the table, and
     // the button is where the rest of the list is.
     count.textContent =
-      text + ", newest first. A ~ marks a date Wise Old Man knows only roughly.";
+      text + ", newest first. A ~ marks a date known only roughly.";
   }
 
   if (types) {

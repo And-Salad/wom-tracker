@@ -968,7 +968,7 @@ def _missing(database, period, window_key, roster):
 def maybe_write_summaries(database, config, now=None):
     """Write whatever summaries the calendar owes, after an update pass.
 
-    Updates run every ten minutes; summaries do not. Returns how many were
+    Updates run every hour; summaries do not. Returns how many were
     actually written - zero when the feature is off, when today's are already
     done, or when nothing a summary describes has changed.
     """

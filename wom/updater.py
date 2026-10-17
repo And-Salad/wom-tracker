@@ -37,7 +37,7 @@ class PlayerResult:
 
 # How far back a run reconsiders session attribution. Long enough that a
 # logout arriving late still corrects the reading it belongs to, short enough
-# that this is a handful of rows every ten minutes rather than a sweep.
+# that this is a handful of rows a run rather than a sweep.
 SESSION_LOOKBACK_DAYS = 3
 
 

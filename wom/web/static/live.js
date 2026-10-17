@@ -178,7 +178,7 @@
       /* A whole second later, not merely later: within one slot every answer
          names the same instant to the second, but the one the server rendered
          into the page can sit a few milliseconds off the one it later sends,
-         and a bare `>` read that as a slot going by. Slots are ten minutes
+         and a bare `>` read that as a slot going by. Slots are an hour
          apart, so there is nothing here a second could miss. */
       if (nextAt && moved - nextAt > 1000 && !changed) {
         overdueAt = overdueAt || serverNow();

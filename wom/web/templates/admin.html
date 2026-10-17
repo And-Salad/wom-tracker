@@ -26,8 +26,9 @@
     <div class="card-head">
       <div>
         <h3>Run something</h3>
-        <p class="hint">The schedule runs on its own every ten minutes; these are
-          for when you do not want to wait.</p>
+        <p class="hint">The schedule runs on its own every hour, and Dink
+          logouts are read as they happen; these are for when you do not want
+          to wait.</p>
       </div>
       <form method="post" action="/admin/logout" class="pick">
         <button type="submit">Sign out</button>
@@ -247,10 +248,11 @@
   <div class="card">
     <h3>Session logins</h3>
     <p class="hint">
-      Wise Old Man can infer that a session ended, and cannot see one begin at
-      all - the hiscores do not move until logout. Dink reports both ends as
-      they happen, so a session that crossed midnight is credited to both days
-      rather than landing whole in the ten minutes we noticed it in.
+      The hiscores can show that a session ended, and cannot show one begin at
+      all - they do not move until logout. Dink reports both ends as they
+      happen, so a session that crossed midnight is credited to both days
+      rather than landing whole in the hour we noticed it in, and a logout
+      prompts a reading of that player's hiscores straight away.
     </p>
     <p class="hint">
       Each player installs <strong>Dink</strong> from the RuneLite Plugin Hub,

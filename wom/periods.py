@@ -12,8 +12,8 @@ class Period:
         self.label = label
         self.days = days
         # How finely a line chart should plot this window. Updates land every
-        # ten minutes - more when a player's plugin or a manual refresh fires
-        # - which is far more detail than a month-wide axis can show. Long
+        # hour - more when a player logs out with Dink or a manual refresh
+        # fires - which is more detail than a month-wide axis can show. Long
         # windows collapse to one point per day; short ones keep every
         # snapshot, because a day's worth of points is the whole chart.
         self.bucket = bucket
@@ -54,24 +54,24 @@ DEFAULT_PERIOD = "week"
 # larger.
 #
 # The floor is what one update cadence costs plus room for an ordinary
-# interruption - a slot is ten minutes and a pass over a group takes a few
-# more, so a deploy or a restart can eat half an hour without anything being
-# wrong. Two hours is comfortably past that and still well short of an
-# outage worth reporting.
+# interruption - a slot is an hour, and a deploy or a restart across one can
+# leave the newest reading two hours old without anything being wrong. Three
+# hours is past that and still well short of an outage worth reporting. (It
+# was two while slots were ten minutes.)
 #
 # The proportion keeps long windows from crying wolf: a baseline a day late
 # into a year is a third of a per cent of it, and flagging that would make
 # the note meaningless by making it constant.
-COVERAGE_FLOOR_SECONDS = 2 * 3600
+COVERAGE_FLOOR_SECONDS = 3 * 3600
 COVERAGE_FRACTION = 0.01
 
 
 def coverage_slack(window_seconds):
     """How late the baseline may be before a window counts as short.
 
-    Day 2h, Week 2h, Month ~7h, Year ~3.6d - against a cadence that lands a
-    reading every ten minutes, so anything past these means readings are
-    actually missing rather than merely not instantaneous.
+    Day 3h, Week 3h, Month ~7h, Year ~3.6d - against a cadence that lands a
+    reading every hour, so anything past these means readings are actually
+    missing rather than merely not instantaneous.
     """
     return max(COVERAGE_FLOOR_SECONDS, (window_seconds or 0) * COVERAGE_FRACTION)
 

@@ -1,5 +1,5 @@
 # Run backup.py every day at 07:00. The time is not load-bearing - updates run
-# every ten minutes and the round-ups are written in the first slot after
+# every hour and the round-ups are written in the first slot after
 # midnight, so by 07:00 the previous day is long settled.
 #
 #   powershell -ExecutionPolicy Bypass -File backup_schedule.ps1

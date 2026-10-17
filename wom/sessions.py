@@ -3,7 +3,7 @@
 The hiscores do not move while somebody is logged in, so a gain reaches us as
 a single jump at the first reading after they log out. Everything downstream
 then treats that jump as a *moment*, and attributes three hours of training to
-the ten minutes we happened to notice it in.
+the hour we happened to notice it in.
 
 Dink reports both ends of a session as they happen (see web/hooks.py), which
 turns that moment back into a span. Not every account runs it, and no account
