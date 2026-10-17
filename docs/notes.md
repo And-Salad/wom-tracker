@@ -143,8 +143,8 @@ metric, a field to plot, and a tooltip caption.
 
 ### Chart resolution
 
-Updates land every ten minutes, and more whenever a plugin or a manual
-refresh fires — far more detail than a month-wide axis can draw. Line charts
+Updates land every hour (every ten minutes before October 2026, which is
+most of the history), and more whenever a logout or a manual refresh fires — far more detail than a month-wide axis can draw. Line charts
 therefore plot **one point per day** on the month, quarter and year windows,
 taking each day's last reading; day and week keep every snapshot, because there
 a day's worth of points *is* the chart. A year of one player collapses from 488
@@ -672,3 +672,39 @@ server's default standing.
 
 Which is worth knowing before adding a third board: the moment the picker's
 options can change, this should store the exceptions like the others do.
+
+## Why the readings stopped coming through Wise Old Man
+
+Until October 2026 every run asked Wise Old Man to update every player, every
+ten minutes. That is about 1,300 forced updates a day for nine accounts, and
+its documentation asks trackers not to auto-update more often than every hour
+or few. It was also most of why a run was slow: anonymous, the API allows 20
+requests a minute, and a run spent 80-135 seconds pacing itself to that.
+
+Wise Old Man's update is a relay - it reads Jagex's hiscores and stores what
+they say. Read directly (`index_lite.json`), the hiscores agreed with it on
+every one of the 101 values the two share for each of four accounts, answered
+in about a second, and worked from the Fly machine. So the readings come from
+there now, hourly, and at each logout for anyone running Dink - the hiscores
+only move at logout (see "When a session actually happened"), so that is the
+moment worth reading, and the hourly run is the floor for everyone else.
+
+What Wise Old Man gave besides the numbers is now done here or asked for once:
+
+- **EHP and EHB** are a port of its `EfficiencyAlgorithm` fed by its public
+  rates, which are read at most daily. `tests/test_efficiency.py` holds the
+  port to its answers for real accounts, per skill and per boss, because the
+  store compares those figures to decide whether a metric moved.
+- **Milestones** are its achievement templates, name for name, checked
+  between consecutive readings. Same names means a crossing it already dated
+  is the same row, and the earlier date stands.
+- **Introducing a player** - id, account type, history, milestones to date -
+  is still Wise Old Man's, once, by a read; only an account it has never
+  seen is POSTed.
+- **Renames** were absorbed by its player ids. Reading by name, they are
+  followed only when the hiscores confirm them - see `wom/renames.py`.
+
+Two things about the hiscores' JSON that the CSV hides: rows are named, so a
+new boss cannot shift every row after it; and an unranked boss carries its
+real count (rank -1, score 1), which is exactly what Wise Old Man stored, so
+it is passed through rather than read as unknown.

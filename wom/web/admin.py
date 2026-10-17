@@ -27,7 +27,7 @@ from flask import (
     url_for,
 )
 
-from .. import build, periods, scheduler
+from .. import build, changes, hiscores, periods, renames, scheduler
 from .. import summaries as core
 from ..api import WomClient
 from ..colors import normalise, player_color, set_player_color
@@ -169,6 +169,7 @@ def settings():
     players = database.players()
     known = {p["username"]: p for p in players}
     tokens = config.get("dink_tokens") or {}
+    flags = config.get("name_flags") or {}
     roster = []
     for index, name in enumerate(config.get("usernames", [])):
         row = known.get(name.lower())
@@ -189,6 +190,9 @@ def settings():
                           if seen is not None else None),
             "last_ago": fmt_ago(seen["happened_at"]) if seen is not None else "",
             "last_exp": fmt_int(seen["total_exp"], dash="") if seen is not None else "",
+            # The two ways a rename shows up - see wom/renames.py.
+            "missing": row is not None and row["status"] == "missing",
+            "reported_as": flags.get(name.lower(), ""),
         })
     # Celebrities get a colour and nothing else here: no webhook, because
     # nobody famous is going to install our plugin for us.
@@ -218,6 +222,7 @@ def settings():
 def save_settings():
     config = Config()
     names = normalise_usernames(request.form.get("usernames", "").splitlines())
+    _follow_a_rename(config, names)
     config["usernames"] = names
     # Somebody moved into the group is out of the celebrities, or they would
     # be in the competition and excluded from it at once.
@@ -278,6 +283,38 @@ def save_settings():
     flash("Settings saved. {} player{} tracked.".format(
         len(names), "" if len(names) == 1 else "s"))
     return redirect(url_for("admin.settings"))
+
+
+def _follow_a_rename(config, names):
+    """Carry a player's history over when the roster swaps one name for one.
+
+    Typing the new name over the old one is how a rename gets fixed by hand,
+    and without this it read as one player leaving and a stranger arriving:
+    the next prune deleted the old history and the new name started from
+    nothing. Only when the hiscores agree - the old name gone, the new one
+    there - so replacing a friend who left with one who joined stays a
+    swap. See wom/renames.py.
+    """
+    before = {n.lower(): n for n in config.get("usernames", [])}
+    after = {n.lower(): n for n in names}
+    left = [before[k] for k in before if k not in after]
+    arrived = [after[k] for k in after if k not in before]
+    if len(left) != 1 or len(arrived) != 1:
+        return
+    database = current_app.config["DATABASE"]
+    reader = hiscores.shared()
+    try:
+        try:
+            reader.fetch(left[0])
+            return
+        except hiscores.HiscoresNotFound:
+            pass
+        reader.fetch(arrived[0])
+    except hiscores.HiscoresError:
+        return
+    if renames.rename_player(database, config, left[0], arrived[0]):
+        flash("{} is now {}: their history came with them.".format(
+            left[0], arrived[0]))
 
 
 def _keep_celebrities_apart(config, prefer_group=True):
@@ -567,6 +604,7 @@ def run(action):
                 job.finish("no players are being tracked", failed=True)
                 return
             update_all(client, database, names, trigger="web",
+                       reader=hiscores.shared(),
                        starting=lambda i, n, name: job.say(
                            "{}/{}  {}".format(i, n, name)),
                        progress=lambda i, n, r: job.say(
@@ -587,6 +625,7 @@ def run(action):
                 database, config, group_only(database.players(), config), owed,
                 progress=lambda e: job.say(
                     "{}: {}".format(e["player"], e["note"]), keep=True))
+            changes.bump("summaries")
             job.finish("summaries finished")
         started = runner.start("summarise", exclusive(work))
 
@@ -601,6 +640,7 @@ def run(action):
                                               say=job.say,
                                               thin=name.lower() in famous)
                 job.say("{}: {}".format(name, note or "nothing to import"), keep=True)
+                changes.bump("history import")
             job.finish("history import finished")
         started = runner.start("backfill", exclusive(work))
 

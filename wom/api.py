@@ -120,8 +120,9 @@ class WomClient:
                     and "api key" in _error_message(resp).lower()):
                 log.warning("Wise Old Man rejected the configured API key; "
                             "continuing without it. Clear or correct it under "
-                            "/admin - anonymous is 20 requests a minute, and a "
-                            "run of six players is twelve every ten.")
+                            "/admin - anonymous is 20 requests a minute, and "
+                            "readings come from the hiscores, so Wise Old Man "
+                            "is only asked to introduce new players.")
                 self.api_key = ""
                 # And slow down to what that allows, or the rest of the run
                 # asks at the keyed rate without the key that bought it.
@@ -151,6 +152,11 @@ class WomClient:
     def get_player(self, username):
         """GET /players/{username} - details plus the latest snapshot."""
         return self._request("GET", "/players/" + _quote(username))
+
+    def get_efficiency_rates(self, algorithm_type, metric):
+        """GET /efficiency/rates - the rates EHP or EHB is worked out from."""
+        return self._request("GET", "/efficiency/rates",
+                             params={"type": algorithm_type, "metric": metric})
 
     def get_achievements(self, username):
         """GET /players/{username}/achievements - every milestone, with dates."""

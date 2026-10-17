@@ -87,7 +87,7 @@ def test_every_tab_but_the_calendar_ones_carries_the_window_controls(client, app
 
 
 def test_updated_is_when_they_last_moved_not_when_we_last_asked(client, app):
-    """We poll every ten minutes, so Wise Old Man's `updatedAt` says "now"
+    """We read everyone every hour, so `updated_at` says "now"
     for an account nobody has logged into in a month."""
     from wom.util import fmt_ago
     database = seed(app)
@@ -212,14 +212,13 @@ def test_unticking_everyone_survives_a_change_of_tab(client, app):
     assert client.get("/api/players" + empty).get_json()["rows"] == []
 
 
-def test_recaps_ticks_reload_the_page_rather_than_doing_nothing(client, app):
-    """It has no JSON endpoint, so its ticks have to reload or they are inert."""
+def test_no_page_reloads_on_a_tick_any_more(client, app):
+    """Recaps had no JSON endpoint, so its ticks reloaded the page. It is now
+    one fragment (fragments.js), fetched again in place like everything else
+    - so nothing needs a reload, and a reader keeps their place."""
     seed(app)
-    assert 'data-reload="1"' in client.get("/recaps").get_data(as_text=True)
-    # Maxing has nothing to reload: the calendar and the standings ignore the
-    # ticks entirely, and the one thing that honours them - the chart - fetches
-    # its own JSON.
-    for path in ("/", "/players", "/export", "/milestones", "/leaderboards"):
+    for path in ("/", "/players", "/export", "/milestones", "/leaderboards",
+                 "/recaps", "/gallery"):
         assert 'data-reload="0"' in client.get(path).get_data(as_text=True), path
 
 
@@ -296,7 +295,7 @@ def test_the_help_page_answers_the_questions_it_is_for(client):
     page = client.get("/help").get_data(as_text=True)
     assert page.count("<h4") >= 5, "one heading per question it answers"
     for phrase in ("Custom Metadata Handler",      # how to set Dink up
-                   "ten minutes",                  # how polling works
+                   "Once an hour",                 # how reading works
                    "log out",                      # why numbers arrive late
                    "You do not need it",           # the WOM plugin
                    "Maxing", "Grinding",           # both competitions exist
@@ -459,8 +458,22 @@ def test_the_status_endpoint_answers_the_change_rather_than_the_prose(client, ap
     settings.save()
 
     after = client.get("/api/status").get_json()
-    assert after["stamp"] == settings["last_run"]
+    assert after["stamp"].startswith(settings["last_run"] + "|")
     assert after["stamp"] != before["stamp"], "a finished run has to be visible"
+
+
+def test_anything_stored_moves_the_stamp_not_only_a_run(client, app):
+    """A Dink event or a round of summaries changes what pages show without
+    a run finishing, and used to sit unseen until the next one did."""
+    from wom import changes
+
+    seed(app)
+    before = client.get("/api/status").get_json()["stamp"]
+    again = client.get("/api/status").get_json()["stamp"]
+    assert again == before, (
+        "a stamp that moves on its own refreshes every page every minute")
+    changes.bump("test")
+    assert client.get("/api/status").get_json()["stamp"] != before
 
 
 def test_the_countdown_has_something_to_count_down_to(client, app):
@@ -472,7 +485,7 @@ def test_the_countdown_has_something_to_count_down_to(client, app):
     seed(app)
     body = client.get("/api/status").get_json()
     ahead = parse_api_time(body["next_at"]) - parse_api_time(body["now"])
-    assert 0 < ahead.total_seconds() <= 600, "the next slot, and it is ahead"
+    assert 0 < ahead.total_seconds() <= 3600, "the next slot, and it is ahead"
 
 
 def test_the_heartbeat_stops_when_the_tripwire_has(client, app, monkeypatch):
@@ -520,3 +533,23 @@ def test_a_page_that_cannot_refetch_is_offered_a_reload_rather_than_given_one(
 
     sidebar = client.get("/static/sidebar.js").get_data(as_text=True)
     assert "if (reloads || !listeners.length) { return false; }" in sidebar
+
+
+def test_server_rendered_parts_are_marked_to_refresh_in_place(client, app,
+                                                              signed_in):
+    """What the server draws and no script refetches is marked, so an open
+    page brings it up to date without a reload - see fragments.js. The
+    leaderboard calendar used to stay stale with no button to say so."""
+    seed(app)
+    expected = {
+        "/leaderboards": ['data-fragment="calendar-maxing"',
+                          'data-fragment="standings-grinding"'],
+        "/recaps": ['data-fragment="recaps"'],
+        "/gallery": ['data-fragment="panel-'],
+        "/admin": ['data-fragment="sessions"'],
+    }
+    for path, markers in expected.items():
+        body = signed_in.get(path).get_data(as_text=True)
+        for marker in markers:
+            assert marker in body, (path, marker)
+    assert "fragments.js" in client.get("/").get_data(as_text=True)

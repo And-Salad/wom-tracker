@@ -9,7 +9,7 @@ Two things are done with each one. It is stored whole, because the detail is
 the point and none of it fits the metrics table: which item, from which drop,
 at which rank. And where the payload happens to *be* a metric we already
 track, the value is written at the moment it happened, so the charts stop
-rounding that moment to the next ten minute poll.
+rounding that moment to the next hourly reading.
 
 Levels are stored but not written through. Our level total lives in the
 `level` column of the `overall` row, beside overall experience in `value`,

@@ -1,0 +1,274 @@
+[
+ {
+  "boss": "abyssal_sire",
+  "rate": 44
+ },
+ {
+  "boss": "alchemical_hydra",
+  "rate": 29
+ },
+ {
+  "boss": "amoxliatl",
+  "rate": 71
+ },
+ {
+  "boss": "araxxor",
+  "rate": 38
+ },
+ {
+  "boss": "artio",
+  "rate": 50
+ },
+ {
+  "boss": "barrows_chests",
+  "rate": 22
+ },
+ {
+  "boss": "brutus",
+  "rate": 250
+ },
+ {
+  "boss": "bryophyta",
+  "rate": 9
+ },
+ {
+  "boss": "callisto",
+  "rate": 142
+ },
+ {
+  "boss": "calvarion",
+  "rate": 45
+ },
+ {
+  "boss": "cerberus",
+  "rate": 54
+ },
+ {
+  "boss": "chambers_of_xeric_challenge_mode",
+  "rate": 3
+ },
+ {
+  "boss": "chambers_of_xeric",
+  "rate": 3.5
+ },
+ {
+  "boss": "chaos_elemental",
+  "rate": 48
+ },
+ {
+  "boss": "chaos_fanatic",
+  "rate": 80
+ },
+ {
+  "boss": "commander_zilyana",
+  "rate": 30
+ },
+ {
+  "boss": "corporeal_beast",
+  "rate": 10
+ },
+ {
+  "boss": "crazy_archaeologist",
+  "rate": 95
+ },
+ {
+  "boss": "dagannoth_prime",
+  "rate": 100
+ },
+ {
+  "boss": "dagannoth_rex",
+  "rate": 100
+ },
+ {
+  "boss": "dagannoth_supreme",
+  "rate": 100
+ },
+ {
+  "boss": "deranged_archaeologist",
+  "rate": 95
+ },
+ {
+  "boss": "doom_of_mokhaiotl",
+  "rate": 18
+ },
+ {
+  "boss": "duke_sucellus",
+  "rate": 37
+ },
+ {
+  "boss": "general_graardor",
+  "rate": 31
+ },
+ {
+  "boss": "giant_mole",
+  "rate": 97
+ },
+ {
+  "boss": "grotesque_guardians",
+  "rate": 34
+ },
+ {
+  "boss": "hespori",
+  "rate": 50
+ },
+ {
+  "boss": "kalphite_queen",
+  "rate": 37
+ },
+ {
+  "boss": "king_black_dragon",
+  "rate": 75
+ },
+ {
+  "boss": "kraken",
+  "rate": 90
+ },
+ {
+  "boss": "kreearra",
+  "rate": 30
+ },
+ {
+  "boss": "kril_tsutsaroth",
+  "rate": 32
+ },
+ {
+  "boss": "lunar_chests",
+  "rate": 18
+ },
+ {
+  "boss": "mad_angel",
+  "rate": 60
+ },
+ {
+  "boss": "maggot_king",
+  "rate": 30
+ },
+ {
+  "boss": "mimic",
+  "rate": 50
+ },
+ {
+  "boss": "nex",
+  "rate": 20
+ },
+ {
+  "boss": "nightmare",
+  "rate": 11
+ },
+ {
+  "boss": "obor",
+  "rate": 12
+ },
+ {
+  "boss": "phantom_muspah",
+  "rate": 27
+ },
+ {
+  "boss": "phosanis_nightmare",
+  "rate": 9.3
+ },
+ {
+  "boss": "sarachnis",
+  "rate": 67
+ },
+ {
+  "boss": "scorpia",
+  "rate": 80
+ },
+ {
+  "boss": "scurrius",
+  "rate": 60
+ },
+ {
+  "boss": "shellbane_gryphon",
+  "rate": 95
+ },
+ {
+  "boss": "skotizo",
+  "rate": 38
+ },
+ {
+  "boss": "sol_heredit",
+  "rate": 2.7
+ },
+ {
+  "boss": "spindel",
+  "rate": 50
+ },
+ {
+  "boss": "the_corrupted_gauntlet",
+  "rate": 7.2
+ },
+ {
+  "boss": "the_hueycoatl",
+  "rate": 20
+ },
+ {
+  "boss": "the_gauntlet",
+  "rate": 10
+ },
+ {
+  "boss": "the_leviathan",
+  "rate": 27
+ },
+ {
+  "boss": "the_royal_titans",
+  "rate": 55
+ },
+ {
+  "boss": "the_whisperer",
+  "rate": 21
+ },
+ {
+  "boss": "theatre_of_blood_hard_mode",
+  "rate": 3
+ },
+ {
+  "boss": "theatre_of_blood",
+  "rate": 3.2
+ },
+ {
+  "boss": "thermonuclear_smoke_devil",
+  "rate": 100
+ },
+ {
+  "boss": "tombs_of_amascut_expert",
+  "rate": 3
+ },
+ {
+  "boss": "tombs_of_amascut",
+  "rate": 3.7
+ },
+ {
+  "boss": "tzkal_zuk",
+  "rate": 1
+ },
+ {
+  "boss": "tztok_jad",
+  "rate": 2.2
+ },
+ {
+  "boss": "vardorvis",
+  "rate": 37
+ },
+ {
+  "boss": "venenatis",
+  "rate": 80
+ },
+ {
+  "boss": "vetion",
+  "rate": 39
+ },
+ {
+  "boss": "vorkath",
+  "rate": 34
+ },
+ {
+  "boss": "yama",
+  "rate": 18
+ },
+ {
+  "boss": "zulrah",
+  "rate": 42
+ }
+]

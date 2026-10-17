@@ -5,7 +5,7 @@ every time a box in the sidebar is ticked. Each request used to start from
 nothing: the group tiles and the standings added up the same gains for the
 same players, the skill and boss cards read them again, and ticking an eighth
 account recomputed the seven already on screen. None of it had changed - the
-readings only move when an update lands, every ten minutes.
+readings only move when an update lands, hourly or at a logout.
 
 So a player's figures for a window are kept here, keyed by what they were
 asked for and by a `version` - see Database.data_version - that moves whenever

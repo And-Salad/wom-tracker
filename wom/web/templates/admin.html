@@ -26,8 +26,9 @@
     <div class="card-head">
       <div>
         <h3>Run something</h3>
-        <p class="hint">The schedule runs on its own every ten minutes; these are
-          for when you do not want to wait.</p>
+        <p class="hint">The schedule runs on its own every hour, and Dink
+          logouts are read as they happen; these are for when you do not want
+          to wait.</p>
       </div>
       <form method="post" action="/admin/logout" class="pick">
         <button type="submit">Sign out</button>
@@ -216,7 +217,17 @@
         <tr><th>Player</th><th>Colour</th><th class="num">Snapshots</th><th></th></tr>
         {% for player in roster + famous %}
           <tr>
-            <td>{{ player.display_name }}</td>
+            <td>{{ player.display_name }}
+              {% if player.missing %}
+                <br><span class="dim">not on the hiscores - renamed? Type the
+                  new name over the old one above.</span>
+              {% endif %}
+              {% if player.reported_as %}
+                <br><span class="dim">Dink reports this token as
+                  {{ player.reported_as }}, still on the hiscores alongside -
+                  an alt?</span>
+              {% endif %}
+            </td>
             <td>
               <form method="post" action="/admin/colour" class="row">
                 <input type="hidden" name="username" value="{{ player.username }}">
@@ -237,10 +248,11 @@
   <div class="card">
     <h3>Session logins</h3>
     <p class="hint">
-      Wise Old Man can infer that a session ended, and cannot see one begin at
-      all - the hiscores do not move until logout. Dink reports both ends as
-      they happen, so a session that crossed midnight is credited to both days
-      rather than landing whole in the ten minutes we noticed it in.
+      The hiscores can show that a session ended, and cannot show one begin at
+      all - they do not move until logout. Dink reports both ends as they
+      happen, so a session that crossed midnight is credited to both days
+      rather than landing whole in the hour we noticed it in, and a logout
+      prompts a reading of that player's hiscores straight away.
     </p>
     <p class="hint">
       Each player installs <strong>Dink</strong> from the RuneLite Plugin Hub,
@@ -268,7 +280,8 @@
       every fiftieth. The counts below are session events, then what arrived
       during play.
     </p>
-    <div class="scroll">
+    {# Kept current as events land - see fragments.js. #}
+    <div class="scroll" data-fragment="sessions">
       <table>
         <tr><th>Player</th><th>Webhook URL</th><th>Status</th>
           <th class="num">Events</th><th>Last seen</th><th></th></tr>

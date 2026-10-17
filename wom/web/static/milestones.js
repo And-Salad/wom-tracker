@@ -154,7 +154,7 @@
     // server rendered: with script there is a button under the table, and
     // the button is where the rest of the list is.
     count.textContent =
-      text + ", newest first. A ~ marks a date Wise Old Man knows only roughly.";
+      text + ", newest first. A ~ marks a date known only roughly.";
   }
 
   if (types) {
@@ -183,12 +183,20 @@
   }
 
   var seq = 0;
-  var latest = "";
+  /* The query the feed on screen was rendered for. Seeded from the sidebar
+     rather than left empty: empty never matched, so the first refresh after
+     a plain page load - new readings landing, nothing touched - read as a
+     different list and cut the feed back to one page under the reader, and
+     "Load more" before any refresh asked for no window at all. */
+  var latest = window.Sidebar.query();
 
   function load(query) {
     var mine = ++seq;
     fetch("/api/milestones?" + query + "&limit=" + asked)
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) { throw new Error("HTTP " + r.status); }
+        return r.json();
+      })
       .then(function (data) {
         if (mine !== seq) { return; }      // an older reply, now out of date
         if (data.page) { PAGE = data.page; }

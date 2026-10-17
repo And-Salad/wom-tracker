@@ -50,6 +50,13 @@
     apply();
   }
 
+  /* Whose pictures show is a query the server answers, so a tick is each
+     panel fetched again and moved across in place (fragments.js). Until
+     this the ticks here did nothing at all. */
+  if (window.Sidebar && window.WOM && window.WOM.Fragments) {
+    window.Sidebar.onChange(function () { window.WOM.Fragments.refresh(); });
+  }
+
   var viewer = document.getElementById("viewer");
   var full = document.getElementById("viewer-image");
   var caption = document.getElementById("viewer-caption");

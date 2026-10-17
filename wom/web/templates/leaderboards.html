@@ -45,7 +45,7 @@
     {# The month's race beside the two months it is run over. A wrapping row
        rather than a fixed two columns: where there is not room for both, the
        table drops beneath the squares instead of pushing the page sideways. #}
-    <div class="calendar-row">
+    <div class="calendar-row" data-fragment="calendar-{{ board.key }}">
     <div class="months">
       {% for month in board.calendar.months %}
         <div class="month">
@@ -120,7 +120,7 @@
      the day still running, or the one picked. Its own card rather than a
      panel beside the months: squeezed side by side the table had to wrap its
      own headings to fit a column it never had room for. #}
-  <div class="card standing">
+  <div class="card standing" data-fragment="standings-{{ board.key }}">
     <div class="card-head">
       <div>
       {% if picked %}

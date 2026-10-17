@@ -2,14 +2,17 @@
 
 [![tests](https://github.com/And-Salad/wom-tracker/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/And-Salad/wom-tracker/actions/workflows/tests.yml)
 
-A web app that keeps a list of Old School RuneScape accounts updated from Wise
-Old Man every ten minutes, charts what changed, runs a daily maxing
+A web app that keeps a list of Old School RuneScape accounts updated from the
+OSRS hiscores every hour (and at logout, with Dink), charts what changed, runs a daily maxing
 leaderboard, and writes short recaps of it with the Claude API. One process
 serves the pages and runs the schedule; the charts are drawn in the browser
 with D3.
 
-Built against the [Wise Old Man v2 API](https://docs.wiseoldman.net/api). MIT
-licensed - see [LICENSE](LICENSE). This file is how to run it; why it is
+Readings come from Jagex's own hiscores; new players, their history and the
+efficiency rates come from the [Wise Old Man v2 API](https://docs.wiseoldman.net/api).
+EHP, EHB and milestones are worked out here by ports of Wise Old Man's own
+algorithm and achievement templates ([MIT](https://github.com/wise-old-man/wise-old-man),
+(c) Wise Old Man). MIT licensed - see [LICENSE](LICENSE). This file is how to run it; why it is
 shaped the way it is lives in [docs/](docs), listed at the bottom.
 
 One thing to know before running it: **recaps are Anthropic-only**. They are
@@ -126,7 +129,7 @@ admin.
 | `WOM_DATA_DIR` | Where the database, settings and prompts live. Defaults to `data/` beside the code. |
 | `WOM_TRUSTED_IP_HEADER` | The proxy header carrying the real client address. See [Knowing who is calling](docs/security.md#knowing-who-is-calling). |
 | `ANTHROPIC_API_KEY` | The recaps' key. Supplied here it cannot be read or changed from the admin page, which is the point. |
-| `WOM_API_KEY` | Optional Wise Old Man key. Without one the API allows 20 requests a minute, which is ample: six players is twelve requests every ten minutes. |
+| `WOM_API_KEY` | Optional Wise Old Man key. Without one the API allows 20 requests a minute, which is ample: readings come from the hiscores, and Wise Old Man is only asked to introduce a new player and for its efficiency rates. |
 | `WOM_INSECURE_COOKIE` | Drops `Secure` from the session cookie, for reaching admin over plain HTTP on a LAN. Not for anything public. |
 | `TZ` | Only affects what the logs print. Day boundaries follow the time zone set under Admin. |
 
@@ -308,7 +311,7 @@ wom/
   build.py           which commit is running, for confirming a deploy
   db.py              the name everything imports; wom/store is the code
   updater.py         one update pass over the username list
-  scheduler.py       the ten-minute timer, the configured zone, the busy flag
+  scheduler.py       the hourly timer, the configured zone, the busy flag
   periods.py         the windows: all five for a note, day and month for a recap
   summaries.py       the digest, the Claude call and the once-a-day hook
   winners.py         the Maxing Leaderboard rule: who took each day and month

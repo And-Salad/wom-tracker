@@ -1,9 +1,18 @@
-"""Runs one update pass over the tracked username list."""
+"""Runs one update pass over the tracked username list.
+
+Readings come from Jagex's hiscores (wom/hiscores.py), once an hour for
+everyone and at each logout for anyone with Dink. Wise Old Man is asked only
+to introduce a player we have never stored - who they are, their account
+type, and the history it holds - and for its efficiency rates. It used to be
+asked to update every player every ten minutes, which its documentation asks
+trackers not to do and which made each run a minute and a half of waiting on
+its anonymous rate limit for numbers the hiscores hand over in a second.
+"""
 
 import logging
 from datetime import datetime, timedelta, timezone
 
-from . import scheduler, sessions
+from . import efficiency, hiscores, milestones, scheduler, sessions
 from .api import SNAPSHOT_PAGE_SIZE, WomError
 from .util import parse_api_time
 
@@ -28,11 +37,11 @@ class PlayerResult:
 
 # How far back a run reconsiders session attribution. Long enough that a
 # logout arriving late still corrects the reading it belongs to, short enough
-# that this is a handful of rows every ten minutes rather than a sweep.
+# that this is a handful of rows a run rather than a sweep.
 SESSION_LOOKBACK_DAYS = 3
 
 
-def _place_sessions(database, usernames):
+def place_sessions(database, usernames):
     """Credit each session's gain to the time it was earned in.
 
     Here rather than in the caller because all three entry points - the
@@ -59,25 +68,31 @@ def _place_sessions(database, usernames):
 
 
 def update_all(client, database, usernames, trigger="manual", progress=None,
-               starting=None, cancelled=None, achievements=True, say=None,
-               thin=()):
+               starting=None, cancelled=None, daily=False, say=None,
+               thin=(), reader=None):
     """Refresh every username in turn, saving each result as it arrives.
+
+    `client` is Wise Old Man's, for introductions, history and rates;
+    `reader` is the hiscores client every reading comes from. Without one
+    the readings fall back to Wise Old Man's stored profile - a read, never
+    an update - which is what a caller with no hiscores client gets.
 
     `starting(index, total, username)` fires before each player and
     `progress(index, total, PlayerResult)` after it, so a UI can show live
     feedback across the slow bits - importing history takes several calls.
-    `cancelled()` is polled to allow an early stop. `achievements=False` skips
-    the milestone fetch, which is a request per player for something that
-    moves rarely - at a run every ten minutes it is worth doing hourly rather
-    than every time. `say(text)` hears about progress inside one player, which
-    is only ever a history import. `thin` names the accounts whose imported
-    history is thinned as it lands - the celebrities. Returns the results.
+    `cancelled()` is polled to allow an early stop. `daily` also re-checks
+    each account's type against the iron hiscores, which changes about as
+    often as somebody dies on a hardcore. `say(text)` hears about progress
+    inside one player, which is only ever a history import. `thin` names the
+    accounts whose imported history is thinned as it lands - the
+    celebrities. Returns the results.
     """
     usernames = list(usernames)
     thin = {name.lower() for name in thin}
     total = len(usernames)
     run_id = database.start_run(trigger, roster=total)
     results = []
+    refresh_rates(client, database)
 
     for index, username in enumerate(usernames, start=1):
         if cancelled is not None and cancelled():
@@ -88,8 +103,9 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
                 starting(index, total, username)
             except Exception:
                 log.exception("starting callback failed")
-        result = update_one(client, database, username, achievements, say,
-                            thin=username.lower() in thin)
+        result = update_one(client, database, username, say=say,
+                            thin=username.lower() in thin, reader=reader,
+                            daily=daily)
         results.append(result)
         if progress is not None:
             try:
@@ -100,136 +116,220 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
     ok = sum(1 for r in results if r.ok)
     failed = [r for r in results if not r.ok]
     imported = sum(r.imported for r in results)
-    milestones = sum(r.milestones for r in results)
+    found = sum(r.milestones for r in results)
     headline = []
     if imported:
         headline.append("imported {} historic snapshot{}".format(
             imported, "" if imported == 1 else "s"))
-    if milestones:
+    if found:
         headline.append("{} new milestone{}".format(
-            milestones, "" if milestones == 1 else "s"))
+            found, "" if found == 1 else "s"))
     headline.extend("{}: {}".format(r.username, r.message) for r in failed[:10])
-    _place_sessions(database, usernames)
+    place_sessions(database, usernames)
     database.finish_run(run_id, ok, len(failed), "; ".join(headline))
     log.info("update run finished: %d ok, %d failed, %d imported, %d milestones",
-             ok, len(failed), imported, milestones)
+             ok, len(failed), imported, found)
     return results
 
 
-def update_one(client, database, username, achievements=True, say=None,
-               thin=False):
-    """Ask the API to refresh one player, then store whatever we get back.
+def update_one(client, database, username, say=None, thin=False, reader=None,
+               daily=False):
+    """Read one player's hiscores and store what they say.
 
-    A failed refresh still gets a GET, so a player who was updated moments ago
-    (or is temporarily off the hiscores) keeps contributing current data. The
-    first time we see a player, their stored history is imported too.
+    A player we have never stored is introduced through Wise Old Man first,
+    because that is where their id, account type and history come from - see
+    register(). After that every reading is the hiscores'.
+
+    A hiscores failure other than "no such player" falls back to Wise Old
+    Man's stored profile, so an outage at Jagex costs freshness rather than
+    the reading. "No such player" does not: the account has most likely been
+    renamed, and Wise Old Man's copy of the old name would read as current.
     """
-    details = None
-    message = ""
-    try:
-        details = client.update_player(username)
-        message = "updated"
-    except WomError as exc:
-        message = str(exc)
-        log.warning("update failed for %s: %s", username, exc)
-        try:
-            details = client.get_player(username)
-            message = "{} (used cached profile)".format(message)
-        except WomError as exc2:
-            log.warning("fetch failed for %s: %s", username, exc2)
-            return PlayerResult(username, False, str(exc2))
-
-    # Wise Old Man hands back whatever capitalisation it holds, which for some
-    # accounts is all lower case. The roster is where a person wrote the name
-    # out, so where the two differ only in case, theirs is the one to show.
-    details = _spelled_as_asked(details, username)
-
-    try:
-        player_id = database.save_player_details(details)
-    except Exception as exc:
-        log.exception("saving %s failed", username)
-        return PlayerResult(username, False, "could not save: {}".format(exc))
+    row = database.player_by_username(username)
+    if row is None:
+        player_id, message = register(client, database, username)
+        if player_id is None:
+            return PlayerResult(username, False, message)
+        row = database.player_by_username(username)
+        # The run asked for the types it already tracked; this one may be new.
+        refresh_rates(client, database,
+                      {efficiency.algorithm_type(row["type"])})
+    player_id = row["id"]
 
     imported = 0
+    message = "updated"
     if database.needs_backfill(player_id):
         imported, backfill_note = backfill_player(client, database, username,
                                                   player_id, say=say, thin=thin)
         if backfill_note:
             message = "{}, {}".format(message, backfill_note)
 
-    recovered = collect_recent(client, database, username, player_id)
-    if recovered:
-        message = "{}, {} reading{} we had missed".format(
-            message, recovered, "" if recovered == 1 else "s")
+    found = 0
+    if reader is not None:
+        try:
+            found = read_hiscores(reader, database, row, daily=daily)["milestones"]
+        except hiscores.HiscoresNotFound:
+            # Shown on the admin page beside the name, for somebody to
+            # follow by hand - wom/renames.py says why it is not automatic.
+            database.mark_missing(player_id)
+            return PlayerResult(username, False,
+                                "not on the hiscores - renamed?", imported)
+        except hiscores.HiscoresError as exc:
+            log.warning("hiscores failed for %s: %s", username, exc)
+            failure = _from_wise_old_man(client, database, username)
+            if failure is not None:
+                return PlayerResult(username, False, "{}; {}".format(
+                    exc, failure), imported)
+            message = "{} (hiscores unavailable, used Wise Old Man's copy)".format(
+                message)
+    else:
+        failure = _from_wise_old_man(client, database, username)
+        if failure is not None:
+            return PlayerResult(username, False, failure, imported)
 
-    milestones = (sync_achievements(client, database, username, player_id)
-                  if achievements else 0)
-    if milestones:
+    if found:
         message = "{}, {} new milestone{}".format(
-            message, milestones, "" if milestones == 1 else "s")
-
-    return PlayerResult(username, True, message, imported, milestones)
-
-
-# The furthest back a pass will re-read a player's history, and how much it
-# overlaps what it already has.
-#
-# Normally the window is tiny: everything up to our own last reading is
-# already stored, so asking from just before it returns a snapshot or two.
-# Asked for a flat three hours it returned every ten-minute reading in them -
-# eighteen full snapshots per player per run, nearly all of which we already
-# had - and that, not the work, was what turned an eighteen second pass into
-# a minute. After an outage the window widens on its own, because the last
-# reading is older.
-RECENT_MINUTES = 180
-OVERLAP_MINUTES = 15
+            message, found, "" if found == 1 else "s")
+    return PlayerResult(username, True, message, imported, found)
 
 
-def _recent_since(database, player_id, now=None):
-    """When to re-read a player's history from."""
-    now = now or datetime.now(timezone.utc)
-    floor = now - timedelta(minutes=RECENT_MINUTES)
-    latest = database.latest_snapshot(player_id)
-    held = parse_api_time(latest["captured_at"]) if latest else None
-    if held is None:
-        return floor
-    # Never ask from the future. A client's clock may run fast, its logout is
-    # believed within half an hour of ours, and attribution writes a reading
-    # at that moment - so the newest reading we hold can be ahead of now, and
-    # a window starting there would ask for a stretch that has not happened
-    # and quietly recover nothing until real time caught up.
-    return min(now, max(floor, held - timedelta(minutes=OVERLAP_MINUTES)))
+def register(client, database, username):
+    """Introduce a player through Wise Old Man. Returns (player_id, note).
 
-
-def collect_recent(client, database, username, player_id):
-    """Fetch readings Wise Old Man took that our own polling never saw.
-
-    `update_player` hands back the latest snapshot and nothing else, so a
-    reading it made in between - most often a player's own client pushing at
-    logout - is invisible to us however often we ask. It sits in the history
-    endpoint, which is what this reads.
-
-    That matters at a day boundary. Somebody who logs out at 23:55 is noticed
-    by our next poll at 00:10 and their whole evening lands on the wrong day;
-    the push Wise Old Man recorded at 23:55 puts it back where it happened,
-    for every account, with nothing for anyone to install.
-
-    Never allowed to break a run: the update itself is the thing worth having.
+    Asked for what it already holds first. Only an account it has never
+    seen is updated - the one POST this app still makes, once per player,
+    because that is what adds them to Wise Old Man at all.
     """
-    since = _recent_since(database, player_id)
     try:
-        found = client.get_snapshots(username, start_date=since)
+        details = client.get_player(username)
     except WomError as exc:
-        log.info("could not re-read %s's recent history: %s", username, exc)
-        return 0
-    except Exception:
-        log.exception("re-reading %s's recent history crashed", username)
-        return 0
-    kept = database.save_snapshots(player_id, found or [])
-    if kept:
-        log.info("recovered %d reading%s for %s that our polling never saw",
-                 kept, "" if kept == 1 else "s", username)
-    return kept
+        if exc.status != 404:
+            log.warning("could not look %s up: %s", username, exc)
+            return None, str(exc)
+        try:
+            details = client.update_player(username)
+        except WomError as exc2:
+            log.warning("could not register %s: %s", username, exc2)
+            return None, str(exc2)
+    details = _spelled_as_asked(details, username)
+    try:
+        player_id = database.save_player_details(details)
+    except Exception as exc:
+        log.exception("saving %s failed", username)
+        return None, "could not save: {}".format(exc)
+    # Their back catalogue of milestones, dated by Wise Old Man. Only ever
+    # asked here: from now on, crossings are noticed in our own readings.
+    try:
+        database.save_achievements(player_id, client.get_achievements(username))
+    except WomError as exc:
+        log.warning("milestones unavailable for %s: %s", username, exc)
+    return player_id, "registered"
+
+
+def _from_wise_old_man(client, database, username):
+    """Store Wise Old Man's copy of a player. Returns an error, or None.
+
+    A read of what it already holds, never an update - the fallback for a
+    run that cannot reach the hiscores.
+    """
+    try:
+        details = client.get_player(username)
+    except WomError as exc:
+        log.warning("fetch failed for %s: %s", username, exc)
+        return str(exc)
+    try:
+        database.save_player_details(_spelled_as_asked(details, username))
+    except Exception as exc:
+        log.exception("saving %s failed", username)
+        return "could not save: {}".format(exc)
+    return None
+
+
+def read_hiscores(reader, database, player, daily=False, now=None):
+    """Take one reading from the hiscores and store it, with what follows.
+
+    The one path every reading takes, scheduled or prompted by a logout:
+    convert to the stored shape, work out efficiency, store, then look for
+    milestones crossed since the reading before. `player` is the players
+    row. Raises HiscoresError (or HiscoresNotFound) when the lookup fails.
+
+    Returns {"moved": whether any number changed, "milestones": how many
+    were new}. A logout's reading is retried when nothing moved, because the
+    hiscores can lag the logout screen by a moment.
+    """
+    username = player["username"]
+    asked = player["display_name"] or username
+    payload = reader.fetch(asked)
+    stamp = _stamp(now or datetime.now(timezone.utc))
+    snap = hiscores.to_snapshot(payload, stamp)
+    exp = hiscores.overall(payload)
+
+    player_type = player["type"]
+    if daily and exp is not None:
+        try:
+            checked = reader.account_type(asked, exp)
+            if checked != player_type:
+                log.info("%s is now %s (was %s)", username, checked,
+                         player_type)
+                database.set_player_type(player["id"], checked)
+                player_type = checked
+        except hiscores.HiscoresError as exc:
+            log.info("could not check %s's account type: %s", username, exc)
+
+    algorithm = efficiency.algorithm_for(database, player_type)
+    ehp, ehb, ttm = efficiency.annotate(snap, algorithm)
+
+    before = database.values_at(player["id"])
+    latest = database.latest_snapshot(player["id"])
+    after = milestones.values_of(snap)
+    moved = any(before.get(metric) != value for metric, value in after.items()
+                if value is not None and value >= 0)
+
+    database.save_hiscores_reading(
+        player["id"], snap,
+        combat_level=hiscores.combat_level(hiscores.levels(snap)),
+        exp=exp, ehp=ehp, ehb=ehb, ttm=ttm)
+
+    found = 0
+    crossed = milestones.crossed(before, after,
+                                 latest["captured_at"] if latest else None,
+                                 stamp)
+    if crossed:
+        found = database.save_achievements(player["id"], crossed)
+    return {"moved": moved, "milestones": found}
+
+
+def _stamp(moment):
+    """A UTC moment written the way every stored reading is."""
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+# How old the stored efficiency rates may get before a run asks again.
+RATES_MAX_AGE = timedelta(hours=20)
+
+
+def refresh_rates(client, database, types=None, now=None):
+    """Re-read Wise Old Man's efficiency rates for every type we track.
+
+    At most daily, and never fatal: rates change with game updates, a few
+    times a year, so yesterday's are as good as today's for any run that
+    cannot reach them.
+    """
+    now = now or datetime.now(timezone.utc)
+    if types is None:
+        types = {efficiency.algorithm_type(p["type"])
+                 for p in database.players()} or {"main"}
+    for kind in sorted(types):
+        held = parse_api_time(database.efficiency_rates(kind)[2])
+        if held is not None and now - held < RATES_MAX_AGE:
+            continue
+        try:
+            for metric in ("ehp", "ehb"):
+                database.save_efficiency_rates(
+                    kind, metric, client.get_efficiency_rates(kind, metric))
+            log.info("refreshed %s efficiency rates", kind)
+        except WomError as exc:
+            log.warning("could not refresh %s efficiency rates: %s", kind, exc)
 
 
 def _spelled_as_asked(details, username):
@@ -254,25 +354,6 @@ def _spelled_as_asked(details, username):
     details = dict(details)
     details["displayName"] = username
     return details
-
-
-def sync_achievements(client, database, username, player_id):
-    """Store any milestones Wise Old Man has recorded that we have not seen.
-
-    The endpoint returns a player's whole achievement list, so the first call
-    fills in their back catalogue and later ones only add what is new.
-    """
-    try:
-        achievements = client.get_achievements(username)
-    except WomError as exc:
-        # Milestones are a bonus: never fail an update over them.
-        log.warning("achievements failed for %s: %s", username, exc)
-        return 0
-    try:
-        return database.save_achievements(player_id, achievements)
-    except Exception:
-        log.exception("storing achievements for %s failed", username)
-        return 0
 
 
 # How many pages of history one update pass imports for a friend. Theirs is

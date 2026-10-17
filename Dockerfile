@@ -1,4 +1,4 @@
-# The dashboard, the ten-minute update schedule and the summaries, in one
+# The dashboard, the hourly update schedule and the summaries, in one
 # container.
 # The charts are drawn in the browser, so nothing here needs a display.
 #
@@ -56,5 +56,5 @@ VOLUME /data
 EXPOSE 8000
 
 # --with-scheduler is what makes this the whole application: one process runs
-# the ten-minute updates and the summaries as well as serving the pages.
+# the hourly updates and the summaries as well as serving the pages.
 CMD ["python", "web_app.py", "--host", "0.0.0.0", "--port", "8000", "--with-scheduler"]

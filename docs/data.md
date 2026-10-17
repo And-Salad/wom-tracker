@@ -6,22 +6,34 @@ them, and what ends up on disk. Operational instructions are in the
 
 ## Schedule
 
-Updates run **every ten minutes**, on the wall-clock boundary. Milestones are
-fetched on the hour rather than every pass - they move rarely and cost a request
-per player. A slot that passed while the machine was off is caught up when it
-starts.
+Readings come from **Jagex's own hiscores** (`wom/hiscores.py`), **every hour**
+on the wall-clock boundary, and for a player running Dink **at each logout** as
+well (`wom/live_fetch.py`). The hiscores only change at logout, so the logout is
+the moment worth reading; the hourly run is the floor for everyone else. A slot
+that passed while the machine was off is caught up when it starts.
+
+Wise Old Man is asked only to introduce a player we have never stored - their
+id, account type, history and milestones to date - and, at most daily, for its
+efficiency rates. EHP, EHB and milestones are worked out here from our own
+readings, by ports of its own algorithm and templates (`wom/efficiency.py`,
+`wom/milestones.py`) held to its answers by `tests/test_efficiency.py`. The
+first run after midnight also re-checks each account's type against the iron
+hiscores.
 
 Everything dated - day boundaries, the calendar, the window each recap covers
 - follows midnight in the **time zone set under Admin**, so it tracks that
-place's daylight saving rather than the server's. The ten-minute interval itself
+place's daylight saving rather than the server's. The hourly interval itself
 is `SLOT_MINUTES` in `wom/scheduler.py`.
 
 ### Noticing a run from an open page
 
 A page left open used to show the figures it was opened with, under a header
 whose "updated 2m ago" went on saying so an hour later. So a tab that is being
-looked at asks `/api/status` once a minute whether the stored `last_run` has
-moved, and the header counts down to the next slot in the meantime.
+looked at asks `/api/status` once a minute whether anything has changed - a
+run, a logout's reading, a Dink event, a recap, midnight (`wom/changes.py`) -
+and the header counts down to the next slot in the meantime. Parts of a page
+the server rendered are marked `data-fragment` and refreshed in place by
+fetching the page again (`fragments.js`), so no page needs a reload.
 
 When it has moved, the pages that fetch their own figures refetch in place -
 the same query they already hold, so a Milestones feed somebody has loaded
