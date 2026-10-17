@@ -348,14 +348,14 @@ def test_an_update_run_places_the_sessions_it_just_learned_about(db, monkeypatch
         db.record_session_event("zezima", kind, {"total_exp": None}, {}, when=when)
 
     monkeypatch.setattr(updater, "SESSION_LOOKBACK_DAYS", 3650)
-    assert updater._place_sessions(db, ["zezima"]) > 0
+    assert updater.place_sessions(db, ["zezima"]) > 0
     # Two: what had been earned by midnight, and the whole of it at the
     # moment the session closed.
     assert db.query_one("SELECT COUNT(*) AS n FROM snapshots"
                         " WHERE origin='derived'")["n"] == 2
 
 
-def test_a_failure_to_place_sessions_never_breaks_the_run(db, monkeypatch):
+def test_a_failure_toplace_sessions_never_breaks_the_run(db, monkeypatch):
     from wom import updater
 
     db.save_player_details({"id": 1, "username": "zezima",
@@ -364,12 +364,12 @@ def test_a_failure_to_place_sessions_never_breaks_the_run(db, monkeypatch):
     def explode(*_args, **_kwargs):
         raise RuntimeError("no")
     monkeypatch.setattr(updater.sessions, "attribute", explode)
-    assert updater._place_sessions(db, ["zezima"]) == 0, "swallowed, not raised"
+    assert updater.place_sessions(db, ["zezima"]) == 0, "swallowed, not raised"
 
 
 def test_placing_sessions_skips_a_name_we_have_never_stored(db):
     from wom import updater
-    assert updater._place_sessions(db, ["nobody-here"]) == 0
+    assert updater.place_sessions(db, ["nobody-here"]) == 0
 
 
 def history(count, bosses=None):

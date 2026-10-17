@@ -58,6 +58,8 @@ def create_app(limits=None):
     # Set by web_app.py when it starts the scheduler; None when the dashboard
     # is served without one, in which case there is nothing to collide with.
     app.config.setdefault("SCHEDULER", None)
+    # Likewise the worker that reads a player's hiscores at logout.
+    app.config.setdefault("LOGOUTS", None)
 
     _configure_admin(app)
     app.register_blueprint(pages_blueprint)

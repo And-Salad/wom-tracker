@@ -114,6 +114,12 @@ def start_scheduler(app):
             log.exception("thinning old history failed")
 
     scheduler = SlotScheduler(config, job)
+    # Dink's logouts prompt a reading of their own - see wom/live_fetch.py.
+    # Only alongside the schedule: a dashboard served without one is not
+    # the process that keeps readings current.
+    from wom.live_fetch import LogoutFetcher
+    app.config["LOGOUTS"] = LogoutFetcher(app.config["DATABASE"],
+                                          hiscores.shared()).start()
     # The admin page's buttons take the same "something is running" flag, so a
     # scheduled slot cannot fire into the middle of a manual run.
     app.config["SCHEDULER"] = scheduler

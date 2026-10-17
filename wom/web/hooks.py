@@ -5,17 +5,15 @@ URL and it POSTs a JSON body at both ends of a session: a login six seconds
 after the client finishes logging in, carrying that account's own reading of
 its experience, and a logout, which carries only the fact and the moment.
 
-Between them that is a session, measured. Wise Old Man can infer an ending
-from the hiscores moving and cannot see a beginning at all, so a three hour
-session reaches us as a single jump and lands in whichever ten minute window
-we happened to notice it in. The logout is also better than what we infer:
-it is the moment itself rather than a ten minute bracket around it, and it
-arrives however little was gained, where the hiscore route stays silent
-under ten thousand experience.
+Between them that is a session, measured. The hiscores can show an ending
+by moving and cannot show a beginning at all, so a three hour session reaches
+us as a single jump and lands in whichever hour we happened to notice it in.
+The logout is also better than what we infer: it is the moment itself rather
+than a bracket around it, and it arrives however little was gained.
 
-Nothing here changes a number anyone sees. It records logins and stops; what
-to do with them is a decision to make against real data rather than in
-advance.
+A logout also prompts a reading of that player's hiscores a few seconds
+later (wom/live_fetch.py), so their session is on the dashboard within
+seconds of leaving the game rather than at the next hourly run.
 
 The plugin cannot send a header, so the URL is the entire credential - the
 same bargain Discord's own webhook URLs make. Every player therefore gets
@@ -30,7 +28,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, Response, current_app, request
 
-from .. import gallery, gameplay
+from .. import changes, gallery, gameplay
 from ..config import Config
 from ..util import api_stamp, is_local_host, parse_api_time
 
@@ -163,6 +161,7 @@ def dink(token):
         picture = _picture(database, username, playing, moment, kept)
         log.info("dink: %s reported a %s (%d rows%s)", username, playing,
                  written, ", with a picture" if picture else "")
+        changes.bump("dink " + playing)
         return Response(status=204)
 
     extra = kept.get("extra")
@@ -174,6 +173,14 @@ def dink(token):
     else:
         log.info("dink: %s %s (world %s, %s xp)", username, kind,
                  reading.get("world"), reading.get("total_exp"))
+        changes.bump("dink " + kind)
+    # The hiscores have just changed, so this is the moment to read them -
+    # see wom/live_fetch.py. Even for a repeat: Dink retrying a logout we
+    # already hold still means the player has left, and the reading coalesces.
+    # The name Dink reports rides along, which is how a rename is noticed.
+    logouts = current_app.config.get("LOGOUTS")
+    if kind == "logout" and logouts is not None:
+        logouts.enqueue(username, kept.get("playerName"))
     return Response(status=204)
 
 

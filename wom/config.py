@@ -52,12 +52,13 @@ DEFAULTS = {
     # Anything the app writes has to be declared here: save() keeps only the
     # keys it knows, so a key that
     # is not listed is written and then dropped on the next read - which had
-    # this compacting, and vacuuming, on every ten-minute run.
+    # this compacting, and vacuuming, on every run.
     "last_compact": "",
     # Optional Wise Old Man API key. Without one the API allows 20 req/min,
-    # which is ample here - a run of six players is twelve requests every ten
-    # minutes. A key that the API rejects is worse than none: it answers 403
-    # to every request, so the client drops it and carries on without.
+    # which is ample here - readings come from Jagex's hiscores, and Wise Old
+    # Man is only asked to introduce a new player and for its rates. A key
+    # that the API rejects is worse than none: it answers 403 to every
+    # request, so the client drops it and carries on without.
     "api_key": "",
     # The clock everything dated runs on: day boundaries, the calendar, and
     # the window each round-up is written for. An IANA name, so daylight
@@ -89,6 +90,10 @@ DEFAULTS = {
     # a request without trusting the name in the body, and one leak is
     # revoked alone. Issued and revoked from the admin page.
     "dink_tokens": {},
+    # Names Dink reported for a token that differ from its owner's, where
+    # the hiscores could not confirm a rename - {lowercase username: the
+    # name reported}. Shown on the admin page; see wom/renames.py.
+    "name_flags": {},
     # Set when the data endpoints' tripwire latches, cleared from the admin
     # page. Here rather than in memory so a restart does not resume serving.
     "api_tripped_at": "",

@@ -41,7 +41,7 @@ class PlayerResult:
 SESSION_LOOKBACK_DAYS = 3
 
 
-def _place_sessions(database, usernames):
+def place_sessions(database, usernames):
     """Credit each session's gain to the time it was earned in.
 
     Here rather than in the caller because all three entry points - the
@@ -125,7 +125,7 @@ def update_all(client, database, usernames, trigger="manual", progress=None,
         headline.append("{} new milestone{}".format(
             found, "" if found == 1 else "s"))
     headline.extend("{}: {}".format(r.username, r.message) for r in failed[:10])
-    _place_sessions(database, usernames)
+    place_sessions(database, usernames)
     database.finish_run(run_id, ok, len(failed), "; ".join(headline))
     log.info("update run finished: %d ok, %d failed, %d imported, %d milestones",
              ok, len(failed), imported, found)
@@ -169,6 +169,9 @@ def update_one(client, database, username, say=None, thin=False, reader=None,
         try:
             found = read_hiscores(reader, database, row, daily=daily)["milestones"]
         except hiscores.HiscoresNotFound:
+            # Shown on the admin page beside the name, for somebody to
+            # follow by hand - wom/renames.py says why it is not automatic.
+            database.mark_missing(player_id)
             return PlayerResult(username, False,
                                 "not on the hiscores - renamed?", imported)
         except hiscores.HiscoresError as exc:

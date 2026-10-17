@@ -75,10 +75,17 @@ class PlayerStore:
                 " combat_level=COALESCE(?, combat_level),"
                 " exp=COALESCE(?, exp), ehp=COALESCE(?, ehp),"
                 " ehb=COALESCE(?, ehb), ttm=COALESCE(?, ttm),"
-                " updated_at=?, last_fetched_at=? WHERE id=?",
+                " status='active', updated_at=?, last_fetched_at=? WHERE id=?",
                 (combat_level, exp, ehp, ehb, ttm, snapshot.get("createdAt"),
                  _utcnow(), player_id))
         return snapshot_id
+
+    def mark_missing(self, player_id):
+        """The hiscores no longer know this name - see wom/renames.py."""
+        conn = self.connect()
+        with conn:
+            conn.execute("UPDATE players SET status='missing' WHERE id=?",
+                         (player_id,))
 
     def set_player_type(self, player_id, player_type):
         conn = self.connect()

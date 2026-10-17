@@ -216,7 +216,17 @@
         <tr><th>Player</th><th>Colour</th><th class="num">Snapshots</th><th></th></tr>
         {% for player in roster + famous %}
           <tr>
-            <td>{{ player.display_name }}</td>
+            <td>{{ player.display_name }}
+              {% if player.missing %}
+                <br><span class="dim">not on the hiscores - renamed? Type the
+                  new name over the old one above.</span>
+              {% endif %}
+              {% if player.reported_as %}
+                <br><span class="dim">Dink reports this token as
+                  {{ player.reported_as }}, still on the hiscores alongside -
+                  an alt?</span>
+              {% endif %}
+            </td>
             <td>
               <form method="post" action="/admin/colour" class="row">
                 <input type="hidden" name="username" value="{{ player.username }}">
