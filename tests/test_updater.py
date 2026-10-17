@@ -1,48 +1,64 @@
-"""One update pass, against a stand-in for the API."""
+"""One update pass, against stand-ins for Wise Old Man and the hiscores."""
 
+import json
+import os
 
 from conftest import snapshot
 
 from wom.api import WomError
+from wom.hiscores import HiscoresError, HiscoresNotFound
 from wom.updater import update_all, update_one
+
+FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures", "hiscores")
+
+
+def fixture(name):
+    with open(os.path.join(FIXTURES, name), encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 class FakeClient:
     """Answers like the Wise Old Man client, and records what was asked."""
 
     def __init__(self, details=None, fail_update=False, fail_fetch=False,
-                 snapshots=None, achievements=None, recent=None,
-                 fail_recent=False):
+                 snapshots=None, unknown=False, achievements=None):
         self.details = details or {
             "id": 1, "username": "zezima", "displayName": "Zezima",
-            "type": "regular", "exp": 500,
+            "type": "regular", "exp": 500, "country": "GB",
             "latestSnapshot": snapshot("2026-08-31T00:00:00.000Z",
                                        skills={"attack": (500, 40)}),
         }
         self.fail_update = fail_update
         self.fail_fetch = fail_fetch
+        # Wise Old Man has never heard of the player: a GET is a 404 until
+        # something POSTs them into existence.
+        self.unknown = unknown
         self.snapshots = snapshots or []
-        self.recent = recent or []
-        self.fail_recent = fail_recent
-        self.asked_from = None
-        self._achievements = achievements or []
+        self.achievements = achievements or []
         self.calls = []
 
     def update_player(self, username):
         self.calls.append(("update", username))
         if self.fail_update:
             raise WomError("rate limited", 429)
+        self.unknown = False
         return self.details
 
     def get_player(self, username):
         self.calls.append(("get", username))
+        if self.unknown:
+            raise WomError("Player not found.", 404)
         if self.fail_fetch:
-            raise WomError("not found", 404)
+            raise WomError("server error 502", 502)
         return self.details
 
     def get_achievements(self, username):
         self.calls.append(("achievements", username))
-        return self._achievements
+        return self.achievements
+
+    def get_efficiency_rates(self, algorithm_type, metric):
+        self.calls.append(("rates", algorithm_type, metric))
+        return fixture("rates_ironman_{}.json".format(metric))
 
     def iter_snapshots_before(self, username, before=None, max_pages=None):
         """Pages as the API hands them: newest first, `before` inclusive, and
@@ -65,69 +81,169 @@ class FakeClient:
                 return
             before = oldest
 
-    def get_snapshots(self, username, **kwargs):
-        # The window is recorded, not just the call: asking for the right
-        # range is the whole of what makes this cheap.
-        self.calls.append(("recent", username))
-        self.asked_from = kwargs.get("start_date")
-        if self.fail_recent:
-            raise WomError("rate limited", 429)
-        return self.recent
+
+class FakeHiscores:
+    """Answers like wom.hiscores.HiscoresClient from canned payloads."""
+
+    def __init__(self, payload=None, error=None, tables=None):
+        self.payload = payload or fixture("player_a.json")
+        self.error = error
+        self.tables = tables or {}
+        self.asked = []
+
+    def fetch(self, username, table="hiscore_oldschool"):
+        self.asked.append((username, table))
+        if self.error is not None:
+            raise self.error
+        if table != "hiscore_oldschool":
+            if table not in self.tables:
+                raise HiscoresNotFound("not on " + table, 404)
+            return self.tables[table]
+        return self.payload
+
+    def account_type(self, username, overall_exp):
+        from wom.hiscores import HiscoresClient
+        return HiscoresClient.account_type(self, username, overall_exp)
 
 
-def test_a_successful_pass_stores_the_player_and_its_snapshot(db):
-    result = update_one(FakeClient(), db, "zezima")
+def test_a_new_player_is_introduced_through_wise_old_man_once(db):
+    """Their id, type and history come from there; nothing else does."""
+    client = FakeClient()
+    result = update_one(client, db, "zezima", reader=FakeHiscores())
     assert result.ok
     assert db.player_by_username("zezima")["display_name"] == "Zezima"
-    assert db.snapshot_count(1) == 1
+    update_one(client, db, "zezima", reader=FakeHiscores())
+    assert ("update", "zezima") not in client.calls, "a known player is not POSTed"
+    assert client.calls.count(("get", "zezima")) == 1, "introduced once"
 
 
-def test_a_failed_refresh_falls_back_to_the_stored_profile(db):
-    """A player updated moments ago still has current data worth keeping."""
-    client = FakeClient(fail_update=True)
-    result = update_one(client, db, "zezima")
-    assert result.ok, "a refused refresh is not a failed update"
-    assert "cached profile" in result.message
-    assert [c[0] for c in client.calls][:2] == ["update", "get"]
+def test_only_a_player_wise_old_man_has_never_seen_is_posted(db):
+    client = FakeClient(unknown=True)
+    assert update_one(client, db, "zezima", reader=FakeHiscores()).ok
+    assert [c[0] for c in client.calls][:2] == ["get", "update"]
 
 
-def test_both_calls_failing_is_a_failure(db):
-    result = update_one(FakeClient(fail_update=True, fail_fetch=True), db, "zezima")
+def test_a_new_players_milestones_are_wise_old_mans_back_catalogue(db):
+    client = FakeClient(achievements=[
+        {"name": "99 Attack", "metric": "attack", "measure": "experience",
+         "threshold": 13034431, "createdAt": "2026-08-01T00:00:00.000Z",
+         "accuracy": 1},
+    ])
+    update_one(client, db, "zezima", reader=FakeHiscores())
+    update_one(client, db, "zezima", reader=FakeHiscores())
+    assert db.count_achievements() == 1
+    assert client.calls.count(("achievements", "zezima")) == 1
+
+
+def test_a_reading_comes_from_the_hiscores_and_keeps_what_they_cannot_say(db):
+    """The hiscores know nothing about country or registration: a reading
+    must not blank them the way an upsert of Wise Old Man's record would."""
+    update_one(FakeClient(), db, "zezima", reader=FakeHiscores())
+    row = db.player_by_username("zezima")
+    assert row["country"] == "GB" and row["type"] == "regular"
+    assert row["exp"] == fixture("player_a.json")["skills"][0]["xp"]
+    assert row["combat_level"] and row["combat_level"] > 3
+    assert db.snapshot_count(row["id"]) == 2, "Wise Old Man's, then ours"
+
+
+def test_a_reading_that_changes_nothing_writes_no_rows(db):
+    reader = FakeHiscores()
+    update_one(FakeClient(), db, "zezima", reader=reader)
+    rows = db.query_one("SELECT COUNT(*) AS n FROM metrics")["n"]
+    update_one(FakeClient(), db, "zezima", reader=reader)
+    assert db.query_one("SELECT COUNT(*) AS n FROM metrics")["n"] == rows
+
+
+def test_efficiency_is_worked_out_from_the_stored_rates(db):
+    client = FakeClient(details={
+        "id": 1, "username": "zezima", "displayName": "Zezima",
+        "type": "ironman"})
+    update_all(client, db, ["zezima"], reader=FakeHiscores())
+    expected = fixture("player_a.wom.json")
+    row = db.player_by_username("zezima")
+    assert abs(row["ehp"] - expected["ehp"]) < 1e-3
+    assert abs(row["ehb"] - expected["ehb"]) < 1e-3
+    assert ("rates", "ironman", "ehp") in client.calls
+
+
+def test_rates_are_read_at_most_daily(db):
+    client = FakeClient()
+    update_all(client, db, ["zezima"], reader=FakeHiscores())
+    update_all(client, db, ["zezima"], reader=FakeHiscores())
+    assert sum(1 for c in client.calls if c[0] == "rates") == 2, \
+        "ehp and ehb once, not again an hour later"
+
+
+def test_a_milestone_crossed_between_readings_is_recorded(db):
+    payload = fixture("player_a.json")
+    lower = json.loads(json.dumps(payload))
+    for row in lower["activities"]:
+        if row["name"] == "Zulrah":
+            row["score"] = 499
+    update_one(FakeClient(), db, "zezima", reader=FakeHiscores(lower))
+    result = update_one(FakeClient(), db, "zezima", reader=FakeHiscores(payload))
+    assert result.milestones == 1
+    row = db.query_one("SELECT * FROM achievements WHERE name='500 Zulrah kills'")
+    assert row["metric"] == "zulrah" and row["measure"] == "kills"
+    assert row["accuracy"] is not None and row["accuracy"] >= 0
+
+
+def test_a_milestone_already_met_is_not_news(db):
+    """A first reading crosses nothing; a back catalogue is Wise Old Man's."""
+    reader = FakeHiscores()
+    client = FakeClient(details={"id": 1, "username": "zezima",
+                                 "displayName": "Zezima", "type": "regular"})
+    assert update_one(client, db, "zezima", reader=reader).milestones == 0
+    assert update_one(client, db, "zezima", reader=reader).milestones == 0
+
+
+def test_a_name_off_the_hiscores_fails_rather_than_reading_stale_data(db):
+    """A renamed account 404s. Wise Old Man's copy of the old name would
+    read as current, so it is not used."""
+    client = FakeClient()
+    update_one(client, db, "zezima", reader=FakeHiscores())
+    result = update_one(client, db, "zezima", reader=FakeHiscores(
+        error=HiscoresNotFound("gone", 404)))
+    assert not result.ok and "renamed" in result.message
+
+
+def test_a_hiscores_outage_falls_back_to_wise_old_mans_copy(db):
+    client = FakeClient()
+    result = update_one(client, db, "zezima", reader=FakeHiscores(
+        error=HiscoresError("the hiscores answered 503", 503)))
+    assert result.ok and "Wise Old Man's copy" in result.message
+    assert ("update", "zezima") not in client.calls, "a read, never an update"
+
+
+def test_both_sources_failing_is_a_failure(db):
+    client = FakeClient()
+    update_one(client, db, "zezima", reader=FakeHiscores())
+    client.fail_fetch = True
+    result = update_one(client, db, "zezima", reader=FakeHiscores(
+        error=HiscoresError("the hiscores answered 503", 503)))
     assert not result.ok
 
 
-def test_history_is_imported_once(db):
-    client = FakeClient(snapshots=[
-        snapshot("2026-01-01T00:00:00.000Z", skills={"attack": (10, 1)}),
-        snapshot("2026-02-01T00:00:00.000Z", skills={"attack": (20, 2)}),
-    ])
-    first = update_one(client, db, "zezima")
-    assert first.imported == 2
-    second = update_one(client, db, "zezima")
-    assert second.imported == 0, "backfill runs once, not on every pass"
-    assert list(client.calls).count(("snapshots", "zezima")) == 1
+def test_the_daily_check_notices_an_account_type_change(db):
+    payload = fixture("player_a.json")
+    reader = FakeHiscores(tables={"hiscore_oldschool_ironman": payload})
+    update_all(FakeClient(), db, ["zezima"], reader=reader, daily=True)
+    assert db.player_by_username("zezima")["type"] == "ironman"
 
 
-def test_milestones_are_counted_only_when_new(db):
-    client = FakeClient(achievements=[
-        {"name": "99 Attack", "metric": "attack", "threshold": 13034431,
-         "createdAt": "2026-08-01T00:00:00.000Z", "accuracy": 1},
-    ])
-    assert update_one(client, db, "zezima").milestones == 1
-    assert update_one(client, db, "zezima").milestones == 0
-
-
-def test_a_broken_achievements_call_does_not_fail_the_update(db):
-    class NoAchievements(FakeClient):
-        def get_achievements(self, username):
-            raise WomError("boom", 500)
-
-    assert update_one(NoAchievements(), db, "zezima").ok
+def test_an_iron_table_frozen_behind_the_account_is_not_believed(db):
+    """A de-ironed account keeps its old row on the iron hiscores."""
+    payload = fixture("player_a.json")
+    frozen = json.loads(json.dumps(payload))
+    frozen["skills"][0]["xp"] -= 1000
+    reader = FakeHiscores(tables={"hiscore_oldschool_ironman": frozen})
+    update_all(FakeClient(), db, ["zezima"], reader=reader, daily=True)
+    assert db.player_by_username("zezima")["type"] == "regular"
 
 
 def test_update_all_records_a_run_and_reports_progress(db):
     seen = []
-    results = update_all(FakeClient(), db, ["zezima"],
+    results = update_all(FakeClient(), db, ["zezima"], reader=FakeHiscores(),
                          progress=lambda i, n, r: seen.append(r.username))
     assert len(results) == 1 and seen == ["zezima"]
     run = db.query_one("SELECT * FROM runs ORDER BY id DESC LIMIT 1")
@@ -143,8 +259,21 @@ def test_a_callback_that_raises_does_not_break_the_run(db):
     def explode(*_args):
         raise RuntimeError("the UI is on fire")
 
-    results = update_all(FakeClient(), db, ["zezima"], progress=explode)
+    results = update_all(FakeClient(), db, ["zezima"], progress=explode,
+                         reader=FakeHiscores())
     assert results[0].ok
+
+
+def test_history_is_imported_once(db):
+    client = FakeClient(snapshots=[
+        snapshot("2026-01-01T00:00:00.000Z", skills={"attack": (10, 1)}),
+        snapshot("2026-02-01T00:00:00.000Z", skills={"attack": (20, 2)}),
+    ])
+    first = update_one(client, db, "zezima")
+    assert first.imported == 2
+    second = update_one(client, db, "zezima")
+    assert second.imported == 0, "backfill runs once, not on every pass"
+    assert list(client.calls).count(("snapshots", "zezima")) == 1
 
 
 def test_the_roster_spelling_of_a_name_is_the_one_shown():
@@ -241,162 +370,6 @@ def test_a_failure_to_place_sessions_never_breaks_the_run(db, monkeypatch):
 def test_placing_sessions_skips_a_name_we_have_never_stored(db):
     from wom import updater
     assert updater._place_sessions(db, ["nobody-here"]) == 0
-
-
-# -- readings our own polling never sees ----------------------------------
-
-def test_a_reading_wise_old_man_took_between_ours_is_recovered(db):
-    """update_player hands back the latest snapshot and nothing else, so a
-    push it recorded in between is invisible however often we ask."""
-    push = snapshot("2026-08-30T23:55:00.000Z", skills={"attack": (900, 42)})
-    client = FakeClient(recent=[push])
-    result = update_one(client, db, "zezima")
-    assert result.ok
-    assert ("recent", "zezima") in client.calls
-    held = [r["captured_at"] for r in db.query(
-        "SELECT captured_at FROM snapshots ORDER BY captured_at")]
-    assert "2026-08-30T23:55:00.000Z" in held
-    assert "reading we had missed" in result.message
-
-
-def test_a_recovered_reading_is_marked_as_one_we_did_not_cause(db):
-    """It is stamped when Wise Old Man took it, not when we collected it, so
-    it must not look like a poll - compaction keeps one and thins the other."""
-    push = snapshot("2026-08-30T23:55:00.000Z", skills={"attack": (900, 42)})
-    update_one(FakeClient(recent=[push]), db, "zezima")
-    row = db.query_one("SELECT origin FROM snapshots WHERE captured_at=?",
-                       ("2026-08-30T23:55:00.000Z",))
-    assert row["origin"] == "archive"
-
-
-def test_readings_we_already_hold_are_not_stored_twice(db):
-    push = snapshot("2026-08-30T23:55:00.000Z", skills={"attack": (900, 42)})
-    client = FakeClient(recent=[push])
-    update_one(client, db, "zezima")
-    before = db.snapshot_count(1)
-    update_one(client, db, "zezima")
-    assert db.snapshot_count(1) == before
-
-
-def test_a_refused_history_call_does_not_fail_the_update(db):
-    """The update itself is the thing worth having."""
-    result = update_one(FakeClient(fail_recent=True), db, "zezima")
-    assert result.ok
-    assert "we had missed" not in result.message
-    assert db.player_by_username("zezima") is not None
-
-
-def test_a_client_too_old_to_answer_that_call_is_survivable(db):
-    """Guards the shape of the failure, not the failure itself: a bare
-    AttributeError here used to be swallowed silently and the whole feature
-    did nothing while every test passed."""
-    class Older(FakeClient):
-        get_snapshots = None
-
-        def __getattr__(self, name):
-            raise AttributeError(name)
-
-    result = update_one(Older(), db, "zezima")
-    assert result.ok
-
-
-def test_the_history_window_only_covers_what_we_do_not_hold(db):
-    """Asked for a flat three hours it re-fetched every ten-minute reading in
-    them, nearly all already stored - which is what made a pass slow."""
-    from datetime import datetime, timedelta, timezone
-
-    from wom.updater import OVERLAP_MINUTES, _recent_since
-
-    now = datetime.now(timezone.utc)
-    db.save_player_details({"id": 1, "username": "zezima",
-                            "displayName": "Zezima", "type": "regular"})
-    db.save_snapshot(1, snapshot(
-        (now - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        skills={"attack": (500, 40)}))
-
-    since = _recent_since(db, 1, now)
-    minutes = (now - since).total_seconds() / 60
-    assert OVERLAP_MINUTES < minutes < OVERLAP_MINUTES + 15, (
-        "just past our own last reading, not the whole ceiling")
-
-
-def test_the_window_widens_by_itself_after_an_outage(db):
-    """The last reading is older, so asking from it covers the gap."""
-    from datetime import datetime, timedelta, timezone
-
-    from wom.updater import _recent_since
-
-    now = datetime.now(timezone.utc)
-    db.save_player_details({"id": 1, "username": "zezima",
-                            "displayName": "Zezima", "type": "regular"})
-    db.save_snapshot(1, snapshot(
-        (now - timedelta(minutes=90)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        skills={"attack": (500, 40)}))
-    assert (now - _recent_since(db, 1, now)).total_seconds() / 60 > 90
-
-
-def test_the_window_never_reaches_further_back_than_the_ceiling(db):
-    """An account we have not read for a week is a backfill's job, not this."""
-    from datetime import datetime, timezone
-
-    from wom.updater import RECENT_MINUTES, _recent_since
-
-    now = datetime.now(timezone.utc)
-    db.save_player_details({"id": 1, "username": "zezima",
-                            "displayName": "Zezima", "type": "regular"})
-    db.save_snapshot(1, snapshot("2026-01-01T00:00:00.000Z",
-                                 skills={"attack": (500, 40)}))
-    minutes = (now - _recent_since(db, 1, now)).total_seconds() / 60
-    assert abs(minutes - RECENT_MINUTES) < 1
-
-
-def test_an_account_with_no_readings_yet_uses_the_ceiling(db):
-    from datetime import datetime, timezone
-
-    from wom.updater import RECENT_MINUTES, _recent_since
-    now = datetime.now(timezone.utc)
-    minutes = (now - _recent_since(db, 99, now)).total_seconds() / 60
-    assert abs(minutes - RECENT_MINUTES) < 1
-
-
-def test_the_history_call_asks_only_for_the_gap(db):
-    """Not a flat ceiling every time. Everything up to our own last reading is
-    already stored, so asking from the start of the window re-fetched a whole
-    afternoon of readings on every pass."""
-    from datetime import datetime, timedelta, timezone
-
-    from wom.updater import RECENT_MINUTES
-
-    now = datetime.now(timezone.utc)
-    recent = snapshot((now - timedelta(minutes=5)).strftime(
-        "%Y-%m-%dT%H:%M:%S.000Z"), skills={"attack": (500, 40)})
-    client = FakeClient(details={
-        "id": 1, "username": "zezima", "displayName": "Zezima",
-        "type": "regular", "latestSnapshot": recent})
-    update_one(client, db, "zezima")
-
-    asked = (now - client.asked_from).total_seconds() / 60
-    assert asked < RECENT_MINUTES / 2, (
-        "the window should follow the last reading, not the ceiling")
-
-
-def test_the_window_never_starts_in_the_future(db):
-    """A player's clock can run fast. Dink's logout is believed within half an
-    hour of ours and attribution writes a reading at that moment, so the
-    newest reading we hold can be ahead of now - and a window starting there
-    asks for a stretch that has not happened yet.
-    """
-    from datetime import datetime, timedelta, timezone
-
-    from wom.updater import _recent_since
-
-    now = datetime.now(timezone.utc)
-    db.save_player_details({"id": 1, "username": "zezima",
-                            "displayName": "Zezima", "type": "regular"})
-    db.save_snapshot(1, snapshot(
-        (now + timedelta(minutes=25)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        skills={"attack": (500, 40)}))
-    assert _recent_since(db, 1, now) <= now, "asked for a window not yet lived"
 
 
 def history(count, bosses=None):

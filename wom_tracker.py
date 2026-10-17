@@ -25,6 +25,7 @@ from wom.runtime import require as require_python
 
 require_python()
 
+from wom import hiscores
 from wom.api import WomClient
 from wom.config import (
     Config,
@@ -52,7 +53,7 @@ def run_headless_update():
     database = Database(db_path())
     client = WomClient(config.get("api_key", ""), config.get("user_agent_contact", ""))
     results = update_all(client, database, names, trigger="cli",
-                         thin=celebrities(config))
+                         thin=celebrities(config), reader=hiscores.shared())
     for result in results:
         print("{:<14} {}".format(result.username, result.message if result.ok
                                  else "FAILED - " + result.message))

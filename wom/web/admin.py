@@ -27,7 +27,7 @@ from flask import (
     url_for,
 )
 
-from .. import build, periods, scheduler
+from .. import build, changes, hiscores, periods, scheduler
 from .. import summaries as core
 from ..api import WomClient
 from ..colors import normalise, player_color, set_player_color
@@ -567,6 +567,7 @@ def run(action):
                 job.finish("no players are being tracked", failed=True)
                 return
             update_all(client, database, names, trigger="web",
+                       reader=hiscores.shared(),
                        starting=lambda i, n, name: job.say(
                            "{}/{}  {}".format(i, n, name)),
                        progress=lambda i, n, r: job.say(
@@ -587,6 +588,7 @@ def run(action):
                 database, config, group_only(database.players(), config), owed,
                 progress=lambda e: job.say(
                     "{}: {}".format(e["player"], e["note"]), keep=True))
+            changes.bump("summaries")
             job.finish("summaries finished")
         started = runner.start("summarise", exclusive(work))
 
@@ -601,6 +603,7 @@ def run(action):
                                               say=job.say,
                                               thin=name.lower() in famous)
                 job.say("{}: {}".format(name, note or "nothing to import"), keep=True)
+                changes.bump("history import")
             job.finish("history import finished")
         started = runner.start("backfill", exclusive(work))
 

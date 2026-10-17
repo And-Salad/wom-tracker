@@ -1,0 +1,260 @@
+{
+ "type": "ironman",
+ "build": "main",
+ "ehp": 1330.03242,
+ "ehb": 183.3218699999999,
+ "ttm": 465.97442,
+ "in_sync": true,
+ "skills": {
+  "overall": 1330.0324199999998,
+  "attack": 0,
+  "defence": 0,
+  "strength": 0.2176,
+  "hitpoints": 0.13311,
+  "ranged": 26.0979,
+  "prayer": 41.40216,
+  "magic": 0.09775,
+  "cooking": 38.95256,
+  "woodcutting": 38.2272,
+  "fletching": 4.81922,
+  "fishing": 62.0909,
+  "firemaking": 36.88204,
+  "crafting": 44.49296,
+  "smithing": 21.92671,
+  "mining": 160.70158,
+  "herblore": 189.9021,
+  "agility": 73.91211,
+  "thieving": 30.21153,
+  "slayer": 340.78889,
+  "farming": 11.49713,
+  "runecrafting": 67.97652,
+  "hunter": 62.88378,
+  "construction": 23.96858,
+  "sailing": 52.85009
+ },
+ "bosses": {
+  "abyssal_sire": 0,
+  "alchemical_hydra": 6.75862,
+  "amoxliatl": 0.28169,
+  "araxxor": 5.97368,
+  "artio": 0.02,
+  "barrows_chests": 13.86364,
+  "brutus": 0.34,
+  "bryophyta": 0,
+  "callisto": 0,
+  "calvarion": 0.88889,
+  "cerberus": 5.03704,
+  "chambers_of_xeric": 0.28571,
+  "chambers_of_xeric_challenge_mode": 0,
+  "chaos_elemental": 0.02083,
+  "chaos_fanatic": 0.575,
+  "commander_zilyana": 0.03333,
+  "corporeal_beast": 0,
+  "crazy_archaeologist": 0.27368,
+  "dagannoth_prime": 0.51,
+  "dagannoth_rex": 1.36,
+  "dagannoth_supreme": 0.38,
+  "deranged_archaeologist": 0.26316,
+  "doom_of_mokhaiotl": 0,
+  "duke_sucellus": 0.02703,
+  "general_graardor": 0.03226,
+  "giant_mole": 1.16495,
+  "grotesque_guardians": 0.73529,
+  "hespori": 1.98,
+  "kalphite_queen": 5.27027,
+  "king_black_dragon": 0,
+  "kraken": 1.63333,
+  "kreearra": 0.03333,
+  "kril_tsutsaroth": 3.96875,
+  "lunar_chests": 16.27778,
+  "mad_angel": 0.11667,
+  "maggot_king": 0,
+  "mimic": 0.02,
+  "nex": 0,
+  "nightmare": 0,
+  "phosanis_nightmare": 0,
+  "obor": 0.16667,
+  "phantom_muspah": 0.03704,
+  "sarachnis": 1.34328,
+  "scorpia": 0.0125,
+  "scurrius": 0.4,
+  "shellbane_gryphon": 9.66316,
+  "skotizo": 0.55263,
+  "sol_heredit": 0,
+  "spindel": 0.02,
+  "tempoross": 0,
+  "the_gauntlet": 1.5,
+  "the_corrupted_gauntlet": 35.55556,
+  "the_hueycoatl": 18.5,
+  "the_leviathan": 0.03704,
+  "the_royal_titans": 10.23636,
+  "the_whisperer": 0.04762,
+  "theatre_of_blood": 0,
+  "theatre_of_blood_hard_mode": 0,
+  "thermonuclear_smoke_devil": 0,
+  "tombs_of_amascut": 3.24324,
+  "tombs_of_amascut_expert": 1.33333,
+  "tzkal_zuk": 0,
+  "tztok_jad": 3.63636,
+  "vardorvis": 0.02703,
+  "venenatis": 0,
+  "vetion": 0.02564,
+  "vorkath": 1.47059,
+  "wintertodt": 0,
+  "yama": 6.05556,
+  "zalcano": 0,
+  "zulrah": 21.33333
+ },
+ "achievements": [
+  [
+   "100 Lunar Chests",
+   "lunar_chests",
+   "kills",
+   100
+  ],
+  [
+   "100 The Corrupted Gauntlet kills",
+   "the_corrupted_gauntlet",
+   "kills",
+   100
+  ],
+  [
+   "100m Overall Exp.",
+   "overall",
+   "experience",
+   100000000
+  ],
+  [
+   "200 The Corrupted Gauntlet kills",
+   "the_corrupted_gauntlet",
+   "kills",
+   200
+  ],
+  [
+   "200m Overall Exp.",
+   "overall",
+   "experience",
+   200000000
+  ],
+  [
+   "250 Lunar Chests",
+   "lunar_chests",
+   "kills",
+   250
+  ],
+  [
+   "50 Hespori kills",
+   "hespori",
+   "kills",
+   50
+  ],
+  [
+   "500 Collections Logged",
+   "collections_logged",
+   "score",
+   500
+  ],
+  [
+   "500 Shellbane Gryphon kills",
+   "shellbane_gryphon",
+   "kills",
+   500
+  ],
+  [
+   "500 The Royal Titans kills",
+   "the_royal_titans",
+   "kills",
+   500
+  ],
+  [
+   "500 Zulrah kills",
+   "zulrah",
+   "kills",
+   500
+  ],
+  [
+   "99 Attack",
+   "attack",
+   "experience",
+   13034431
+  ],
+  [
+   "99 Cooking",
+   "cooking",
+   "experience",
+   13034431
+  ],
+  [
+   "99 Defence",
+   "defence",
+   "experience",
+   13034431
+  ],
+  [
+   "99 Farming",
+   "farming",
+   "experience",
+   13034431
+  ],
+  [
+   "99 Herblore",
+   "herblore",
+   "experience",
+   13034431
+  ],
+  [
+   "99 Hitpoints",
+   "hitpoints",
+   "experience",
+   13034431
+  ],
+  [
+   "99 Hunter",
+   "hunter",
+   "experience",
+   13034431
+  ],
+  [
+   "99 Magic",
+   "magic",
+   "experience",
+   13034431
+  ],
+  [
+   "99 Ranged",
+   "ranged",
+   "experience",
+   13034431
+  ],
+  [
+   "99 Strength",
+   "strength",
+   "experience",
+   13034431
+  ],
+  [
+   "Base 60 Stats",
+   "overall",
+   "levels",
+   6569808
+  ],
+  [
+   "Base 70 Stats",
+   "overall",
+   "levels",
+   17703048
+  ],
+  [
+   "Base 80 Stats",
+   "overall",
+   "levels",
+   47665632
+  ],
+  [
+   "Base 90 Stats",
+   "overall",
+   "levels",
+   128311968
+  ]
+ ]
+}

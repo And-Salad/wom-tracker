@@ -238,7 +238,7 @@ def test_the_digest_hash_changes_only_when_the_figures_do(db, config, player):
     assert first == again, "an unchanged period must not be re-billed"
 
 
-# -- a run every ten minutes ----------------------------------------------
+# -- a run every hour ----------------------------------------------------
 
 def test_slots_sit_on_wall_clock_boundaries(monkeypatch):
     """Predictable across a restart, and a missed one is still recognisably
@@ -246,21 +246,24 @@ def test_slots_sit_on_wall_clock_boundaries(monkeypatch):
     from datetime import datetime, timezone
 
     from wom import scheduler
-    for minute, expected in ((0, 0), (7, 0), (9, 0), (10, 10), (59, 50)):
+    for minute in (0, 7, 10, 59):
         now = datetime(2026, 9, 1, 15, minute, 30, tzinfo=timezone.utc)
-        assert scheduler.previous_slot(now).minute == expected
+        slot = scheduler.previous_slot(now)
+        assert (slot.minute, slot.second) == (0, 0)
         assert scheduler.next_slot(now) > now
+        assert (scheduler.next_slot(now) - slot).total_seconds() == 3600
 
 
-def test_milestones_are_fetched_on_the_hour_not_every_run():
-    """A request per player for something that moves rarely."""
+def test_the_daily_checks_ride_on_the_midnight_run(monkeypatch):
+    """Account types change about as often as a hardcore dies: once a day."""
     from datetime import datetime, timezone
 
     from wom import scheduler
-    on_the_hour = [m for m in range(0, 60, scheduler.SLOT_MINUTES)
-                   if scheduler.wants_achievements(
-                       datetime(2026, 9, 1, 15, m, tzinfo=timezone.utc))]
-    assert on_the_hour == [0], "once an hour, not six times"
+    monkeypatch.setattr(scheduler, "zone", lambda: timezone.utc)
+    daily = [h for h in range(24)
+             if scheduler.wants_daily_checks(
+                 datetime(2026, 9, 1, h, 5, tzinfo=timezone.utc))]
+    assert daily == [scheduler.DAILY_HOUR]
 
 
 def test_history_is_thinned_once_a_day_not_every_run(db, player, tmp_path):

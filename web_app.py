@@ -81,8 +81,9 @@ def _thin_history(database, settings):
 
 def start_scheduler(app):
     """Run the update schedule from inside the server process."""
+    from wom import changes, hiscores
     from wom.api import WomClient
-    from wom.scheduler import SlotScheduler, wants_achievements
+    from wom.scheduler import SlotScheduler, wants_daily_checks
     from wom.summaries import maybe_write_summaries
     from wom.updater import update_all
 
@@ -93,18 +94,20 @@ def start_scheduler(app):
         client = WomClient(settings.get("api_key", ""),
                            settings.get("user_agent_contact", ""))
         database = app.config["DATABASE"]
-        # Milestones move rarely and cost a request per player. At a run every
-        # ten minutes that is worth doing on the hour rather than six times an
-        # hour, which halves what the run asks of Wise Old Man.
         update_all(client, database, tracked_usernames(settings),
-                   trigger=trigger, achievements=wants_achievements(),
-                   thin=celebrities(settings))
+                   trigger=trigger, daily=wants_daily_checks(),
+                   thin=celebrities(settings), reader=hiscores.shared())
+        # Pages may show the new figures now. Not after the summaries: a
+        # round of those is a minute of Claude calls, and the figures it
+        # follows were held back from every open page for all of it.
+        changes.bump("update run")
         # The summaries a closed window owes ride on the back of an update, so
         # this has to happen here or they never get written at all.
         try:
             maybe_write_summaries(database, settings)
         except Exception:
             log.exception("writing the scheduled summaries failed")
+        changes.bump("summaries")
         try:
             _thin_history(database, settings)
         except Exception:

@@ -10,9 +10,10 @@ from datetime import datetime, timezone
 
 from flask import current_app, request
 
+from .. import changes
 from ..colors import player_color
 from ..config import Config, celebrities, group_only
-from ..scheduler import next_slot, parse_last_run
+from ..scheduler import next_slot, parse_last_run, zone
 from ..util import fmt_ago
 from .timespan import current_timespan, labels
 
@@ -106,8 +107,13 @@ def status(config):
         # about once a month and that the Players page already gives. Who
         # else is reading it right now is not knowable anywhere else.
         "viewers": viewers(),
-        # What actually changes when a run lands: the stored stamp itself.
-        "stamp": config.get("last_run", "") or "",
+        # What moves when anything a page shows may have: a run landing
+        # (the stored stamp, which a command-line run in another process
+        # moves too), anything this process stored since (wom/changes.py),
+        # and the local date, so "today" turns over at midnight on its own.
+        "stamp": "{}|{}|{}".format(
+            config.get("last_run", "") or "", changes.token(),
+            datetime.now(timezone.utc).astimezone(zone()).date().isoformat()),
         # The same instant `next` names, and this clock's reading of now, so a
         # countdown survives a browser whose clock is wrong.
         "next_at": upcoming.isoformat(timespec="seconds"),

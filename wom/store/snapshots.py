@@ -6,6 +6,22 @@ from ..util import parse_api_time
 from .core import _flatten, _origin, _utcnow
 
 
+def _moved(before, row):
+    """Whether a flattened row says something the one before it did not.
+
+    Value and level always count. Efficiency counts only when this reading
+    knows it: a reading made without rates to hand (wom/efficiency.py could
+    not reach them) carries none, and comparing that None with the hours
+    stored last time would rewrite every metric the player has, once, for no
+    change in anything they did.
+    """
+    if before is None:
+        return True
+    if (before[0], before[1]) != (row[4], row[6]):
+        return True
+    return row[7] is not None and before[2] != row[7]
+
+
 class SnapshotStore:
     """Readings, and the sparse metric history flattened out of them."""
 
@@ -14,11 +30,11 @@ class SnapshotStore:
 
         Records where the reading came from, which is not something that can
         be worked out later. Our update pass asks Wise Old Man to read the
-        hiscores, so a reading stamped a moment before we stored it is one we
-        caused - `poll`. A reading stamped well before that already existed
-        when we asked: Wise Old Man made it for somebody else, most often a
-        player's own client pushing on logout, and it marks a moment we could
-        never have observed on our ten minute rhythm - `archive`.
+        hiscores, or reads them ourselves, so a reading stamped a moment before
+        we stored it is one we caused - `poll`. A reading stamped well before
+        that already existed when we asked: an import of Wise Old Man's
+        history, made for somebody else and most often a player's own client
+        pushing on logout, marks a moment we never observed - `archive`.
 
         Compaction keeps the second kind and thins the first, because one is
         reproducible by asking again tomorrow and the other is gone for good.
@@ -59,7 +75,7 @@ class SnapshotStore:
             before = self._state_before(conn, player_id, captured_at,
                                         [(row[1], row[2]) for row in rows])
             changed = [row for row in rows
-                       if before.get((row[1], row[2])) != (row[4], row[6], row[7])]
+                       if _moved(before.get((row[1], row[2])), row)]
             conn.executemany(
                 "INSERT OR REPLACE INTO metrics (player_id, kind, metric,"
                 " captured_at, value, rank, level, efficiency)"

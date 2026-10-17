@@ -459,8 +459,22 @@ def test_the_status_endpoint_answers_the_change_rather_than_the_prose(client, ap
     settings.save()
 
     after = client.get("/api/status").get_json()
-    assert after["stamp"] == settings["last_run"]
+    assert after["stamp"].startswith(settings["last_run"] + "|")
     assert after["stamp"] != before["stamp"], "a finished run has to be visible"
+
+
+def test_anything_stored_moves_the_stamp_not_only_a_run(client, app):
+    """A Dink event or a round of summaries changes what pages show without
+    a run finishing, and used to sit unseen until the next one did."""
+    from wom import changes
+
+    seed(app)
+    before = client.get("/api/status").get_json()["stamp"]
+    again = client.get("/api/status").get_json()["stamp"]
+    assert again == before, (
+        "a stamp that moves on its own refreshes every page every minute")
+    changes.bump("test")
+    assert client.get("/api/status").get_json()["stamp"] != before
 
 
 def test_the_countdown_has_something_to_count_down_to(client, app):
@@ -472,7 +486,7 @@ def test_the_countdown_has_something_to_count_down_to(client, app):
     seed(app)
     body = client.get("/api/status").get_json()
     ahead = parse_api_time(body["next_at"]) - parse_api_time(body["now"])
-    assert 0 < ahead.total_seconds() <= 600, "the next slot, and it is ahead"
+    assert 0 < ahead.total_seconds() <= 3600, "the next slot, and it is ahead"
 
 
 def test_the_heartbeat_stops_when_the_tripwire_has(client, app, monkeypatch):

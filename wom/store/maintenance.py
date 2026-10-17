@@ -55,7 +55,9 @@ class MaintenanceStore:
         go: each carries the last row at or before it forward, and that row
         says the same. Rank is not compared, as it is not when a row is first
         written - a position drifting because strangers played is not the
-        player moving.
+        player moving. Nor is a missing efficiency, for the same reason
+        save_snapshot ignores one: a reading made without rates is not a
+        change in anything the player did.
 
         One metric at a time, each its own short transaction. Done as one
         statement it is a second and a half on a desktop and minutes on the
@@ -92,7 +94,8 @@ class MaintenanceStore:
                             WHERE player_id=? AND kind=? AND metric=?
                             WINDOW w AS (ORDER BY captured_at))
                         WHERE rn > 1 AND origin IS NULL AND po IS NULL
-                          AND value IS pv AND level IS pl AND efficiency IS pe)
+                          AND value IS pv AND level IS pl
+                          AND (efficiency IS pe OR efficiency IS NULL))
                     """, tuple(key) * 2).rowcount
         return removed
 

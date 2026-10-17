@@ -14,22 +14,20 @@ from .config import Config, tracked_usernames
 
 log = logging.getLogger(__name__)
 
-# Minutes between update runs. Ten is a long way inside what Wise Old Man
-# allows - a run is twelve requests against a limit of twenty a minute, spaced
-# out to about forty seconds, so this is a seven per cent duty cycle - and it
-# cuts the blind spot a daily figure is measured across from six hours to ten
-# minutes. Anything under a minute is refused by the API's own per-player
-# cooldown, which holds a repeat update open rather than declining it.
+# Minutes between update runs. Hourly, because the hiscores do not move while
+# somebody is logged in - they change at logout - so a ten minute poll found
+# nothing new in thirteen of every fourteen readings (docs/notes.md). The
+# moment that matters is the logout itself, and a player with Dink is read
+# then (wom/live_fetch.py); this is the floor for everyone else.
 #
 # Has to divide 60. Slots are found by rounding the minute hand down, so a
 # value that does not go evenly into an hour would put the last slot of one
-# hour a short step from the first of the next, and wants_achievements() -
-# which asks whether a slot landed on the hour - could stop matching at all.
-SLOT_MINUTES = 10
+# hour a short step from the first of the next.
+SLOT_MINUTES = 60
 
-# Achievements move rarely and cost a request per player, so they are not
-# fetched on every run. On the hour is often enough and halves the traffic.
-ACHIEVEMENT_MINUTE = 0
+# The local hour whose run also does the once-a-day checks - which iron
+# hiscores list each account. Midnight, so a day's figures close on them.
+DAILY_HOUR = 0
 
 # How often the thread wakes to re-check the clock. Short enough that a slot is
 # never missed by much, long enough to stay idle.
@@ -141,9 +139,10 @@ def next_slot(now=None, minutes=SLOT_MINUTES):
     return previous_slot(now, minutes) + timedelta(minutes=minutes)
 
 
-def wants_achievements(now=None, minutes=SLOT_MINUTES):
-    """Whether this run should also re-read everyone's milestones."""
-    return previous_slot(now, minutes).minute == ACHIEVEMENT_MINUTE
+def wants_daily_checks(now=None, minutes=SLOT_MINUTES):
+    """Whether this run should also do the once-a-day checks."""
+    slot = previous_slot(now, minutes)
+    return slot.hour == DAILY_HOUR and slot.minute == 0
 
 
 class SlotScheduler:

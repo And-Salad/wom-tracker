@@ -212,6 +212,17 @@ CREATE TABLE IF NOT EXISTS images (
 CREATE INDEX IF NOT EXISTS idx_images_when
     ON images (kind, happened_at DESC);
 
+-- Wise Old Man's efficiency rates, as its public endpoint last gave them.
+-- Kept so EHP and EHB can be worked out here (wom/efficiency.py) and keep
+-- being worked out through an outage of theirs; refreshed daily.
+CREATE TABLE IF NOT EXISTS efficiency_rates (
+    type        TEXT NOT NULL,                    -- main | ironman | ultimate
+    metric      TEXT NOT NULL,                    -- ehp | ehb
+    fetched_at  TEXT NOT NULL,
+    payload     TEXT NOT NULL,                    -- the endpoint's JSON
+    PRIMARY KEY (type, metric)
+);
+
 CREATE TABLE IF NOT EXISTS runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at  TEXT NOT NULL,
