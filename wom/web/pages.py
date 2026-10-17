@@ -112,7 +112,7 @@ def leaderboards():
         dict(board,
              calendar=views.winner_calendar(database(), everyone,
                                             scope["palette"], board=board["key"],
-                                            readings=walk),
+                                            readings=walk, showing=when),
              race=views.month_race(database(), everyone, scope["palette"],
                                    when=when, board=board["key"],
                                    readings=walk),

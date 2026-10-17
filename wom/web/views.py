@@ -601,12 +601,20 @@ def _shared(a, b):
 
 
 def winner_calendar(database, players, palette, when=None,
-                    board="maxing", readings=None):
+                    board="maxing", readings=None, showing=None):
     """Two months of squares, each one the colour of who won that day.
 
     Last month beside this one, which is as much as fits side by side and as
     far back as anyone asks. Each month is headed in the colour of whoever
     took it, so the two answers - the day and the month - read together.
+
+    `showing` is a day picked off the calendar, which the page marks as the
+    one it is about. Picked from these squares it is always among them, and
+    the months stay put rather than sliding under the click. But ?day= is a
+    link, and a link outlives the month it was made in: once the calendar
+    had moved on, the page described a day the calendar no longer had a
+    square for. So a day outside these two months brings its own month and
+    the one before it instead. Today stays today either way.
 
     Nothing but the rule decides a square. A round-up names a winner of its
     own and the calendar does not read it - see the note at the top of
@@ -621,9 +629,14 @@ def winner_calendar(database, players, palette, when=None,
     by_name = {p["username"]: p["display_name"] for p in players}
     marks = player_marks(players)
 
+    anchor = when
+    if showing is not None:
+        earliest = winners.month_range(when, back=1)[0]
+        if showing < earliest:
+            anchor = showing
     months = []
     for back in (1, 0):
-        start, end = winners.month_range(when, back=back)
+        start, end = winners.month_range(anchor, back=back)
         won = winners.daily_winners(database, players, start, end, board=board,
                                     readings=walk)
         took = winners.month_winner(database, players, start, end, board=board,
