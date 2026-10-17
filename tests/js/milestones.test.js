@@ -40,13 +40,14 @@ function feedPage(rows, truncated, options) {
   let redraw = null;
   let answers = opts.answers || [{ feed: rows, truncated: !!truncated,
                                   total, page: opts.page || 100, span: {} }];
-  win.Sidebar = { onChange(fn) { redraw = fn; }, showWindow() {} };
+  win.Sidebar = { onChange(fn) { redraw = fn; }, showWindow() {},
+                  query() { return opts.query || "period=Year"; } };
   win.fetch = (url) => {
     asked.push(url);
     const next = answers.length > 1 ? answers.shift() : answers[0];
     return opts.fail
       ? Promise.reject(new Error("offline"))
-      : Promise.resolve({ json: () => Promise.resolve(next) });
+      : Promise.resolve({ ok: true, json: () => Promise.resolve(next) });
   };
   win.eval(source("milestones.js"));
   return {
@@ -203,6 +204,20 @@ test("a refresh behind a reader's back keeps the length they had loaded",
        await draw("period=Year");        // the same view again, not a new one
        assert.match(asked[asked.length - 1], /limit=101$/,
                     "the length they were reading, asked for again");
+     });
+
+test("the first refresh after a plain page load keeps the length too",
+     async () => {
+       /* The query the server rendered for was never recorded, so the first
+          refresh - with nothing touched - read as a new list and reset it. */
+       const { asked, draw, click } = feedPage([row()], true, { total: 500 });
+       await click();
+       const loadedMore = asked[asked.length - 1];
+       assert.match(loadedMore, /^\/api\/milestones\?period=Year&/,
+                    "load more asks for the window on screen");
+       await draw("period=Year");
+       assert.strictEqual(asked[asked.length - 1], loadedMore,
+                          "the length they were reading, asked for again");
      });
 
 test("a load that fails puts the button back rather than leaving it busy", async () => {

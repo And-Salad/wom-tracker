@@ -98,7 +98,11 @@
     return day ? (first ? "?" : "&") + "day=" + encodeURIComponent(day) : "";
   }
 
-  function wire(row, board, section) {
+  /* `opened` is the section's set of rows the reader has open, by account.
+     The standings are replaced whole when new figures land (fragments.js),
+     and a row that was open comes back open - and fetched again, because
+     what it showed is the thing that just changed. */
+  function wire(row, board, section, opened) {
     var detailRow = row.nextElementSibling;
     var host = detailRow.querySelector(".detail-body");
     var loaded = false;
@@ -111,7 +115,10 @@
       host.appendChild(el("p", "hint", "Loading…"));
       fetch("/api/" + board + "/player/" +
             encodeURIComponent(row.dataset.username) + dayQuery(section, true))
-        .then(function (r) { return r.json(); })
+        .then(function (r) {
+          if (!r.ok) { throw new Error("HTTP " + r.status); }
+          return r.json();
+        })
         .then(function (data) {
           loaded = true;
           render(host, board, data);
@@ -126,7 +133,12 @@
       detailRow.hidden = open();
       row.classList.toggle("open", !detailRow.hidden);
       row.setAttribute("aria-expanded", String(!detailRow.hidden));
-      if (!detailRow.hidden) { load(); }
+      if (detailRow.hidden) {
+        opened.delete(row.dataset.username);
+      } else {
+        opened.add(row.dataset.username);
+        load();
+      }
     }
 
     row.addEventListener("click", toggle);
@@ -136,6 +148,16 @@
         event.preventDefault();
         toggle();
       }
+    });
+    if (opened.has(row.dataset.username)) {
+      opened.delete(row.dataset.username);
+      toggle();
+    }
+  }
+
+  function wireAll(section, name, opened) {
+    section.querySelectorAll("tr.today-row").forEach(function (row) {
+      wire(row, name, section, opened);
     });
   }
 
@@ -159,8 +181,13 @@
     var boards = [];
     Array.prototype.forEach.call(sections, function (section) {
       var name = section.getAttribute("data-board");
-      section.querySelectorAll("tr.today-row").forEach(function (row) {
-        wire(row, name, section);
+      var opened = new Set();
+      wireAll(section, name, opened);
+      // New standings, from fragments.js: the rows in them are new elements.
+      section.addEventListener("wom:refreshed", function (event) {
+        if (event.target.matches && event.target.matches(".standing")) {
+          wireAll(section, name, opened);
+        }
       });
       boards.push({name: name, section: section, chart: null, stale: true});
     });

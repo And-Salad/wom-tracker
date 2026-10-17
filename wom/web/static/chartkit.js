@@ -134,7 +134,10 @@
     var url = this.endpoint(query);
     var mine = ++this.seq;
     this.host.classed("loading", true);
-    return fetch(url).then(function (r) { return r.json(); }).then(function (payload) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) { throw new Error("HTTP " + r.status); }
+      return r.json();
+    }).then(function (payload) {
       // Ticking several boxes quickly starts several requests; only the
       // newest one may draw, whatever order the replies come back in.
       if (mine !== self.seq) { return; }
@@ -147,6 +150,11 @@
     }).catch(function (err) {
       if (mine !== self.seq) { return; }
       self.host.classed("loading", false);
+      /* A chart already drawn stays drawn. Refreshes happen behind the
+         reader's back now - every logout, every recap - and a busy moment
+         answering 429 used to swap a good chart for an error nobody asked
+         for. Only a chart with nothing to show says why. */
+      if (self.data) { return; }
       self.message("Could not load this chart: " + err);
     });
   };

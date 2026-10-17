@@ -212,14 +212,13 @@ def test_unticking_everyone_survives_a_change_of_tab(client, app):
     assert client.get("/api/players" + empty).get_json()["rows"] == []
 
 
-def test_recaps_ticks_reload_the_page_rather_than_doing_nothing(client, app):
-    """It has no JSON endpoint, so its ticks have to reload or they are inert."""
+def test_no_page_reloads_on_a_tick_any_more(client, app):
+    """Recaps had no JSON endpoint, so its ticks reloaded the page. It is now
+    one fragment (fragments.js), fetched again in place like everything else
+    - so nothing needs a reload, and a reader keeps their place."""
     seed(app)
-    assert 'data-reload="1"' in client.get("/recaps").get_data(as_text=True)
-    # Maxing has nothing to reload: the calendar and the standings ignore the
-    # ticks entirely, and the one thing that honours them - the chart - fetches
-    # its own JSON.
-    for path in ("/", "/players", "/export", "/milestones", "/leaderboards"):
+    for path in ("/", "/players", "/export", "/milestones", "/leaderboards",
+                 "/recaps", "/gallery"):
         assert 'data-reload="0"' in client.get(path).get_data(as_text=True), path
 
 
@@ -534,3 +533,23 @@ def test_a_page_that_cannot_refetch_is_offered_a_reload_rather_than_given_one(
 
     sidebar = client.get("/static/sidebar.js").get_data(as_text=True)
     assert "if (reloads || !listeners.length) { return false; }" in sidebar
+
+
+def test_server_rendered_parts_are_marked_to_refresh_in_place(client, app,
+                                                              signed_in):
+    """What the server draws and no script refetches is marked, so an open
+    page brings it up to date without a reload - see fragments.js. The
+    leaderboard calendar used to stay stale with no button to say so."""
+    seed(app)
+    expected = {
+        "/leaderboards": ['data-fragment="calendar-maxing"',
+                          'data-fragment="standings-grinding"'],
+        "/recaps": ['data-fragment="recaps"'],
+        "/gallery": ['data-fragment="panel-'],
+        "/admin": ['data-fragment="sessions"'],
+    }
+    for path, markers in expected.items():
+        body = signed_in.get(path).get_data(as_text=True)
+        for marker in markers:
+            assert marker in body, (path, marker)
+    assert "fragments.js" in client.get("/").get_data(as_text=True)

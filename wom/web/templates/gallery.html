@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set page = 'gallery' %}
-{% set live_note = "The ticks choose whose pictures show. New ones arrive as they happen." %}
+{% set live_note = "The ticks choose whose pictures show. New ones appear as they arrive." %}
 {% block title %}Gallery - WOM Tracker{% endblock %}
 
 {% block content %}
@@ -16,13 +16,14 @@
         <label class="tick">
           <input type="checkbox" value="{{ panel.key }}" checked>
           <span>{{ panel.label }}</span>
-          <span class="dim">{{ panel.images | length }}</span>
+          <span class="dim" data-fragment="count-{{ panel.key }}">{{ panel.images | length }}</span>
         </label>
       {% endfor %}
     </div>
 
     {% for panel in panels %}
-      <section class="panel" data-category="{{ panel.key }}">
+      <section class="panel" data-category="{{ panel.key }}"
+               data-fragment="panel-{{ panel.key }}">
         <h4>{{ panel.label }}</h4>
         {% if panel.images %}
           <div class="shots">

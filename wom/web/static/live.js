@@ -1,13 +1,14 @@
 /* The header line, kept true: how fresh the data is and when the next run is.
  *
- * Everything on this site is drawn from readings the scheduler takes every ten
- * minutes, in the same process that serves the pages - but nothing ever told a
+ * Everything on this site is drawn from readings taken hourly and at each
+ * logout, in the same process that serves the pages - but nothing ever told a
  * browser one had landed. A dashboard left open showed the figures it was
  * opened with, under a header that said "updated 2m ago" long after it was an
  * hour, which is worse than saying nothing.
  *
  * So: poll one cheap endpoint on a timer, and when the stamp it carries
- * changes, ask the page for the same view again. Polling rather than a pushed
+ * changes - a run, a logout's reading, a plugin event, a recap, midnight -
+ * ask the page for the same view again. Polling rather than a pushed
  * stream because the server is waitress with eight worker threads, and an open
  * event stream holds one of them for as long as the tab lives - eight readers
  * and the site stops answering.
@@ -191,14 +192,21 @@
   // ---- asking the page to catch up ---------------------------------------
 
   /* The pages that fetch their own figures - Overview, Leaderboards,
-     Milestones, Players, Data - refetch in place and nothing else moves. The
-     ones the server renders whole and that registered nothing (Recaps,
-     Gallery) say so, and are given a link rather than a reload they did not
-     ask for: both are documents somebody is part-way through reading. */
+     Milestones, Players, Data - refetch in place, and the parts the server
+     rendered (the leaderboard calendar, the recaps, the gallery, the admin
+     tables) are fetched again and moved across - see fragments.js. Only a
+     page with neither is given a link rather than a reload it did not ask
+     for: it is a document somebody may be part-way through reading.
+
+     Both, not one or the other. Leaderboards has a chart that redraws itself
+     and a calendar that does not, and treating the chart as the page left
+     the calendar stale with nothing to say so. */
   function refresh() {
     var sidebar = window.Sidebar;
-    if (sidebar && sidebar.refresh && sidebar.refresh()) { return; }
-    if (button) { button.hidden = false; }
+    var fragments = window.WOM && window.WOM.Fragments;
+    var drew = !!(fragments && fragments.refresh());
+    if (sidebar && sidebar.refresh && sidebar.refresh()) { drew = true; }
+    if (!drew && button) { button.hidden = false; }
   }
 
   if (button) {

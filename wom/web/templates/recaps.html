@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% set page = 'recaps' %}
 {% set no_window = true %}
-{# No JSON behind this page, so the ticks reload it rather than doing nothing. #}
-{% set reloads = true %}
-{% set live_note = "Recaps are written per calendar window, so dates do not apply here. The page reloads when you change who is included." %}
+{# No JSON behind this page; the recaps are moved across from the page
+   fetched again instead - see fragments.js - for the ticks as well as for a
+   recap landing. #}
+{% set reloads = false %}
+{% set live_note = "Recaps are written per calendar window, so dates do not apply here." %}
 {% block title %}Recaps - WOM Tracker{% endblock %}
 
 {% macro verdict(entry) %}
@@ -27,6 +29,7 @@
 {% endmacro %}
 
 {% block content %}
+  <div data-fragment="recaps">
   {% if not any_latest %}
     <div class="card">
       <h3>No recaps yet</h3>
@@ -58,7 +61,8 @@
   {% for feed in feeds %}
     <div class="board-feed" data-board="{{ feed.key }}" {{ '' if loop.first else 'hidden' }}>
       {% for round_up in feed.entries %}
-        <details class="card latest" open>
+        <details class="card latest" open
+                 data-key="latest/{{ feed.key }}/{{ round_up.title }}">
           <summary>
             <h3>{{ feed.label }} {{ round_up.title }} &middot; {{ round_up.label }}</h3>
             {{ verdict(round_up) }}
@@ -84,18 +88,19 @@
     </p>
 
     {% for branch in tree %}
-      <details class="card tree">
+      <details class="card tree" data-key="{{ branch.player }}">
         <summary class="node player named" style="--dot: {{ branch.color }}">
           {{ branch.player }}
           <span class="count">{{ branch.total }}</span>
         </summary>
         {% for folder in branch.folders %}
-          <details class="folder">
+          <details class="folder" data-key="{{ branch.player }}/{{ folder.title }}">
             <summary class="node">
               {{ folder.title }} <span class="count">{{ folder.count }}</span>
             </summary>
             {% for entry in folder.entries %}
-              <details class="leaf">
+              <details class="leaf"
+                       data-key="{{ branch.player }}/{{ folder.title }}/{{ entry.label }}">
                 <summary class="node">
                   {{ entry.label }}
                   {{ verdict(entry) }}
@@ -113,6 +118,7 @@
       </details>
     {% endfor %}
   {% endif %}
+  </div>
 {% endblock %}
 
 {% block scripts %}
