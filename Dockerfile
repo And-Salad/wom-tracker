@@ -12,7 +12,7 @@
 # the oldest interpreter someone cloning this should need; this is the
 # newest one, because the container is ours and gets the longer support
 # window. CI runs the suite on both ends.
-FROM python:3.14.7-slim
+FROM python:3.15.0-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
